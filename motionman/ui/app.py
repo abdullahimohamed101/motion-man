@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from motionman.ui import view
+from motionman.ui import style, view
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
 from motionman.video_io import VideoError
 
@@ -41,6 +41,7 @@ def probe_cached(key: str, load) -> tuple[SourceInfo | None, str | None]:
 
 
 st.set_page_config(page_title="MotionMan", page_icon="◰", layout="wide", initial_sidebar_state="expanded")
+st.html(style.CSS)
 runner = get_runner()
 state = runner.snapshot()
 st.session_state["seen_status"] = state.status
@@ -107,7 +108,7 @@ live_status()
 # --- Video workspace --------------------------------------------------------------------------------------
 annotated = state.artifacts.get("annotated.mp4") if state.status == "complete" else None
 picked = st.segmented_control("View", ["Original", "Tracked"], default="Original", required=True, key="view")
-with st.container(border=True):
+with st.container(border=True, key="video-panel"):
     if picked == "Tracked" and annotated is not None:
         st.caption(f"Tracked · {state.source_name}")
         st.video(str(annotated))

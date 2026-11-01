@@ -46,7 +46,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
    guard, and errors mapped to a short message plus next step. Tests use the fake tracker.
 4. [x] `ui/app.py`: header (wordmark, subtitle, actual device, state badge with text), ~280 px sidebar
    controls, Original/Tracked workspace, metrics strip, exports, collapsed Run details. No inference code.
-5. [ ] CSS block (D3) and overlay checks: lime only on Run tracking, focus, selection and progress.
+5. [x] CSS block (D3) and overlay checks: lime only on Run tracking, focus, selection and progress.
 6. [ ] AppTest tests for the states (Pending/N/A, processing disables Run, error clears old metrics);
    all in `scripts/check.sh`.
 7. [ ] Browser verification (U2–U10), screenshots; README UI section; log.
@@ -63,7 +63,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 | U7 | Original/Tracked switch and downloads never re-run inference | run count and report mtime unchanged | |
 | U8 | Bad upload or `CUDA` → short error plus next step; no stale Complete badge or metrics | browser DOM | |
 | U9 | The 3 downloads serve the run's files | downloaded bytes == files on disk | |
-| U10 | Run button text `#0B1105` on `#A3E635`; visible 2 px lime focus ring; unavailable latency shows N/A | computed styles, keyboard Tab | |
+| U10 | Run button text `#0B1105` on `#A3E635`; visible 2 px lime focus ring; unavailable latency shows N/A | computed styles, keyboard Tab | PARTIAL: 12.7:1, Tab → 2 px lime ring @2 px, hover #B5EF59; N/A in-browser pending (step 7) |
 
 ## Risks
 - Streamlit's `data-testid` names can change between versions: pinned (D1), and the CSS is under 30 lines.
@@ -77,3 +77,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - 2026-10-31 step 2: `on_progress(n, total|None, elapsed)` throttled by PROGRESS_INTERVAL_S=0.25 + one final call; total = min(container count, max_frames) or None. Non-Exception exits recorded as `module.Name`. +8 tests (86). CLI 120-frame run unchanged: exit 0, 120/120/120, p50 26.8 ms.
 - 2026-10-31 step 3: Runner (worker thread, process-wide job lock, immutable JobState snapshots, runs/ui/<UTC ts>/ dirs, describe_error → message + next step, live elapsed during model load). 18 runner tests (104 total) incl. lock-leak guard; fixed a test race (tracker built on worker thread). Real-model smoke via runner on a 122-frame clip: auto→cpu, 122/122, complete.
 - 2026-10-31 step 4: app.py (sidebar source/metadata/device/confidence/Run; header + badge + live progress in a polling fragment that triggers a full rerun on state change; Original/Tracked; metrics; lazy downloads; Run details) + view.py pure display rules (15 tests, 119 total). Browser smoke on the demo clip: Idle → Processing (31/1,356 · 2%) → Complete; owner clicks mid-run didn't stop it; metrics == report.json (20.19 fps, 112.8 ms, 1,356, 67.15 s); Tracked video readyState 4, 56.6 s. Run text still white until step 5. UI runs ~20 fps vs CLI ~32 (shared CPU with the browser).
+- 2026-10-31 step 5: style.py (~45 lines CSS, data-testid + st-key- selectors only) + heading sizes in config. Measured: Run 12.7:1, captions #A1A1AA 7.8:1 on panel, h2 24px/600, h4 16px, metric values Geist Mono tabular, cards/video panel 16px #07080A + inset highlight, Tab focus ring solid 2px lime offset 2px, hover #B5EF59. 119 tests.

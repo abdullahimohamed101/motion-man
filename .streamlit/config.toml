@@ -13,6 +13,8 @@ font = "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"
 codeFont = "'Geist Mono', ui-monospace, Menlo, Consolas, monospace"
 baseFontSize = 14
 metricValueFontSize = "26px"
+headingFontSizes = ["28px", "24px", "16px", "16px", "14px", "14px"]  # h2 = app title, h4 = section labels
+headingFontWeights = 600
 redColor = "#F87171"
 yellowColor = "#FBBF24"
 greenColor = "#A3E635"
