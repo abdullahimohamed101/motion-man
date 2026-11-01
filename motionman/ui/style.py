@@ -52,5 +52,8 @@ CSS = """
 
 /* Technical values in mono with tabular figures. */
 [data-testid="stMetricValue"] { font-family: var(--mm-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* Section headings are labels, not destinations: drop their anchor links so they aren't keyboard tab stops. */
+[data-testid="stHeaderActionElements"] { display: none; }
 </style>
 """

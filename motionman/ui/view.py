@@ -37,12 +37,20 @@ class Metric:
     help: str | None = None
 
 
+METRIC_LABELS = ("Processing FPS", "Detect+track p95", "Frames processed", "Processing duration")
+
+
 def metrics(state: JobState) -> list[Metric]:
-    labels = ("Processing FPS", "Detect+track p95", "Frames processed", "Processing duration")
     report = state.report if state.status == "complete" else None
     if report is None:
         filler = NO_RESULT if state.status == "error" else PENDING
-        return [Metric(label, filler) for label in labels]
+        return [Metric(label, filler) for label in METRIC_LABELS]
+    return report_metrics(report)
+
+
+def report_metrics(report: dict) -> list[Metric]:
+    """The four headline numbers of one run's report.json; missing values read N/A, never 0."""
+    labels = METRIC_LABELS
     t = report["timing"]
     latency = t["detect_track_ms"]
     p95 = NOT_AVAILABLE if latency["p95"] is None else f"{latency['p95']:.1f} ms"
@@ -77,16 +85,20 @@ def source_lines(info: SourceInfo) -> list[str]:
 
 
 def run_details(state: JobState) -> list[tuple[str, str]]:
-    r = state.report
-    if not r:
+    if not state.report:
         return []
+    return report_details(state.report, state.source_name, state.run_dir)
+
+
+def report_details(r: dict, source_name: str | None, run_dir) -> list[tuple[str, str]]:
+    """Settings, versions and hardware of one run, for the collapsed Run details."""
     m, env = r["model"], r["environment"]
     pkgs = ", ".join(f"{k} {v}" for k, v in env["packages"].items() if v)
     return [
         ("Status", r["status"]),
         (
             "Source",
-            f"{state.source_name} ({r['source']['width']}×{r['source']['height']}, {r['source']['fps']:.3f} fps)",
+            f"{source_name} ({r['source']['width']}×{r['source']['height']}, {r['source']['fps']:.3f} fps)",
         ),
         ("Model", f"{m['weights']} · imgsz {m['imgsz']} · {m['precision'].upper()} · {m['tracker']}"),
         ("Thresholds", f"confidence {m['conf']} · IoU {m['iou']}"),
@@ -94,7 +106,7 @@ def run_details(state: JobState) -> list[tuple[str, str]]:
         ("Machine", f"{env['cpu']} · {env['platform']} · Python {env['python']}"),
         ("Packages", pkgs),
         ("Model load", _num(r["timing"]["model_load_s"], "{:.2f} s")),
-        ("Run folder", str(state.run_dir)),
+        ("Run folder", str(run_dir)),
     ]
 
 

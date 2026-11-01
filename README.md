@@ -99,16 +99,31 @@ Exceeding a limit is a clear error, never a silent truncation:
 scripts/ui.sh
 ```
 
-Opens a Streamlit workbench at http://localhost:8501, listening on localhost only. Choose the demo clip
-(`clips/crosswalk.mp4`, or set `MOTIONMAN_DEMO_CLIP`) or upload an MP4. Then pick CPU, Auto or CUDA, set the
-confidence threshold and press **Run tracking**. While it runs you see frames, percentage and elapsed time.
-When it finishes you can switch between the Original and Tracked video, read the metrics from that run's
-`report.json`, and download the three artifacts.
+Opens a Streamlit workbench at http://localhost:8501, listening on localhost only. Choose **Try demo**
+(`clips/crosswalk.mp4`, or set `MOTIONMAN_DEMO_CLIP`) or **Choose video**, then press **Run tracking**.
+Device, detection threshold and saved tracking presets sit under **Advanced settings**, closed by default.
+While it runs you see frames, percentage and elapsed time. When it finishes the result opens:
+
+- **Saved runs** at the top reopens any verified run in the data folder. Older pre-manifest folders under
+  `runs/` appear only with **Show legacy runs** and are read-only and unverified.
+- **Inspect**: the Tracked or Original video (native playback, not synchronized with the frame below), and an
+  inspected frame. The **Source frame** slider shows that exact frame from the source video with its own
+  saved detections; arrow keys step one frame. **View options** change labels, trail length and opacity, the
+  class filter and the spotlight, and only re-render: saved results never change.
+- **Object** panel: pick an object to see whether it is observed in this exact frame, the time intervals it
+  was observed (not just first-to-last), **First seen** / **Last seen**, confidence, gaps and a contact sheet
+  sampled only from frames where it was observed. Track IDs are local to one run and can fragment.
+- Each run remembers its own frame, object and view options while the page is open; an ID from one run is
+  never applied to another.
+- **Performance**: the metrics from that run's `report.json`.
+- **Export**: the annotated video, tracks JSONL and run report, plus **Create evidence PNG**, which writes the
+  inspected frame with the current view to `data/exports/<id>/evidence.png` with an `export.json` recording
+  the run, records hash, source frame and options.
 
 - UI runs are canonical runs under the same data folder and lock as the CLI. If a command-line run holds
   the lock, the page says so and asks you to wait.
 - Tracking runs on a background thread, one run at a time, so clicking around the page never stops it.
-  Switching views or downloading never re-runs inference.
+  Inspecting, switching views, exporting or downloading never re-runs inference.
 - A failed attempt is not offered as a result: no partial downloads. Its files stay in `data/staging/`.
 - Metrics show "Pending" until a run completes and "N/A" when a value can't be computed (for example
   latency on a run of 10 frames or fewer), never a placeholder zero. A failed run shows its error and a next

@@ -82,22 +82,27 @@ def read_records(path: Path) -> Iterator[dict]:
     """Yield v1.0-shaped records from a JSONL file, adapting pre-v1.0 lines. Unknown versions fail clearly."""
     with path.open(encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
-            if not line.strip():
-                continue
-            try:
-                raw = json.loads(line)
-            except json.JSONDecodeError as e:
-                raise RecordError(f"{path}:{line_no}: not valid JSON ({e.msg}); the file may be truncated") from e
-            if "schema_version" in raw:
-                try:
-                    validate(raw)
-                except RecordError as e:
-                    raise RecordError(f"{path}:{line_no}: {e}") from e
-                yield raw
-            elif "frame_index" in raw and "timestamp_s" in raw:
-                yield _from_legacy(raw)
-            else:
-                raise RecordError(f"{path}:{line_no}: unrecognised record format")
+            if line.strip():
+                yield parse_line(line, f"{path}:{line_no}")
+
+
+def parse_line(line: str | bytes, where: str = "record") -> dict:
+    """Parse one JSONL line into a v1.0-shaped record (validating v1.0, adapting pre-v1.0)."""
+    try:
+        raw = json.loads(line)
+    except json.JSONDecodeError as e:
+        raise RecordError(f"{where}: not valid JSON ({e.msg}); the file may be truncated") from e
+    if not isinstance(raw, dict):
+        raise RecordError(f"{where}: unrecognised record format")
+    if "schema_version" in raw:
+        try:
+            validate(raw)
+        except RecordError as e:
+            raise RecordError(f"{where}: {e}") from e
+        return raw
+    if "frame_index" in raw and "timestamp_s" in raw:
+        return _from_legacy(raw)
+    raise RecordError(f"{where}: unrecognised record format")
 
 
 def _from_legacy(raw: dict) -> dict:
