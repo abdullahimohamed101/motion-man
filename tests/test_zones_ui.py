@@ -120,3 +120,75 @@ def test_loading_a_saved_set_restores_its_name_so_its_analysis_is_up_to_date(wor
     fresh = render(fresh)
     assert fresh.text_input(key=name_key).value == "Doorway"
     assert next(b for b in fresh.button if b.key == "zanalyze").label == "Up to date"
+
+
+# --- step 6: results ---
+
+
+def analyzed(world):
+    """Run A with a line the object crosses and a zone it enters (dwell alert at 0.1 s), analyzed once."""
+    at = zones(None, world)
+    at = add_region(at, "Door", coords=(18.75, 0, 18.75, 100))
+    at = add_region(at, "Pen", kind="Rectangle", coords=(21.875, 0, 46.875, 62.5), zdwell=0.1)
+    at.button(key="zanalyze").click()
+    return render(at)
+
+
+def metrics(at):
+    return {m.label: m.value for m in at.metric}
+
+
+def aid_of(world):
+    (aid,) = analysis_folders(world)
+    return aid
+
+
+def test_results_show_region_totals_and_the_occupancy_note(world):
+    at = analyzed(world)
+    m = metrics(at)
+    assert m["Door"] == "1 crossings" and m["Pen"] == "1 entered"
+    assert any(c.value.startswith("Occupancy counts who is inside at one moment") for c in at.caption)
+    assert any(c.value.startswith("For this run only") for c in at.caption)
+    assert any(c.value == "Showing 3 of 3 events. Filters change this view only; the saved totals above stay the same."
+               for c in at.caption)  # fmt: skip
+
+
+def test_events_filter_changes_the_view_never_the_saved_totals(world):
+    at = analyzed(world)
+    aid = aid_of(world)
+    folder = world["root"].path / "analyses" / world["a"] / aid
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+    totals = metrics(at)
+    at.multiselect(key=f"zf-type-{aid}").set_value(["DWELL_THRESHOLD"])
+    at = render(at)
+    assert any(c.value.startswith("Showing 1 of 3 events") for c in at.caption)
+    at.number_input(key=f"zf-track-{aid}").set_value(99)
+    at = render(at)
+    assert any(c.value.startswith("Showing 0 of 3 events") for c in at.caption)
+    assert metrics(at) == totals and {p.name: p.read_bytes() for p in folder.iterdir()} == before
+    assert world["fake"].starts == []
+
+
+def test_a_bookmark_selects_its_frame_and_show_in_inspect_moves_the_slider(world):
+    at = analyzed(world)
+    aid = aid_of(world)
+    marks = [b for b in at.button if b.key and b.key.startswith(f"zbm-{aid}-")]
+    assert [b.label.split(" · ")[0] for b in marks] == ["Peak occupancy", "First crossing", "First entry"]  # by frame
+    next(b for b in marks if b.label.startswith("First crossing · Door")).click()
+    at = render(at)
+    selected = next(c.value for c in at.caption if c.value.startswith("Bookmark: first crossing"))
+    frame = int(selected.split("frame ")[1].split(" ")[0])
+    at.button(key=f"zgo-{world['a']}").click()
+    at = render(at)
+    assert at.slider(key=f"frame-{world['a']}").value == frame
+    assert at.selectbox(key=f"track-{world['a']}").value == 1  # the crossing's track is now the selected object
+    assert any(f"Inspect is now on frame {frame}" in c.value for c in at.caption)
+
+
+def test_events_exports_join_the_export_menu_once_analyzed(world):
+    before = zones(None, world)
+    labels = lambda at: [b.label for b in at.get("download_button")]  # noqa: E731
+    assert not any("Events" in label for label in labels(before))
+    after = analyzed(world)
+    assert "Events · one row per event (CSV)" in labels(after)
+    assert "Events & zones analysis (JSON)" in labels(after)

@@ -150,3 +150,45 @@ def test_duration_and_library_rows_never_show_ids():
     assert row == "crosswalk.mp4 · Today, 7:45 PM · 1,356 frames"
     assert view.run_row("demo.mp4", None, 240, True, now) == "demo.mp4 · Legacy (unverified)"
     assert view.run_row(None, None, None, False, now) == "Unknown source"
+
+
+# --- Events & zones (plan P3 step 6) ---
+
+EVENTS = [
+    {"event_id": "e_1", "type": "LINE_CROSSING", "rule_id": "door", "track_id": 3, "class_name": "person",
+     "direction": "NEGATIVE_TO_POSITIVE", "confirming_frame": 30, "confirming_t_us": 1_000_000, "value": None},
+    {"event_id": "e_2", "type": "DWELL_THRESHOLD", "rule_id": "pen", "track_id": 4, "class_name": "car",
+     "direction": None, "confirming_frame": 90, "confirming_t_us": 3_000_000, "value": 2_500_000},
+    {"event_id": "e_3", "type": "OCCUPANCY_THRESHOLD", "rule_id": "pen", "track_id": None, "class_name": None,
+     "direction": None, "confirming_frame": 120, "confirming_t_us": 4_000_000, "value": 3},
+]  # fmt: skip
+
+
+def test_event_rows_speak_plain_language():
+    rows = [view.event_row(e, {"door": "Door", "pen": "Pen"}) for e in EVENTS]
+    assert rows[0] == {"Time (s)": 1.0, "Event": "Line crossing", "Region": "Door", "Track": "#3",
+                       "Class": "person", "Detail": "towards +", "Frame": 30}  # fmt: skip
+    assert rows[1]["Detail"] == "2.5 s inside" and rows[2]["Detail"] == "3 inside at once"
+    assert rows[2]["Track"] == "—" and rows[2]["Class"] == "—"
+
+
+def test_event_filters_combine_and_default_to_everything():
+    keep = lambda f: [e["event_id"] for e in EVENTS if f.keeps(e)]  # noqa: E731
+    assert keep(view.EventFilter()) == ["e_1", "e_2", "e_3"]
+    assert keep(view.EventFilter(rules=("pen",))) == ["e_2", "e_3"]
+    assert keep(view.EventFilter(rules=("pen",), types=("DWELL_THRESHOLD",))) == ["e_2"]
+    assert keep(view.EventFilter(classes=("person",))) == ["e_1"]
+    assert keep(view.EventFilter(track=4)) == ["e_2"]
+    assert keep(view.EventFilter(window_s=(1.0, 3.0))) == ["e_1", "e_2"]
+
+
+def test_region_cards_show_totals_and_never_divide_by_zero():
+    line = {"kind": "line", "name": "Door", "crossings_total": 3,
+            "crossings": {"NEGATIVE_TO_POSITIVE": 2, "POSITIVE_TO_NEGATIVE": 1}}  # fmt: skip
+    assert view.region_card(line) == ("Door", "3 crossings", "2 towards + · 1 away from +")
+    zone = {"kind": "rect", "name": "Pen", "entries": 4, "exits": 2, "peak_occupancy": 3, "occupancy_us": 500_000,
+            "covered_us": 1_000_000, "dwell_median_us": 1_500_000}  # fmt: skip
+    assert view.region_card(zone) == ("Pen", "4 entered", "2 left · peak 3 at once · mean 0.50 · median stay 1.5 s")
+    empty = {**zone, "entries": 0, "exits": 0, "peak_occupancy": 0, "occupancy_us": 0, "covered_us": 0,
+             "dwell_median_us": None}  # fmt: skip
+    assert view.region_card(empty)[2] == "0 left · peak 0 at once · mean — · no stays"

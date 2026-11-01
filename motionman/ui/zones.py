@@ -7,11 +7,13 @@ results, and an identical analysis is reused instead of rebuilt.
 
 from __future__ import annotations
 
+import functools
 import re
 
 import streamlit as st
 
 from motionman import analysis, inspection, regions, render, runs, store
+from motionman.ui import view
 
 KINDS = {"Line": "line", "Rectangle": "rect"}
 DEFAULTS = {"line": (10.0, 50.0, 90.0, 50.0), "rect": (25.0, 25.0, 75.0, 75.0)}  # percent of the frame
@@ -86,7 +88,7 @@ def zones_tab(run: runs.OpenRun, derived, frames, root: store.DataRoot) -> None:
             st.warning(f"This frame can't be shown: {e}. Try another frame.", icon=":material/warning:")
         st.caption("Lines point from A to B. Crossing from the right side to the left side (towards “+”) counts "
                    "as negative → positive. Rules use each box's centre.")  # fmt: skip
-    analyze_bar(run, root, input_id, draft)
+    analyze_bar(run, derived, frames, root, input_id, draft)
 
 
 def editor(run, derived, root, input_id: str, draft: dict) -> None:
@@ -161,7 +163,7 @@ def _remove(draft: dict, i: int) -> None:
     draft["loaded"] = None
 
 
-def analyze_bar(run, root, input_id: str, draft: dict) -> None:
+def analyze_bar(run, derived, frames, root, input_id: str, draft: dict) -> None:
     """Analyze is the tab's primary action only while the drawn regions have no up-to-date analysis."""
     if not draft["regions"]:
         return
@@ -186,7 +188,133 @@ def analyze_bar(run, root, input_id: str, draft: dict) -> None:
         st.rerun()
     if done:
         st.session_state[f"zresult-{run.run_id}"] = aid
+        results(run, derived, frames, root, aid)
+
+
+def results(run, derived, frames, root, aid: str) -> None:
+    """Totals, bookmarks, the event table and the selected event's frame. Filters are display-only (fixture 6)."""
+    result = analysis.load(root, run.run_id, aid)
+    s, rid = result.summary, run.run_id
+    names = {r["id"]: r["name"] for r in result.spec["region_set"]["regions"]}
+    regions_by_id = {r.id: r for r in regions.parse(result.spec["region_set"]).regions}
+    st.markdown("#### Results")
+    when = view.when_label(run.summary.started_at) or "this run"
+    st.caption(f"For this run only ({when}); other runs of this video need their own analysis. "
+               f"{s['events']['total']} events over {s['coverage']['frames']:,} frames · "
+               f"{s['unassigned_detections']:,} detections without a track ID are not counted · "
+               f"analysis `{aid}`")  # fmt: skip
+    per_row = 4
+    for start in range(0, len(s["regions"]), per_row):
+        for col, r in zip(st.columns(per_row), s["regions"][start : start + per_row], strict=False):
+            label, value, caption = view.region_card(r)
+            with col:
+                st.metric(label, value, border=True)
+                st.caption(caption)
+    st.caption(view.OCCUPANCY_NOTE)
+    if s["bookmarks"]:
+        with st.container(horizontal=True):
+            for i, b in enumerate(s["bookmarks"]):
+                st.button(f"{b['criterion'].capitalize()} · {names.get(b['rule_id'], b['rule_id'])} · "
+                          f"{b['t_us'] / 1e6:.1f} s", key=f"zbm-{aid}-{i}", icon=":material/bookmark:",
+                          on_click=_select, args=(rid, b["frame"], b["track_id"], b["rule_id"],
+                                                  f"Bookmark: {b['criterion']}"))  # fmt: skip
+    events = _events(result)
+    table, detail = st.columns([3, 2], gap="medium")
+    with table.container(border=True):
+        st.markdown("#### Events")
+        f = event_filter(events, names, run, aid)
+        shown = [e for e in events if f.keeps(e)]
+        st.session_state[f"zrows-{aid}"] = shown
+        if shown:
+            st.dataframe([view.event_row(e, names) for e in shown], hide_index=True, width="stretch",
+                         selection_mode="single-row", on_select=functools.partial(_select_row, rid, aid),
+                         key=f"ztable-{aid}")  # fmt: skip
+        st.caption(f"Showing {len(shown):,} of {len(events):,} events. Filters change this view only; the saved "
+                   "totals above stay the same.")  # fmt: skip
+    with detail.container(border=True):
+        selected_event(run, derived, frames, regions_by_id)
+
+
+def event_filter(events: list[dict], names: dict[str, str], run, aid: str) -> view.EventFilter:
+    a, b = st.columns(2)
+    rules = a.multiselect("Region", list(names), format_func=names.get, key=f"zf-rule-{aid}", placeholder="All")
+    types = b.multiselect("Event", list(view.EVENT_LABELS), format_func=view.EVENT_LABELS.get,
+                          key=f"zf-type-{aid}", placeholder="All")  # fmt: skip
+    c, d = st.columns(2)
+    classes = c.multiselect("Class", sorted({e["class_name"] for e in events if e["class_name"]}),
+                            key=f"zf-class-{aid}", placeholder="All")  # fmt: skip
+    track = d.number_input("Track #", min_value=0, value=None, step=1, key=f"zf-track-{aid}",
+                           placeholder="Any")  # fmt: skip
+    end = max(1.0, round(run.summary.frames / run.fps, 1)) if run.summary.frames else 1.0
+    window = st.slider("Time (s)", 0.0, end, (0.0, end), step=0.1, key=f"zf-time-{aid}")
+    return view.EventFilter(tuple(rules), tuple(types), tuple(classes), int(track) if track is not None else None,
+                            None if window == (0.0, end) else window)  # fmt: skip
+
+
+def selected_event(run, derived, frames, regions_by_id: dict) -> None:
+    rid = run.run_id
+    sel = st.session_state.get(f"zsel-{rid}")
+    st.markdown("#### Selected")
+    if not sel or sel["frame"] >= derived.index.count:
+        st.caption("Choose an event in the table or a bookmark to see its source frame.")
+        return
+    frame, track = sel["frame"], sel["track"]
+    try:
+        still, record = inspection.render_still(frames, derived.index, frame, render.ViewOptions(spotlight=track))
+    except inspection.InspectError as e:
+        st.warning(f"This frame can't be shown: {e}.", icon=":material/warning:")
+        return
+    rule = regions_by_id.get(sel["rule"])
+    others = [r for r in regions_by_id.values() if r is not rule]
+    st.image(render.draw_regions(still, others, rule), channels="BGR", width="stretch")
+    who = f"track #{track}" if track is not None else "region count"
+    st.caption(f"{sel['label']} · frame {frame:,} at {record['source_t_us'] / 1e6:.2f} s · {who}")
+    st.button("Show in Inspect", icon=":material/open_in_new:", key=f"zgo-{rid}", on_click=_show_in_inspect,
+              args=(rid, frame, track, track is not None and track in derived.tracks))  # fmt: skip
+    if st.session_state.get(f"zgone-{rid}") == frame:
+        st.caption(f"Inspect is now on frame {frame:,}. Open the Inspect tab to look around it.")
+
+
+def _events(result) -> list[dict]:
+    cache = st.session_state.setdefault("zevents", {})
+    if result.analysis_id not in cache:
+        cache.clear()  # one analysis's events at a time: bounded memory
+        cache[result.analysis_id] = list(analysis.read_events(result))
+    return cache[result.analysis_id]
+
+
+def _select(rid: str, frame: int, track: int | None, rule: str, label: str) -> None:
+    st.session_state[f"zsel-{rid}"] = {"frame": frame, "track": track, "rule": rule, "label": label}
+
+
+def _select_row(rid: str, aid: str) -> None:
+    rows = st.session_state[f"ztable-{aid}"]["selection"]["rows"]
+    shown = st.session_state.get(f"zrows-{aid}", [])
+    if rows and rows[0] < len(shown):
+        e = shown[rows[0]]
+        _select(rid, e["confirming_frame"], e["track_id"], e["rule_id"], view.EVENT_LABELS.get(e["type"], e["type"]))
+
+
+def _show_in_inspect(rid: str, frame: int, track: int | None, known_track: bool) -> None:
+    """Callback, so it may set the Inspect tab's widgets, which rendered earlier in this run."""
+    st.session_state[f"frame-{rid}"] = frame
+    if known_track:
+        st.session_state[f"track-{rid}"] = track
+    st.session_state[f"zgone-{rid}"] = frame
+
+
+def export_items(run, root) -> None:
+    """Events CSV and the full analysis JSON in the header's Export menu, once this run has a current analysis."""
+    aid = st.session_state.get(f"zresult-{run.run_id}")
+    if not aid:
+        return
+    try:
         result = analysis.load(root, run.run_id, aid)
-        s = result.summary
-        st.caption(f"{s['events']['total']} events over {s['coverage']['frames']:,} frames · analysis "
-                   f"`{aid}`")  # fmt: skip
+    except analysis.AnalysisError:
+        return
+    st.download_button("Events · one row per event (CSV)", data=lambda: analysis.export_csv(result).encode(),
+                       file_name=f"{run.run_id}-{aid}-events.csv", mime="text/csv", on_click="ignore",
+                       icon=":material/download:", width="stretch", key=f"dl-{run.run_id}-events-csv")  # fmt: skip
+    st.download_button("Events & zones analysis (JSON)", data=lambda: analysis.export_json(result).encode(),
+                       file_name=f"{run.run_id}-{aid}-analysis.json", mime="application/json", on_click="ignore",
+                       icon=":material/download:", width="stretch", key=f"dl-{run.run_id}-events-json")  # fmt: skip

@@ -461,6 +461,7 @@ def export_menu(run, derived, frames, frame, options, record) -> None:
                                    key=f"dl-{run.run_id}-{name}")  # fmt: skip
             else:
                 st.caption(f"{label}: not available for this run.")
+        zones.export_items(run, root)
         st.divider()
         st.caption(f"Evidence image: source frame {frame:,} ({workspace.format_t(record['source_t_us'])}) "
                    "with the current view options.")  # fmt: skip
