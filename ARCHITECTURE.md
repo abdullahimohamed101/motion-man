@@ -1,5 +1,5 @@
 # Architecture
-Status: planned, nothing built yet. Contracts live in `docs/spec.md` §4–§8.
+Status: slice built (no trails, JSONL or report yet). Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text
