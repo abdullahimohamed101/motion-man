@@ -35,7 +35,8 @@ Two-day Python MVP (spec §1–§2). Anything not in `docs/spec.md` is out of sc
 ## Commands
 - Setup: `uv venv -p 3.11 && uv pip install -r requirements-dev.txt`
 - Focused test: `.venv/bin/pytest -q tests/test_<module>.py`
-- Gate: `scripts/check.sh` (ruff + pytest, failures only). Run before `ship`.
+- Gate: `scripts/check.sh` (ruff + pytest, failures only). Run before `ship`. CI runs the same gate on every PR
+  and push to `main` (`.github/workflows/check.yml`, ubuntu-24.04, CPU-only torch).
 - Demo: `.venv/bin/python -m motionman --source <clip>.mp4 --output-dir runs/<name> --device cpu`
 - Host is Apple Silicon: no CUDA here. CUDA paths are UNVERIFIED (env) unless run elsewhere.
 

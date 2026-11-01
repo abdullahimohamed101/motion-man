@@ -1,0 +1,40 @@
+# Runs the same gate as local development: scripts/check.sh (ruff + the offline pytest suite).
+# The tests need no GPU, network or model weights (INV-8), so CPU-only torch keeps the install small.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "requirements*.txt"
+
+      - name: System libraries for opencv-python
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgl1 libglib2.0-0
+
+      - name: Install pinned dependencies (CPU-only torch)
+        run: |
+          uv venv -p 3.11
+          uv pip install -r requirements-dev.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Gate
+        run: scripts/check.sh
