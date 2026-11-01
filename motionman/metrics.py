@@ -26,7 +26,8 @@ DETECT_TRACK_SCOPE = (
 
 class Metrics:
     def __init__(self) -> None:
-        self.processed_frames = 0
+        self.processed_frames = 0  # frames fully handled: tracked, drawn, written to video and JSONL
+        self.jsonl_records = 0
         self.model_load_s: float | None = None
         self.processing_wall_s: float | None = None
         self.detect_track_ms: list[float] = []  # one sample per processed frame; fine for short demo clips
@@ -90,6 +91,7 @@ def build_report(
             "frame_count_reported_by_container": info.frame_count,
         },
         "processed_frames": metrics.processed_frames,
+        "jsonl_records": metrics.jsonl_records,
         "output_frames_decoded": output_frames_decoded,
         "max_frames": config.max_frames,
         "model": {

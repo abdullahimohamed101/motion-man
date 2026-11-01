@@ -91,3 +91,30 @@ def test_auto_prefers_cuda_when_available():
 def test_explicit_cuda_without_gpu_is_a_clear_error():
     with pytest.raises(DeviceError, match="CUDA is not available"):
         resolve_device("cuda", cuda_available=lambda: False)
+
+
+def test_output_check_failure_exits_1(monkeypatch, capsys):
+    assert _run_raising(monkeypatch, pipeline.OutputCheckError("output check failed")) == 1
+
+
+def test_partial_note_points_at_this_runs_report(monkeypatch, tmp_path, capsys):
+    out = tmp_path / "run"
+
+    def interrupted_after_writing(config):
+        out.mkdir()
+        (out / pipeline.REPORT).write_text("{}")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(pipeline, "run", interrupted_after_writing)
+    assert cli.main(["--source", "in.mp4", "--output-dir", str(out)]) == 130
+    assert f"partial results and report (status: interrupted) in {out}" in capsys.readouterr().err
+
+
+def test_partial_note_never_points_at_earlier_results(monkeypatch, tmp_path, capsys):
+    out = tmp_path / "old"
+    out.mkdir()
+    (out / pipeline.REPORT).write_text('{"status": "success"}')  # someone else's finished run
+    monkeypatch.setattr(pipeline, "run", lambda config: (_ for _ in ()).throw(KeyboardInterrupt()))
+    assert cli.main(["--source", "in.mp4", "--output-dir", str(out)]) == 130
+    err = capsys.readouterr().err
+    assert err.strip() == "interrupted"

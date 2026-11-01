@@ -58,21 +58,30 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     config = parse_args(argv)  # argparse exits with 2 on bad flags
-    report_path = config.output_dir / pipeline.REPORT
+    out = config.output_dir
+    # Only point at a report this run wrote, never at an earlier run's results in a refused directory.
+    preexisting = out.exists() and (not out.is_dir() or any(out.iterdir()))
+
+    def partial_note(status: str) -> str:
+        ours = not preexisting and (out / pipeline.REPORT).exists()
+        return f"partial results and report (status: {status}) in {out}" if ours else ""
+
     try:
         report = pipeline.run(config)
     except MotionManError as e:
         print(f"error: {e}", file=sys.stderr)
-        return EXIT_USAGE
+        if note := partial_note("error"):
+            print(note, file=sys.stderr)
+        return e.exit_code
     except KeyboardInterrupt:
-        where = f"; partial results and report in {config.output_dir}" if report_path.exists() else ""
-        print(f"interrupted{where}", file=sys.stderr)
+        note = partial_note("interrupted")
+        print(f"interrupted{'; ' + note if note else ''}", file=sys.stderr)
         return EXIT_INTERRUPTED
     except Exception as e:
         traceback.print_exc()
         print(f"error: unexpected {type(e).__name__}: {e}", file=sys.stderr)
-        if report_path.exists():
-            print(f"partial results and report (status: error) in {config.output_dir}", file=sys.stderr)
+        if note := partial_note("error"):
+            print(note, file=sys.stderr)
         return EXIT_FAILURE
     t = report["timing"]
     print(

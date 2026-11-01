@@ -50,9 +50,13 @@ ffmpeg -i clips/raw/DiagonalCrosswalkYongeDundas.webm -map 0:v:0 -an -c:v libx26
 
 Detection thresholds are fixed and recorded in the report: confidence 0.25, IoU 0.7, FP32.
 
-Exit codes: `0` success, `1` unexpected failure, `2` invalid arguments, input, device or model, `130` interrupted.
+Exit codes: `0` success, `1` tool failure (unexpected error, or the output check below failed), `2` invalid
+arguments, input, output directory, device or model, `130` interrupted. Those input problems are caught before
+the output directory is created, so you can fix the flag and rerun with the same `--output-dir`.
+
 If a run fails or is interrupted after it starts writing, the partial artifacts are kept and `report.json`
-says `error` or `interrupted`. A run only reports `success` if the written video decodes back to exactly
+says `error` or `interrupted`, with `processed_frames`, `jsonl_records` and `output_frames_decoded` showing what
+each file actually holds. A run only reports `success` if the written video decodes back to exactly
 `processed_frames` frames.
 
 ## Test
@@ -61,7 +65,7 @@ says `error` or `interrupted`. A run only reports `success` if the written video
 scripts/check.sh
 ```
 
-This runs ruff and the pytest suite (71 tests, under a second). The tests use synthetic clips and a fake
+This runs ruff and the pytest suite (78 tests, about a second). The tests use synthetic clips and a fake
 tracker. They block network access and fail if torch or Ultralytics gets imported, so they never need
 a GPU, the network, or the model weights.
 
@@ -84,14 +88,20 @@ Three runs of the same clip and configuration (`clips/crosswalk.mp4`: 1,356 fram
 
 | Run | End-to-end FPS | Processing wall time | detect+track p50 | detect+track p95 | Model load |
 |---|---|---|---|---|---|
-| 1 | 25.95 | 52.26 s | 31.18 ms | 41.71 ms | 2.46 s |
-| 2 | 25.19 | 53.84 s | 31.16 ms | 47.85 ms | 2.02 s |
-| 3 | 26.01 | 52.14 s | 29.31 ms | 48.73 ms | 1.78 s |
-| **Median** | **25.95** | | | | |
+| 1 | 31.27 | 43.36 s | 27.26 ms | 35.65 ms | 3.88 s |
+| 2 | 32.15 | 42.18 s | 26.88 ms | 31.73 ms | 4.07 s |
+| 3 | 32.14 | 42.19 s | 27.14 ms | 30.40 ms | 4.10 s |
+| **Median** | **32.14** | | | | |
 
 Hardware: Apple M5 Pro (15 CPU cores, 24 GB RAM), macOS 26.6, Python 3.11.17, torch 2.15.0,
-ultralytics 8.4.196, opencv-python 5.0.0.93. The laptop was on battery (35%) during these runs; results on
-mains power may differ. All three runs exited 0 with 1,356 frames processed and decoded.
+ultralytics 8.4.196, opencv-python 5.0.0.93. The laptop was on battery (27–35%) during these runs; results on
+mains power may differ. Each run exited 0 with 1,356 frames processed, 1,356 JSONL records and 1,356 frames
+decoded from the output.
+
+**Run-to-run variance is real.** An earlier set of three runs on the same machine, before the model warmup
+moved into model load, measured 25.95 / 25.19 / 26.01 fps (median 25.95) with a detect+track p50 near 31 ms.
+The warmup explains only about 2.5 s of the 10 s difference in wall time; the rest is not isolated (power
+state is the likely cause). Treat these as one laptop's numbers on one afternoon, not a performance claim.
 
 What the numbers mean:
 - **End-to-end FPS** is processed frames divided by processing wall time, measured from before the first
@@ -99,12 +109,14 @@ What the numbers mean:
   H.264 encoding at 1080p. It is not a real-time claim and not an inference-only number.
 - **detect+track p50/p95** time the whole `model.track` call (YOLO detection plus ByteTrack association) plus
   conversion to records, excluding the first 10 frames as warmup. Those frames still appear in every output.
-- **Model load** is reported separately and is not part of the wall time.
+- **Model load** is reported separately and is not part of the wall time. Ultralytics loads lazily, so model load
+  includes one prediction on a blank frame; without it, about 2.5 s of setup would land in the first frame of the
+  wall time and make short runs look slow. The warmup runs in predict mode, so tracker state is untouched.
 
-Where the time goes: at the median, a frame takes about 38.5 ms end to end, and the median detect+track call is
-about 31 ms. So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
-make up most of the rest. The first `model.track` call also spends a second or two loading Ultralytics code
-lazily; that falls inside the wall time and inside the excluded warmup frames.
+Where the time goes: at the median, a frame takes about 31 ms end to end, and the median detect+track call is
+about 27 ms. So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
+make up most of the rest. A 48-frame run now measures 23 fps end to end (it was 11 fps before the warmup fix),
+because a short run is still dominated by the slower first few frames.
 
 ## Limitations
 

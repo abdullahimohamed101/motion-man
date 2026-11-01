@@ -1,12 +1,13 @@
 """End-to-end pipeline on a synthetic clip with a scripted fake tracker: no weights, network or GPU (INV-8)."""
 
 import json
+import time
 from pathlib import Path
 
 import pytest
 
 from motionman import pipeline, video_io
-from motionman.tracking import DeviceError
+from motionman.tracking import DeviceError, ModelError
 from motionman.types import RunConfig, Track
 from motionman.video_io import VideoError, count_frames, open_reader
 
@@ -146,7 +147,7 @@ def test_tracker_failure_mid_run_closes_files_and_reports_error(clip, tmp_path):
     assert report["status"] == "error" and "RuntimeError: boom" in report["error"]
     assert report["processed_frames"] == 8 == len(read_jsonl(out))
     assert count_frames(out / pipeline.ANNOTATED) == 8  # writer was released: partial video is playable
-    assert report["output_frames_decoded"] is None
+    assert report["output_frames_decoded"] == 8 == report["jsonl_records"]  # partial reports state what each file holds
 
 
 def test_interrupt_mid_run_reports_interrupted(clip, tmp_path):
@@ -211,3 +212,50 @@ def test_non_standard_even_size_runs(tmp_path):
     out = tmp_path / "run"
     report = run(RunConfig(write_clip(tmp_path / "even.mp4", 3, width=66, height=50), out))
     assert report["source"]["width"] == 66 and report["status"] == "success"
+
+
+def test_interrupted_report_counts_each_artifact(clip, tmp_path):
+    out = tmp_path / "run"
+    with pytest.raises(KeyboardInterrupt):
+        run(RunConfig(clip, out), fail_at=6, exc=KeyboardInterrupt())
+    r = read_report(out)
+    assert r["processed_frames"] == r["jsonl_records"] == r["output_frames_decoded"] == 6
+
+
+def test_model_failure_creates_nothing(clip, tmp_path):
+    def bad_model(cfg):
+        raise ModelError("cannot load model 'nope.pt'")
+
+    out = tmp_path / "run"
+    with pytest.raises(ModelError):
+        pipeline.run(RunConfig(clip, out), make_tracker=bad_model, resolve=lambda d: "cpu")
+    assert not out.exists()  # so the same --output-dir works on the next attempt
+
+
+def test_wall_time_excludes_model_load_and_output_check(clip, tmp_path, monkeypatch):
+    # §8: processing_wall_s runs from before the first decode to after the writer release.
+    # Model load (incl. warmup) and the post-run decode check must fall outside it.
+    delay = 0.3
+    real_count = video_io.count_frames
+
+    def slow_tracker(cfg):
+        time.sleep(delay)
+        return FakeTracker(cfg)
+
+    def slow_count(path):
+        time.sleep(delay)
+        return real_count(path)
+
+    monkeypatch.setattr(video_io, "count_frames", slow_count)
+    t = pipeline.run(RunConfig(clip, tmp_path / "run"), make_tracker=slow_tracker, resolve=lambda d: "cpu")["timing"]
+    assert t["model_load_s"] >= delay
+    assert t["processing_wall_s"] < delay  # 20 tiny frames take a few ms; either delay leaking in would show
+
+
+def test_report_failure_does_not_mask_the_run_error(clip, tmp_path, monkeypatch):
+    def broken_write(path, report):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(pipeline.metrics, "write_report", broken_write)
+    with pytest.raises(RuntimeError, match="boom"):  # the original error, not the OSError
+        run(RunConfig(clip, tmp_path / "run"), fail_at=2, exc=RuntimeError("boom"))

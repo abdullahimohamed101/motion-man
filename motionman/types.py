@@ -11,6 +11,8 @@ import numpy as np
 class MotionManError(Exception):
     """An expected failure with a message the user can act on (bad input, device, writer...)."""
 
+    exit_code = 2  # invalid argument, input, device or model; subclasses override for tool failures
+
 
 @dataclass(frozen=True)
 class Track:

@@ -68,6 +68,13 @@ class Tracker:
             "quantize": 32,  # FP32, as recorded in the report (replaces the deprecated `half`)
             "verbose": False,
         }
+        # YOLO() is lazy: the first call imports the predictor stack and loads weights (~2.5 s on CPU).
+        # One predict on a blank frame moves that into model load time. Predict mode never runs the
+        # tracker callbacks, so tracker state and IDs are unchanged.
+        predict_kwargs = {k: v for k, v in self._kwargs.items() if k not in ("persist", "tracker")}
+        self._model.predict(np.zeros((imgsz, imgsz, 3), np.uint8), **predict_kwargs)
+        if self._cuda_sync is not None:
+            self._cuda_sync()
 
     def update(self, image: np.ndarray) -> list[Track]:
         result = self._model.track(image, **self._kwargs)[0]
