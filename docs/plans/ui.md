@@ -42,7 +42,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 ## Steps
 1. [x] Pin Streamlit; `.streamlit/config.toml` theme; `scripts/ui.sh`; empty page loads (health 200).
 2. [x] `pipeline.run`: `on_progress` callback (D4) and BaseException status (D5), with tests.
-3. [ ] `ui/runner.py`: worker thread, job states idle/processing/complete/error, run dirs, duplicate-run
+3. [x] `ui/runner.py`: worker thread, job states idle/processing/complete/error, run dirs, duplicate-run
    guard, and errors mapped to a short message plus next step. Tests use the fake tracker.
 4. [ ] `ui/app.py`: header (wordmark, subtitle, actual device, state badge with text), ~280 px sidebar
    controls, Original/Tracked workspace, metrics strip, exports, collapsed Run details. No inference code.
@@ -75,3 +75,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - 2026-10-31 plan: spike in a scratch venv (Streamlit 1.66.1): primary text measured white on lime; mid-run click → StopException at step 21/60.
 - 2026-10-31 step 1: streamlit 1.66.1 pinned (no other pins moved); `.streamlit/config.toml` theme; `scripts/ui.sh` (PYTHONPATH=repo root); placeholder page. Health 200, theme verified in browser. Gate: 78 passed.
 - 2026-10-31 step 2: `on_progress(n, total|None, elapsed)` throttled by PROGRESS_INTERVAL_S=0.25 + one final call; total = min(container count, max_frames) or None. Non-Exception exits recorded as `module.Name`. +8 tests (86). CLI 120-frame run unchanged: exit 0, 120/120/120, p50 26.8 ms.
+- 2026-10-31 step 3: Runner (worker thread, process-wide job lock, immutable JobState snapshots, runs/ui/<UTC ts>/ dirs, describe_error → message + next step, live elapsed during model load). 18 runner tests (104 total) incl. lock-leak guard; fixed a test race (tracker built on worker thread). Real-model smoke via runner on a 122-frame clip: auto→cpu, 122/122, complete.
