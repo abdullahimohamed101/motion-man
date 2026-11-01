@@ -1,5 +1,5 @@
 # P0: verify the baseline and formalize contracts
-Status: Draft · Branch: `feat/p0-contracts` · Spec: A§1–A§6, A§10 · Design: MD§20 P0, MD§25 first work package
+Status: Active · Branch: `feat/p0-contracts` · Spec: A§1–A§6, A§10 · Design: MD§20 P0, MD§25 first work package
 
 ## Outcome
 The working MVP keeps working, and every new run becomes a reproducible, identified, validated artifact:
@@ -33,7 +33,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 
 **5. Validation commands:** listed in Acceptance below.
 
-## Decisions (confirm before build)
+## Decisions (confirmed 2026-11-01)
 - D1 Data root `./data` (gitignored), overridable with `--data-root` or `MOTIONMAN_DATA_ROOT`.
 - D2 One command, two modes: `--output-dir` given → legacy mode (same meaning and filenames as today, plus
   `manifest.json`); omitted → canonical mode: generated run_id, staged under the data root, published to
@@ -52,7 +52,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
   after writing; exceeding either is a FAILED run with a message.
 
 ## Steps
-1. [ ] `records.py`: v1.0 frame record writer, validation (finite, positive-extent, in-bounds boxes),
+1. [x] `records.py`: v1.0 frame record writer, validation (finite, positive-extent, in-bounds boxes),
    legacy reader adapter. Tests incl. reading `runs/demo-recording`-shaped legacy lines.
 2. [ ] `store.py`: streamed SHA-256, canonical JSON (sorted, no NaN), run_id, resolved RunSpec
    (weights hash, ByteTrack YAML contents + hash, code revision, requirements hash, env). Tests.
@@ -89,3 +89,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 1–1.5 focused days. Re-estimate P1 (1–2) and P2 (1.5–3) at the P0 gate.
 
 ## Log
+- 2026-11-01 step 1: records.py (v1.0 writer with observation_ids and integer source_t_us, box policy: clip ≤0.5 px overrun, reject the rest; validate(); read_records() adapting pre-v1.0 lines with legacy=True and unknown dims/run_id left None). 20 tests. Real legacy file runs/demo-recording/tracks.jsonl: 1,356 records contiguous, t_us = formula exactly (0 µs diff), 25,361 objects. Pipeline still writes the old format until step 4. 152 tests.
