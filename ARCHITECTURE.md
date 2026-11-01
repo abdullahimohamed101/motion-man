@@ -1,5 +1,5 @@
 # Architecture
-Status: slice + trails built (no JSONL or report yet). Contracts live in `docs/spec.md` §4–§8.
+Status: loop, trails, JSONL and report built; validation and exit codes are plan step 5. Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text

@@ -16,6 +16,20 @@ class Track:
     confidence: float
     bbox_xyxy: tuple[float, float, float, float]  # original-frame pixel coordinates
 
+    def to_dict(self) -> dict:
+        return {
+            "track_id": self.track_id,
+            "class_id": self.class_id,
+            "class_name": self.class_name,
+            "confidence": round(self.confidence, 4),
+            "bbox_xyxy": [round(v, 2) for v in self.bbox_xyxy],
+        }
+
+
+def frame_record(index: int, timestamp_s: float, tracks: list[Track]) -> dict:
+    """One JSONL line (spec §6): written for every processed frame, even with no objects."""
+    return {"frame_index": index, "timestamp_s": round(timestamp_s, 6), "objects": [t.to_dict() for t in tracks]}
+
 
 @dataclass(frozen=True)
 class Frame:

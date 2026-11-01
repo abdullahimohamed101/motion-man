@@ -16,6 +16,11 @@ class Tracker:
         from ultralytics import YOLO
 
         self._model = YOLO(model)
+        self._cuda_sync = None
+        if device.startswith("cuda"):
+            import torch
+
+            self._cuda_sync = torch.cuda.synchronize
         self._kwargs = {
             "persist": True,
             "tracker": "bytetrack.yaml",
@@ -23,12 +28,16 @@ class Tracker:
             "imgsz": imgsz,
             "conf": conf,
             "iou": iou,
+            "half": False,  # FP32, as recorded in the report
             "verbose": False,
         }
 
     def update(self, image: np.ndarray) -> list[Track]:
         result = self._model.track(image, **self._kwargs)[0]
-        return tracks_from_boxes(result.boxes, result.names)
+        tracks = tracks_from_boxes(result.boxes, result.names)
+        if self._cuda_sync is not None:
+            self._cuda_sync()  # GPU work is asynchronous; finish it so the caller's timing is real (spec §8)
+        return tracks
 
 
 def tracks_from_boxes(boxes: Any, names: Mapping[int, str]) -> list[Track]:
