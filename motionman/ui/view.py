@@ -217,7 +217,8 @@ EVENT_LABELS = {"LINE_CROSSING": "Line crossing", "ZONE_ENTRY": "Entered", "ZONE
                 "DWELL_THRESHOLD": "Dwell alert", "OCCUPANCY_THRESHOLD": "Occupancy alert"}  # fmt: skip
 DIRECTION_LABELS = {"NEGATIVE_TO_POSITIVE": "towards +", "POSITIVE_TO_NEGATIVE": "away from +"}
 OCCUPANCY_NOTE = ("Occupancy counts who is inside at one moment; crossings and entries add up over the whole clip, "
-                  "so the numbers differ. Track IDs can fragment, so counts are of tracks, not people.")  # fmt: skip
+                  "so the numbers differ. Track IDs can fragment, so counts are of tracks, not people, and an "
+                  "observed stay ends whenever the tracker misses someone for a frame.")  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -258,7 +259,9 @@ def region_card(r: dict) -> tuple[str, str, str]:
         return (r["name"], f"{r['crossings_total']:,} crossings",
                 f"{c['NEGATIVE_TO_POSITIVE']:,} towards + · {c['POSITIVE_TO_NEGATIVE']:,} away from +")  # fmt: skip
     mean = r["occupancy_us"] / r["covered_us"] if r["covered_us"] else None
-    dwell = f"median stay {r['dwell_median_us'] / 1e6:.1f} s" if r["dwell_median_us"] is not None else "no stays"
+    # "Observed": a stay ends whenever the tracker misses the object for a frame, so short flickers count separately.
+    dwell = (f"median observed stay {r['dwell_median_us'] / 1e6:.1f} s over {r['visits']:,}"
+             if r["dwell_median_us"] is not None else "no observed stays")  # fmt: skip
     parts = [f"{r['exits']:,} left", f"peak {r['peak_occupancy']} at once",
              f"mean {mean:.2f}" if mean is not None else "mean —", dwell]  # fmt: skip
     return r["name"], f"{r['entries']:,} entered", " · ".join(parts)

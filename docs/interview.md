@@ -81,6 +81,14 @@ tracker.
   input-quality hints); `bundle` (allowlisted, redacted, hash-verified debug ZIP). The stage instrumentation
   costs nothing measurable: pre-P2 code ran at 45.14 fps median (44.91–45.98) under the same conditions.
 
+## Release B, P3 (if asked, about 1 minute)
+- **Events & zones.** Lines and rectangles in normalized coordinates per video; a pure rules engine over saved
+  observations (3 px deadband, 100 ms / 2-observation confirmation, any missed frame resets a track, crossings need
+  the motion to cross the finite line); results published atomically under an ID that hashes every input, so
+  reruns are byte-identical and speed-independent. On the crosswalk clip: 22 crossings in 0.46 s, 4 of 6 sampled
+  checked as genuine by eye, 2 at the frame edge; one false pair from a box changing shape, kept and explained
+  rather than tuned away (a bigger deadband drops genuine crossings too).
+
 ## The five questions the brief says to be ready for
 
 **Why are detection and tracking separate?**

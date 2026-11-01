@@ -187,8 +187,9 @@ def test_region_cards_show_totals_and_never_divide_by_zero():
             "crossings": {"NEGATIVE_TO_POSITIVE": 2, "POSITIVE_TO_NEGATIVE": 1}}  # fmt: skip
     assert view.region_card(line) == ("Door", "3 crossings", "2 towards + · 1 away from +")
     zone = {"kind": "rect", "name": "Pen", "entries": 4, "exits": 2, "peak_occupancy": 3, "occupancy_us": 500_000,
-            "covered_us": 1_000_000, "dwell_median_us": 1_500_000}  # fmt: skip
-    assert view.region_card(zone) == ("Pen", "4 entered", "2 left · peak 3 at once · mean 0.50 · median stay 1.5 s")
+            "covered_us": 1_000_000, "dwell_median_us": 1_500_000, "visits": 5}  # fmt: skip
+    expected = "2 left · peak 3 at once · mean 0.50 · median observed stay 1.5 s over 5"
+    assert view.region_card(zone) == ("Pen", "4 entered", expected)
     empty = {**zone, "entries": 0, "exits": 0, "peak_occupancy": 0, "occupancy_us": 0, "covered_us": 0,
              "dwell_median_us": None}  # fmt: skip
-    assert view.region_card(empty)[2] == "0 left · peak 0 at once · mean — · no stays"
+    assert view.region_card(empty)[2] == "0 left · peak 0 at once · mean — · no observed stays"
