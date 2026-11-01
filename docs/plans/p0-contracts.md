@@ -54,7 +54,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 ## Steps
 1. [x] `records.py`: v1.0 frame record writer, validation (finite, positive-extent, in-bounds boxes),
    legacy reader adapter. Tests incl. reading `runs/demo-recording`-shaped legacy lines.
-2. [ ] `store.py`: streamed SHA-256, canonical JSON (sorted, no NaN), run_id, resolved RunSpec
+2. [x] `store.py`: streamed SHA-256, canonical JSON (sorted, no NaN), run_id, resolved RunSpec
    (weights hash, ByteTrack YAML contents + hash, code revision, requirements hash, env). Tests.
 3. [ ] `video_io`: CFR timestamp check + limits in preflight and per frame. Tests with synthetic CFR and
    a deliberately VFR clip.
@@ -90,3 +90,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 
 ## Log
 - 2026-11-01 step 1: records.py (v1.0 writer with observation_ids and integer source_t_us, box policy: clip ≤0.5 px overrun, reject the rest; validate(); read_records() adapting pre-v1.0 lines with legacy=True and unknown dims/run_id left None). 20 tests. Real legacy file runs/demo-recording/tracks.jsonl: 1,356 records contiguous, t_us = formula exactly (0 µs diff), 25,361 objects. Pipeline still writes the old format until step 4. 152 tests.
+- 2026-11-01 step 2: store.py (streamed sha256, canonical JSON rejecting NaN, run_id r_<UTC>_<6hex>, ByteTrack YAML read from package files without importing Ultralytics, git commit + dirty, resolve_runspec: config_sha256 over settings; reproducibility recorded but not hashed; missing weights null + reason). 11 tests. Real hashes match shasum (yolo11n.pt, crosswalk.mp4 81 MB in 0.03 s). 163 tests.
