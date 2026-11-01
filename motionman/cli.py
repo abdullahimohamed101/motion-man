@@ -1,7 +1,7 @@
 """Command-line entry point (spec §5).
 
 ``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
-(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``.
+(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``, ``bundle``.
 
 Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
 locked · 130 interrupted.
@@ -224,4 +224,30 @@ def doctor_main(argv: list[str]) -> int:
     return EXIT_OK if result["ok"] else EXIT_FAILURE
 
 
-SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main}
+def bundle_main(argv: list[str]) -> int:
+    """``motionman bundle``: a sanitized, hash-verified debug ZIP for one run, or verify one (plan P2 D10)."""
+    from motionman import bundle
+
+    p = argparse.ArgumentParser(prog="motionman bundle", description=bundle_main.__doc__.split(": ", 1)[1])
+    what = p.add_mutually_exclusive_group(required=True)
+    what.add_argument("--run", help="run ID of a published run to bundle")
+    what.add_argument("--verify", type=Path, help="check an existing bundle.zip against its manifest")
+    p.add_argument("--include-footage", action="store_true", help="also add annotated.mp4 and the source video")
+    p.add_argument("--include-paths", action="store_true", help="keep full paths instead of redacting them")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    try:
+        if a.verify is not None:
+            result = bundle.verify(a.verify)
+            print(f"ok: {result['entries']} entries match bundle_manifest.json (run {result['run_id']})")
+            return EXIT_OK
+        path = bundle.make_bundle(a.run, data_root=a.data_root, include_footage=a.include_footage,
+                                  include_paths=a.include_paths)  # fmt: skip
+    except bundle.BundleError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return EXIT_FAILURE if a.verify is not None else e.exit_code
+    print(f"bundle written: {path} ({path.stat().st_size / 1024:.0f} KiB)")
+    return EXIT_OK
+
+
+SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main, "bundle": bundle_main}

@@ -158,6 +158,23 @@ faults: a plain or static scene can trigger them. The crosswalk clip measures lu
 and 0% repeats, so it gets no hints. On this Mac, `doctor --device cuda` fails the device check with "use
 --device cpu" as the next step and skips the model load.
 
+## Debug bundle
+
+```bash
+.venv/bin/python -m motionman bundle --run <run_id>
+.venv/bin/python -m motionman bundle --verify data/exports/bundle-<run_id>-<hex>/bundle.zip
+```
+
+Writes `data/exports/bundle-<run_id>-<hex>/bundle.zip` for a published run, after re-verifying the run's hashes. It
+is built from an allowlist: `manifest.json`, `runspec.json`, `report.json`, `tracks.jsonl`, `timings.jsonl`,
+`telemetry.jsonl` (if recorded), a fresh `doctor.json` (no model load), a `README.txt` with reproduce commands,
+and `bundle_manifest.json` with the size and SHA-256 of every entry. The home folder becomes `<redacted>` and
+other absolute paths become `<redacted>/<name>` unless you pass `--include-paths`; the source video and
+`annotated.mp4` are added only with `--include-footage`. Environment variables are never read into it.
+`--verify` re-hashes every entry and refuses unknown, nested, missing or changed entries (exit 1). A real bundle
+of the crosswalk run with telemetry is 610 KiB with 8 entries plus the manifest, and contains no home folder
+path or username.
+
 ## Test
 
 ```bash
