@@ -1,0 +1,163 @@
+MOTIONMAN - GREEN UI STYLE REFERENCE
+Raycast-inspired surfaces, adapted for a local video-tracking workbench
+
+DESIGN DIRECTION
+
+Use a nearly black canvas, quiet elevated panels, fine borders, restrained inset highlights, and a lime-green accent. The video is the focal point. The interface should feel like a compact engineering tool: clear controls, legible measurements, and visible processing state.
+
+This is a proposed MotionMan adaptation of the supplied Raycast style reference, not a description of Raycast's actual brand. Preserve the visual language of the reference without copying its logo, marketing copy, full-screen hero, or website navigation. This reference supplements the existing two-day MotionMan architecture; it does not expand the backend scope.
+
+The primary accent is Motion Lime (#A3E635). Keep almost all application chrome neutral. Use green selectively for the Run tracking action, keyboard focus, active selection, and progress. Do not tint every panel green, use glowing green body text, or make every bounding box the same color.
+
+COLOR TOKENS
+
+Role                    Hex / value                 Usage
+Canvas                  #040506                     Application background
+Panel                   #07080A                     Sidebar and video frame
+Inset surface           #111214                     Inputs and recessed controls
+Raised surface          #1B1C1E                     Badges and subtle hover fills
+Decorative border       #363739                     Panel outlines and dividers
+Primary text            #F5F5F5                     Headings, controls, metric values
+Secondary text          #A1A1AA                     Labels, descriptions, metadata
+Muted text              #8B8C91                     Low-emphasis readable captions
+Motion Lime             #A3E635                     Primary action, focus, active state
+Lime hover              #B5EF59                     Hovered primary action
+Lime pressed            #8CC927                     Pressed primary action
+Accent tint             #17210D                     Selected row / subtle accent well
+Text on lime            #0B1105                     Primary-button text and icons
+Warning                 #FBBF24                     Warning icon plus written label
+Error                   #F87171                     Error icon plus written message
+Neutral action fill     #E6E6E6                     Optional neutral filled action
+
+The primary button uses dark text on lime, not white. Calculated text contrast is approximately 12.7:1 for #0B1105 on #A3E635. Secondary text #A1A1AA on the panel background is approximately 7.8:1. These checks cover these color pairs only, not the accessibility of the completed application. Essential text must not use the original reference's very dim #6A6B6C.
+
+Success can use a lime check icon with the word Complete. Processing uses an explicit Processing label and a progress indicator. Idle is neutral. Error and warning colors remain semantic exceptions to the green brand palette. Never communicate state through color alone.
+
+TYPOGRAPHY AND SPACING
+
+- Interface: Inter when available, otherwise a system sans-serif stack. Use weights 400, 500, and 600.
+- Technical values: Geist Mono when available, otherwise ui-monospace / Menlo / Consolas. Use for IDs, durations, filenames, and performance numbers.
+- App title: 24px / 600. Section labels: 14-16px / 500-600. Body and controls: 14px with about 1.5 line height. Metadata: 12px with at least 1.4 line height. Metric values: 24-28px.
+- Keep the 56-64px marketing headlines out of the application.
+- Base spacing: 8px, with 4px increments allowed for dense controls. Use explicit 8, 12, 16, and 24px gaps. Page padding: 24px. Panel padding: 16-24px.
+- Radii: buttons and inputs 8px; badges 6px; cards 16px. Do not introduce several near-identical radius variants.
+- Separate panels with a neutral hairline and a faint inset top highlight. Avoid large floating shadows or dramatic blur over the video.
+
+SCREEN LAYOUT
+
+Desktop first: a compact header, a roughly 280px controls sidebar, and the remaining width devoted to the video workspace. Use a 24px column gap. On narrow screens, stack the controls above the video; do not build a separate mobile navigation system.
+
+1. Header
+   MotionMan wordmark; small Object Tracking Workbench subtitle; the actual device used; and Idle / Processing / Complete / Error. A small lime tracking-bracket mark is sufficient. Do not use NVIDIA's or Raycast's logo, or imply affiliation. No pricing, account, team, or installation navigation.
+
+2. Controls sidebar
+   Upload MP4 or Use demo clip; source filename, dimensions, duration, and playback FPS; CPU / Auto / CUDA selection; confidence threshold; one primary Run tracking button. Keep YOLO11n as the fixed default model and show its name as metadata. Additional model choices are out of scope.
+
+3. Video workspace
+   Use a large neutral video panel with a compact Original / Tracked selector above it. Preserve the video's aspect ratio. The Tracked view shows the completed annotated result with native playback controls. Keep the video unobscured by decorative gradients. Switching views does not rerun inference. Synchronized players, a custom timeline, clickable object selection, and live camera input are out of scope.
+
+4. Metrics strip
+   Show processing FPS, detection-plus-tracking p95 latency, frames processed, and processing duration. Values come from the run report. Before completion, show a dash or Pending rather than fake zeroes or hardcoded performance. Label source playback FPS separately from processing FPS. An unavailable latency statistic is N/A, not zero.
+
+5. Exports and run details
+   Neutral download actions for annotated video, tracking JSONL, and report JSON. A collapsed Run details section holds the actual model, input size, device, versions, and run settings. No database-backed history, account system, or persistent dashboard service.
+
+COMPONENT AND STATE RULES
+
+Primary action: green fill, dark label, 8px radius, visible hover and pressed changes. This intentionally overrides the supplied Raycast reference's prohibition on colored CTAs. Only Run tracking receives this treatment; downloads and other secondary controls remain neutral.
+
+Inputs: recessed dark surface, visible label, restrained border, and a clear 2px lime keyboard-focus outline with 2px offset. Placeholder text does not replace the label. Focus must not be removed merely for appearance.
+
+Panels: 16px radius, neutral border, subtle inset top highlight. Do not copy the source's many near-duplicate outer-shadow stacks. A faint lime tint is appropriate on the selected control, not across the whole page.
+
+Processing: show progress, processed frames, and elapsed time. Disable duplicate submissions. Only claim a percentage when a usable total is known; otherwise show a processing indicator and frame count. Keep progress updates modest so UI redraws do not dominate the work.
+
+Errors: show a short explanation and a next step, such as choosing another video or CPU. Preserve useful completed artifacts when possible. A failed run must not retain an old Complete badge or present the previous run's measurements as new results.
+
+Track overlays: assign colors deterministically from track ID, using a small palette such as lime, cyan, amber, and violet. Match each object's trail to its box color. Draw the ID and class label with a readable backing. ID text carries identity even when palette colors repeat or are difficult to distinguish. Brand color and track visualization are separate concerns.
+
+CSS TOKEN STARTER
+
+These are framework-neutral design tokens and example classes, not a complete UI or guaranteed selectors for Streamlit internals. For the two-day Python UI, prefer supported theme settings and standard components; do not spend the deadline fighting undocumented DOM structure. Tailwind, React, and a separate API are not required.
+
+```css
+:root {
+  --mm-bg: #040506;
+  --mm-panel: #07080a;
+  --mm-inset: #111214;
+  --mm-raised: #1b1c1e;
+  --mm-border: #363739;
+  --mm-text: #f5f5f5;
+  --mm-text-secondary: #a1a1aa;
+  --mm-text-muted: #8b8c91;
+  --mm-accent: #a3e635;
+  --mm-accent-hover: #b5ef59;
+  --mm-accent-pressed: #8cc927;
+  --mm-accent-tint: #17210d;
+  --mm-on-accent: #0b1105;
+  --mm-warning: #fbbf24;
+  --mm-error: #f87171;
+  --mm-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --mm-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+  --mm-radius-control: 8px;
+  --mm-radius-badge: 6px;
+  --mm-radius-card: 16px;
+  --mm-page-padding: 24px;
+  --mm-section-gap: 24px;
+  --mm-element-gap: 12px;
+  --mm-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.mm-panel {
+  color: var(--mm-text);
+  background: var(--mm-panel);
+  border: 1px solid var(--mm-border);
+  border-radius: var(--mm-radius-card);
+  padding: 24px;
+  box-shadow: var(--mm-panel-highlight);
+}
+
+.mm-primary {
+  color: var(--mm-on-accent);
+  background: var(--mm-accent);
+  border: 1px solid transparent;
+  border-radius: var(--mm-radius-control);
+  padding: 12px 16px;
+  font: 600 14px/1.5 var(--mm-font);
+  cursor: pointer;
+}
+.mm-primary:not(:disabled):hover { background: var(--mm-accent-hover); }
+.mm-primary:not(:disabled):active { background: var(--mm-accent-pressed); }
+.mm-primary:disabled {
+  background: var(--mm-raised);
+  color: var(--mm-text-muted);
+  cursor: not-allowed;
+}
+.mm-app :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--mm-accent);
+  outline-offset: 2px;
+}
+.mm-metric-value {
+  color: var(--mm-text);
+  font: 500 26px/1.2 var(--mm-mono);
+  font-variant-numeric: tabular-nums;
+}
+```
+
+IMPLEMENTATION HANDOFF FOR CLAUDE
+
+Apply this visual reference to the existing MotionMan two-day build. Add a small local UI over the same pipeline used by the CLI. Start with layout, upload/demo selection, an explicit Run tracking action, output playback, metrics, and exports. Keep completed artifact paths in session state so UI interactions do not accidentally launch inference again. Use a fresh tracker per run and keep inference logic out of UI components.
+
+Follow this document's MotionMan overrides when the original Raycast reference conflicts: lime accent, one green primary action, compact application spacing, readable secondary text, and a workbench layout instead of a landing page. Do not add a marketing hero, platform-download buttons, decorative blue/red gradients, authentication, billing, or a new frontend framework. Keep the UI budget to approximately 2-3 hours after the core pipeline works. If visual details exceed that budget, preserve clarity and working controls first.
+
+Verify keyboard focus, text readability, pending/running/completed/error states, browser video playback, and that metrics come from the current run. Use CLI runs for controlled performance comparisons. This is a UI specification and styling starter; it does not claim that a running interface has already been implemented.
+
+REFERENCE CORRECTIONS INCLUDED
+
+- Replaced coral/ember branding with Motion Lime and a muted green tint.
+- Corrected the invalid five-digit badge color #1b1c1 to #1b1c1e.
+- Replaced descriptive CSS ranges such as 80-120px and 8-16px with actual length values.
+- Made badge radius and spacing rules consistent.
+- Replaced dim essential text with more readable grays.
+- Removed conflicting shadow recommendations and documented the colored-CTA override.
+- Removed marketing-only layout requirements from the application brief.
