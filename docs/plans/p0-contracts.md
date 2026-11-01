@@ -89,15 +89,20 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 MD says 0.5–1 focused day. Because records, identity and publication contracts are all new, expect
 1–1.5 focused days. Re-estimate P1 (1–2) and P2 (1.5–3) at the P0 gate.
 
-## Gate decision (P0.5): PASS
-All eight acceptance rows pass with real-command evidence (table above); 200 offline tests; CI unchanged.
-The baseline is `data/runs/r_20261101T060226Z_90470c` (1,356 frames, 45.19 fps on mains, manifest verified).
+## Gate decision (P0.5): PASS after review fixes
+The first gate claim was overstated: the independent review found a P1 (a truncated MP4 published as SUCCEEDED
+with 8 of 60 frames) and 12 P2s; all are fixed in `8f9ec5e` with regression tests (`tests/test_integrity.py`).
+All eight acceptance rows pass; 214 offline tests. The baseline is now `data/runs/r_20261101T062222Z_2ad4d6`
+at clean commit `8f9ec5e` (`dirty: false`): 1,356 frames reported = decoded = inferred = records = written,
+`source_complete`/`records`/`video_decode` PASS, hashes = shasum, 44.67 fps on mains.
 
 **Known limitations carried into P1:**
 - Legacy `--output-dir` runs take no lease (no data root), so two legacy runs can overlap. Documented in D6.
 - Failed and interrupted attempts stay in `data/staging/` indefinitely; there is no cleanup command yet
   (MD§17 wants explicit, preview-first deletion, not automatic).
 - The output budget is checked after writing, not during; an oversized run writes, then fails.
+- Completeness against the container's frame count is only as good as that count; when the container gives none,
+  the manifest records `source_complete: UNVERIFIED` instead of passing.
 - The constant-frame-rate check relies on OpenCV container timestamps; clips without usable timestamps are
   rejected, not assumed constant.
 - `report.json` keeps the MVP status words (`success`/`error`/`interrupted`) while the manifest uses
@@ -119,3 +124,4 @@ touches most of `app.py`. P2 stays at 1.5–3 days. Each phase still stops at it
 - 2026-11-01 step 6: audit of P0.4 + MD§18 fixture 9 per mode. Legacy already covered everything; canonical gaps filled in tests/test_failures.py (9): invalid input creates nothing in data/ (no import), all-empty run succeeds, writer failure and non-finalizing output (fixture 9: FAILED manifest, video_decode FAIL, not published), tracker box outside the image fails the run, lease released after error and interrupt. 200 tests.
 - 2026-11-01 step 7: all acceptance rows recorded with real commands (P0-1..8 PASS). Baseline: r_20261101T060226Z_90470c (1356 frames, 45.19 fps, AC). The v1.0 run and the MVP-era run of the same clip have identical observation counts (25,361).
 - 2026-11-01 step 8: gate PASS recorded with limitations and revised estimates (P1 1.5–2.5 days). README: canonical vs legacy runs, v1.0 records + adapter, runspec/manifest, exit 75, input limits, UI on the data root, 200 tests, new modules. interview.md and demo-script.md test counts and all 20 file:line references re-verified against the rewritten code.
+- 2026-11-01 verify: reviewer confirmed P0-1/2/3/5/6/7 itself (extra CFR false-reject probes all accepted: B-frames, ts offset, 29.97, MKV), P0-4 by test, P0-8 unverified (no browser). P1: truncated faststart MP4 published as SUCCEEDED (8/60) — reproduced, fixed (completeness vs container count; container count measured exact on MP4/MKV/faststart). 12 P2s all fixed: real decoded/inferred/records counters; publish failure rewrites manifest FAILED; failed report run_dir = staging; managed input keyed by hash only, re-hashed on reuse, meta heals, upload display names; records check requires native v1.0 of this run/source; runtime duration limit; SourceChangedError + next step; --data-root with --output-dir refused; README wording; subprocess lease and canonical tamper tests. 15 regression tests, 214 total. Clean-commit baseline r_20261101T062222Z_2ad4d6.
