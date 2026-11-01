@@ -168,6 +168,20 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 
 ## Benchmark
 
+```bash
+.venv/bin/python -m motionman benchmark --source clips/crosswalk.mp4 --repeats 3 --label "mains, lid open"
+```
+
+Runs the same clip and settings `--repeats` times (default 3). Every trial is a fresh, published canonical run
+with its own tracker, run ID and records; nothing is reused between trials. It prints each trial and the median
+with its range, and writes `data/benchmarks/<id>/benchmark.json`: settings, per-trial run ID, status, fps, stage
+p50/p95, power state (AC, battery with percent, or unknown) and the environment. A failed trial stays listed and is
+left out of the median; the exit code is 1 if any trial failed. Options: `--device`, `--imgsz`, `--max-frames`,
+`--telemetry`, `--label`, `--data-root`. A short smoke run (3 × 240 frames, battery 93%) gave a median of
+42.42 fps with a range of 37.76–43.11, which is why the range is reported and not just one number.
+
+The tables below were measured before the benchmark command existed, by running the CLI three times by hand.
+
 Three runs of the same clip and configuration in each power state (`clips/crosswalk.mp4`: 1,356 frames,
 1920×1080, 23.976 fps, 56.5 s; YOLO11n, imgsz 640, FP32, CPU).
 

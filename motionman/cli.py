@@ -1,6 +1,10 @@
 """Command-line entry point (spec §5).
 
-Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 130 interrupted.
+``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
+(plan P2 D11) dispatches instead: ``benchmark``.
+
+Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
+locked · 130 interrupted.
 """
 
 from __future__ import annotations
@@ -68,6 +72,9 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in SUBCOMMANDS:
+        return SUBCOMMANDS[argv[0]](argv[1:])
     config = parse_args(argv)  # argparse exits with 2 on bad flags
     out = config.output_dir
     # Only point at a report this run wrote, never at an earlier run's results in a refused directory.
@@ -101,3 +108,49 @@ def main(argv: list[str] | None = None) -> int:
         f"({t['end_to_end_fps']} fps end to end, device {report['device']['used']}) → {report['run_dir']}"
     )
     return EXIT_OK
+
+
+def benchmark_main(argv: list[str]) -> int:
+    """``motionman benchmark``: repeat one configuration with fresh inference; median and range (plan P2 D5)."""
+    from motionman import benchmark
+
+    p = argparse.ArgumentParser(prog="motionman benchmark", description=benchmark_main.__doc__.split(": ", 1)[1])
+    p.add_argument("--source", type=Path, required=True, help="input video")
+    p.add_argument("--repeats", type=_positive_int, default=3, help="independent trials (default: 3)")
+    p.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="default: cpu")
+    p.add_argument("--imgsz", type=_imgsz, default=640, help="inference size in pixels (default: 640)")
+    p.add_argument("--max-frames", type=_positive_int, default=None, help="stop each trial after this many frames")
+    p.add_argument("--telemetry", action="store_true", help="sample process memory in each trial")
+    p.add_argument("--label", default=None, help="a note stored with the result, e.g. 'mains, lid open'")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    if not a.source.is_file():
+        p.error(f"--source: no such file: {a.source}")
+
+    def show(t: dict) -> None:
+        power = t["power"]["source"] + (f" {t['power']['percent']}%" if "percent" in t["power"] else "")
+        if t["status"] == "succeeded":
+            print(f"trial {t['trial']}: {t['end_to_end_fps']} fps, {t['processed_frames']} frames, "
+                  f"run {t['run_id']} ({power})")  # fmt: skip
+        else:
+            print(f"trial {t['trial']}: FAILED ({power}): {t['error']}", file=sys.stderr)
+
+    try:
+        path, doc = benchmark.run_benchmark(
+            a.source, repeats=a.repeats, device=a.device, imgsz=a.imgsz, max_frames=a.max_frames,
+            telemetry=a.telemetry, label=a.label, data_root=a.data_root, on_trial=show,
+        )  # fmt: skip
+    except KeyboardInterrupt:
+        print("interrupted; finished trials are kept in the benchmark file", file=sys.stderr)
+        return EXIT_INTERRUPTED
+    s = doc["summary"]
+    fps = s["fps"]
+    if fps["median"] is not None:
+        print(f"median {fps['median']} fps (range {fps['min']}–{fps['max']}) over {fps['trials']} trials; "
+              f"{s['failed']} failed; power {', '.join(s['power_sources'])} → {path}")  # fmt: skip
+    else:
+        print(f"no trial succeeded → {path}", file=sys.stderr)
+    return EXIT_OK if s["failed"] == 0 else EXIT_FAILURE
+
+
+SUBCOMMANDS = {"benchmark": benchmark_main}
