@@ -4,16 +4,17 @@
 Updated: 2026-10-31
 
 ## Now
-- Active plan: `docs/plans/cli-mvp.md` (Active; steps 1–6 done; A1, A5–A8 pass)
+- Active plan: `docs/plans/cli-mvp.md`: all 7 steps done, A1–A10 PASS. Not yet verified by the reviewer or shipped.
 - Branch: `feat/cli-mvp`, stacked on `feat/project-docs` (neither pushed nor merged)
-- Env: `.venv` (py3.11.17) from `requirements-dev.txt`; `yolo11n.pt` in repo root (gitignored)
+- Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/crosswalk.mp4` local and gitignored (README has the commands)
 
 ## Next step (exact)
-1. Plan step 7 (needs the demo clip): real-model run + visual review (A2–A4), 3 benchmark runs + median (A9),
-   README with setup/run/test, module roles, real numbers + hardware, limitations, clip attribution; fresh-env check (A10).
+1. `verify` skill via the `reviewer` subagent on `main...feat/cli-mvp`; fix any P0/P1.
+2. `ship`: move the plan to `docs/plans/done/`, draft the PR text, ask before pushing.
+3. Then write the UI plan (spec §9).
 
 ## Blocked / needs owner
-- Demo clip: 30–60 s people/vehicles, reuse rights (the local Valorant MP4 doesn't fit spec §1).
+- none
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 71 passed (0.45 s, offline, network blocked, torch never imported).
+- `scripts/check.sh`: ruff ok, 71 passed. Crosswalk demo + 3 benchmarks exit 0 (median 25.95 fps, CPU, on battery).

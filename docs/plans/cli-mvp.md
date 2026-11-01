@@ -29,21 +29,21 @@ on this Mac), anything in §2.
    post-run frame-count check.
 6. [x] Tests: record conversion, missing IDs, empty frames, trail bounds/expiry, timing math, output frame
    count, invalid input, cleanup on failure. Synthetic clip + fake tracker. `scripts/check.sh`.
-7. [ ] Real-model demo + visual review; 3 benchmark runs; README with real numbers and hardware.
+7. [x] Real-model demo + visual review; 3 benchmark runs; README with real numbers and hardware.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
 | A1 | Offline tests pass | `scripts/check.sh` | PASS: ruff ok, 71 passed in 0.45 s; conftest blocks network and fails if torch/ultralytics load |
-| A2 | Demo run exits 0, 3 artifacts | `python -m motionman --source <clip> --output-dir runs/a2 --device cpu; ls runs/a2` | |
-| A3 | JSONL lines == processed_frames == decoded output frames | `wc -l runs/a2/tracks.jsonl`; report fields | |
-| A4 | Output keeps source dims + FPS | `ffprobe` source vs `annotated.mp4` | |
+| A2 | Demo run exits 0, 3 artifacts | `python -m motionman --source clips/crosswalk.mp4 --output-dir runs/demo --device cpu` | PASS: exit 0, 3 artifacts, boxes/IDs/trails visually checked |
+| A3 | JSONL lines == processed_frames == decoded output frames | `wc -l runs/demo/tracks.jsonl`; report fields | PASS: 1356 = 1356 = 1356 |
+| A4 | Output keeps source dims + FPS | `ffprobe` source vs `annotated.mp4` | PASS: 1920x1080 both; 24000/1001 vs 2997/125 (both 23.976) |
 | A5 | Non-empty output dir rejected, source untouched | run twice into `runs/a2` → non-zero exit | PASS (pan clip): exit 2, `output directory must be new or empty` |
 | A6 | Missing / bad input → clear message, non-zero exit | `--source nope.mp4`; `--source AGENTS.md` | PASS: exit 2 each (not found / cannot open / odd 639x479); no dir created |
 | A7 | `--device cuda` on this Mac → clear error | run with `--device cuda` | PASS: exit 2, `CUDA is not available ... use --device cpu` |
 | A8 | Ctrl-C mid-run → report status `interrupted`, files closed | send SIGINT, read report | PASS: exit 130, one-line message; 188 = jsonl = decoded |
-| A9 | 3 benchmark runs + median recorded | README table | |
-| A10 | Fresh env install + test from README | new venv, follow README | |
+| A9 | 3 benchmark runs + median recorded | README table | PASS: 25.95 / 25.19 / 26.01 fps, median 25.95 (M5 Pro CPU, on battery) |
+| A10 | Fresh env install + test from README | new venv, follow README | PASS: clean clone, uv install, check.sh 71 passed, 48-frame run exit 0 |
 
 ## Risks
 - Another machine's OpenCV may lack H.264 → `mp4v` fallback logs a warning; browser playback then needs a re-encode.
@@ -57,3 +57,4 @@ on this Mac), anything in §2.
 - 2026-10-31 step 4: JSONL streamed, metrics.py, report.json (atomic write, written on every exit once the dir is ours). `half=False` passed so FP32 is true; CUDA sync in Tracker.update (UNVERIFIED (env)). 26 tests pass, torch not imported. Pan clip: 90 = jsonl = decoded, status success. SIGINT mid-loop (360-frame clip): interrupted, 126 = jsonl = decoded, video playable. Finding for step 7: the first model.track call does ~1–2 s of lazy Ultralytics imports inside the wall time; SIGINT then leaves a 0-frame mp4.
 - 2026-10-31 step 5: MotionManError base; resolve_device (cpu never imports torch; auto→cpu logged; cuda w/o GPU → exit 2); ModelError on bad weights; --imgsz multiple of 32, --max-frames ≥1; exit codes 0/1/2/130; post-run decode check → `output_frames_decoded`. Ultralytics 8.4.196 deprecated `half` (warned per frame) → `quantize=32`. 42 tests pass. A5–A8 PASS.
 - 2026-10-31 step 6: test_video_io (13) + test_pipeline (16, synthetic clip + scripted FakeTracker: artifacts agree, empty frames, null IDs, max-frames, null latency, fresh tracker, refused dir untouched, mid-run error/interrupt cleanup, no frames, count mismatch, writer failure releases reader). scripts/check.sh. INV-8 enforced in conftest (probe: exit 1). Fixed a flaky fps assertion (ms rounding on ~4 ms runs). 71 tests total.
+- 2026-10-31 step 7: D6 resolved with CC0 Wikimedia clip (Yonge & Dundas crosswalk), converted to H.264 CFR 23.976, 1356 frames. Demo + 3 benchmarks (median 25.95 fps e2e, detect+track p50 ~31 ms). 701 distinct IDs, median life 11 frames (fragmentation documented). README written. A1–A10 all PASS.

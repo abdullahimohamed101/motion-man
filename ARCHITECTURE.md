@@ -1,5 +1,5 @@
 # Architecture
-Status: CLI complete and tested on synthetic clips; real-clip demo and benchmarks (plan step 7) remain. Contracts live in `docs/spec.md` §4–§8.
+Status: CLI MVP complete (plan cli-mvp, A1–A10 PASS). UI (spec §9) not started. Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text
