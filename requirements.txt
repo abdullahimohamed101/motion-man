@@ -1,0 +1,8 @@
+# Pinned after the step 1 smoke test passed (CPU, Python 3.11.17, macOS arm64).
+ultralytics==8.4.196
+opencv-python==5.0.0.93
+torch==2.15.0
+torchvision==0.29.2
+numpy==2.4.6
+lap==0.5.13  # ByteTrack assignment; pinned so Ultralytics never auto-installs it at runtime
+pytest==9.2.0

@@ -1,5 +1,5 @@
 # CLI MVP: video in, three artifacts out
-Status: Draft · Branch: `feat/cli-mvp` · Spec: §1–§8, §10
+Status: Active · Branch: `feat/cli-mvp` · Spec: §1–§8, §10
 
 ## Outcome
 `python -m motionman --source clip.mp4 --output-dir runs/demo --device cpu` produces a playable
@@ -10,7 +10,7 @@ Status: Draft · Branch: `feat/cli-mvp` · Spec: §1–§8, §10
 UI (separate plan, spec §9), decoder thread (§7, only if time remains), CUDA verification (no GPU
 on this Mac), anything in §2.
 
-## Decisions (confirm before build)
+## Decisions (confirmed 2026-10-31)
 - D1 Python 3.11 via `uv` (host has 3.9/3.12 only); `requirements.txt` pinned after step 1 passes.
 - D2 Dev-only lint: `ruff` in `requirements-dev.txt`; pytest stays the only test tool.
 - D3 Devices stay `cpu|cuda|auto` per §5. On this Mac `auto` → CPU (logged). Apple MPS is not added.
@@ -20,7 +20,7 @@ on this Mac), anything in §2.
 - D6 Demo clip: owner supplies a 30–60 s people/vehicles clip with reuse rights (needed by step 2).
 
 ## Steps
-1. [ ] Env + smoke: uv venv 3.11, install ultralytics/opencv/pytest, one-frame detection on CPU.
+1. [x] Env + smoke: uv venv 3.11, install ultralytics/opencv/pytest, one-frame detection on CPU.
    Pin `requirements.txt`. Confirm the installed `model.track` result API (`boxes.id/xyxy/cls/conf`).
 2. [ ] Vertical slice: `types`, `video_io`, `tracking`, `pipeline`, `__main__` with boxes + IDs; playable output.
 3. [ ] Trails + overlays (`render.py`): bounded deque, 60-frame expiry, colour from ID, label backing.
@@ -51,3 +51,4 @@ on this Mac), anything in §2.
 - CPU throughput on long clips is slow → use `--max-frames` while iterating.
 
 ## Log
+- 2026-10-31 step 1: py3.11.17 venv; bus.jpg CPU: 5 dets, track IDs 1–5 stable over 2 frames, empty frame → `boxes.id` None; `boxes.xyxy/cls/conf` are tensors. Pinned. Weights download prints a long progress bar: use `verbose=False` and pre-fetched weights.

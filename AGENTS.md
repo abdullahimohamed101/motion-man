@@ -33,7 +33,7 @@ Two-day Python MVP (spec §1–§2). Anything not in `docs/spec.md` is out of sc
 - INV-8 `pytest` needs no GPU, network or weight download (fake tracker); real-model checks are separate.
 
 ## Commands
-- Setup: `uv venv -p 3.11 && uv pip install -r requirements.txt`
+- Setup: `uv venv -p 3.11 && uv pip install -r requirements-dev.txt`
 - Focused test: `.venv/bin/pytest -q tests/test_<module>.py`
 - Gate: `scripts/check.sh` (ruff + pytest, failures only). Run before `ship`.
 - Demo: `.venv/bin/python -m motionman --source <clip>.mp4 --output-dir runs/<name> --device cpu`
