@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
-import logging
 from collections.abc import Callable
 from time import perf_counter
 from typing import Protocol
@@ -11,9 +11,8 @@ from typing import Protocol
 import numpy as np
 
 from motionman import metrics, render, video_io
+from motionman.tracking import resolve_device
 from motionman.types import RunConfig, Track, frame_record
-
-log = logging.getLogger(__name__)
 
 ANNOTATED = "annotated.mp4"
 TRACKS = "tracks.jsonl"
@@ -38,22 +37,31 @@ def prepare_output_dir(config: RunConfig) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
 
-def run(config: RunConfig, make_tracker: Callable[[RunConfig], FrameTracker] = default_tracker) -> dict:
+def run(
+    config: RunConfig,
+    make_tracker: Callable[[RunConfig], FrameTracker] = default_tracker,
+    resolve: Callable[[str], str] = resolve_device,
+) -> dict:
     """Process the source, write the three artifacts, and return the report.
 
-    report.json is written on every exit once the output directory is ours, with status
-    ``error`` or ``interrupted`` for partial runs (INV-6).
+    Input and device problems fail before the output directory is created. Once it exists,
+    report.json is written on every exit, with status ``error`` or ``interrupted`` for partial
+    runs (INV-6). A run only succeeds if the reopened output decodes to ``processed_frames``.
     """
     cap, info = video_io.open_reader(config.source)
     m = metrics.Metrics()
     status, error = "error", None
+    device_used: str | None = None
+    decoded: int | None = None
     out_ready = False
     writer = jsonl = None
     try:
+        device_used = resolve(config.device)
         prepare_output_dir(config)
         out_ready = True
         t = perf_counter()
-        tracker = make_tracker(config)  # fresh tracker per run; never shared across videos (INV-1)
+        # Fresh tracker per run; never shared across videos (INV-1).
+        tracker = make_tracker(dataclasses.replace(config, device=device_used))
         m.model_load_s = perf_counter() - t
         writer = video_io.open_writer(config.output_dir / ANNOTATED, info)
         jsonl = (config.output_dir / TRACKS).open("w", encoding="utf-8")
@@ -72,6 +80,11 @@ def run(config: RunConfig, make_tracker: Callable[[RunConfig], FrameTracker] = d
         m.stop()
         if m.processed_frames == 0:
             raise video_io.VideoError(f"no decodable frames in {config.source}")
+        decoded = video_io.count_frames(config.output_dir / ANNOTATED)  # outside the timed region
+        if decoded != m.processed_frames:
+            raise video_io.VideoError(
+                f"output check failed: wrote {m.processed_frames} frames but {ANNOTATED} decodes to {decoded}"
+            )
         status = "success"
     except KeyboardInterrupt:
         status, error = "interrupted", "interrupted by user"
@@ -87,15 +100,14 @@ def run(config: RunConfig, make_tracker: Callable[[RunConfig], FrameTracker] = d
             jsonl.close()
         m.stop()
         report = metrics.build_report(
-            status=status, error=error, config=config, info=info, metrics=m, device_used=config.device
+            status=status,
+            error=error,
+            config=config,
+            info=info,
+            metrics=m,
+            device_used=device_used,
+            output_frames_decoded=decoded,
         )
         if out_ready:
             metrics.write_report(config.output_dir / REPORT, report)
-    log.info(
-        "%d frames in %.2fs (%.2f fps end to end) → %s",
-        m.processed_frames,
-        m.processing_wall_s,
-        m.end_to_end_fps,
-        config.output_dir,
-    )
     return report

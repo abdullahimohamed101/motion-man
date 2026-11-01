@@ -9,7 +9,7 @@ from pathlib import Path
 
 import cv2
 
-from motionman.types import Frame, VideoInfo
+from motionman.types import Frame, MotionManError, VideoInfo
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 _CODECS = ("avc1", "mp4v")
 
 
-class VideoError(Exception):
+class VideoError(MotionManError):
     """A video could not be read or written; the message says why."""
 
 

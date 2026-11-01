@@ -73,7 +73,7 @@ def build_report(
     config: RunConfig,
     info: VideoInfo,
     metrics: Metrics,
-    device_used: str,
+    device_used: str | None,
     output_frames_decoded: int | None = None,
 ) -> dict:
     fps = metrics.end_to_end_fps
@@ -113,7 +113,7 @@ def build_report(
     }
 
 
-def environment(device_used: str) -> dict:
+def environment(device_used: str | None) -> dict:
     env = {
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -122,7 +122,7 @@ def environment(device_used: str) -> dict:
         "gpu": None,
         "packages": {name: _version(name) for name in PACKAGES},
     }
-    if device_used.startswith("cuda"):
+    if device_used and device_used.startswith("cuda"):
         import torch
 
         env["gpu"] = torch.cuda.get_device_name(0)

@@ -2,12 +2,46 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
 
-from motionman.types import Track
+from motionman.types import MotionManError, Track
+
+log = logging.getLogger(__name__)
+
+
+class DeviceError(MotionManError):
+    pass
+
+
+class ModelError(MotionManError):
+    pass
+
+
+def _cuda_available() -> bool:
+    import torch
+
+    return torch.cuda.is_available()
+
+
+def resolve_device(requested: str, cuda_available: Callable[[], bool] = _cuda_available) -> str:
+    """cpu stays cpu without importing torch; auto falls back to cpu (logged); explicit cuda must exist."""
+    if requested == "cpu":
+        return "cpu"
+    if requested == "cuda":
+        if not cuda_available():
+            raise DeviceError("--device cuda requested but CUDA is not available on this machine; use --device cpu")
+        return "cuda"
+    if requested == "auto":
+        if cuda_available():
+            log.info("device auto → cuda")
+            return "cuda"
+        log.info("device auto → cpu (CUDA not available)")
+        return "cpu"
+    raise DeviceError(f"unknown device {requested!r}; expected cpu, cuda or auto")
 
 
 class Tracker:
@@ -15,7 +49,10 @@ class Tracker:
         # Imported here so offline tests never load torch (INV-8).
         from ultralytics import YOLO
 
-        self._model = YOLO(model)
+        try:
+            self._model = YOLO(model)
+        except Exception as e:  # missing file, failed download, corrupt weights
+            raise ModelError(f"cannot load model {model!r}: {e}") from e
         self._cuda_sync = None
         if device.startswith("cuda"):
             import torch
@@ -28,7 +65,7 @@ class Tracker:
             "imgsz": imgsz,
             "conf": conf,
             "iou": iou,
-            "half": False,  # FP32, as recorded in the report
+            "quantize": 32,  # FP32, as recorded in the report (replaces the deprecated `half`)
             "verbose": False,
         }
 

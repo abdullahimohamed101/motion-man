@@ -8,6 +8,10 @@ from pathlib import Path
 import numpy as np
 
 
+class MotionManError(Exception):
+    """An expected failure with a message the user can act on (bad input, device, writer...)."""
+
+
 @dataclass(frozen=True)
 class Track:
     track_id: int | None  # None when the tracker has not assigned an ID; never invented (INV-2)

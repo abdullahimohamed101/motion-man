@@ -1,5 +1,5 @@
 # Architecture
-Status: loop, trails, JSONL and report built; validation and exit codes are plan step 5. Contracts live in `docs/spec.md` §4–§8.
+Status: CLI complete on synthetic clips; integration tests (step 6) and real-clip demo (step 7) remain. Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text

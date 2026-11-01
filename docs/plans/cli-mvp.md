@@ -25,7 +25,7 @@ on this Mac), anything in §2.
 2. [x] Vertical slice: `types`, `video_io`, `tracking`, `pipeline`, `__main__` with boxes + IDs; playable output.
 3. [x] Trails + overlays (`render.py`): bounded deque, 60-frame expiry, colour from ID, label backing.
 4. [x] JSONL streaming + `metrics.py` + `report.json` (wall time, e2e FPS, p50/p95 after warmup, versions).
-5. [ ] `cli.py` flags + validation + clear failures and exit codes; `finally` cleanup; interrupted/error status;
+5. [x] `cli.py` flags + validation + clear failures and exit codes; `finally` cleanup; interrupted/error status;
    post-run frame-count check.
 6. [ ] Tests: record conversion, missing IDs, empty frames, trail bounds/expiry, timing math, output frame
    count, invalid input, cleanup on failure. Synthetic clip + fake tracker. `scripts/check.sh`.
@@ -38,10 +38,10 @@ on this Mac), anything in §2.
 | A2 | Demo run exits 0, 3 artifacts | `python -m motionman --source <clip> --output-dir runs/a2 --device cpu; ls runs/a2` | |
 | A3 | JSONL lines == processed_frames == decoded output frames | `wc -l runs/a2/tracks.jsonl`; report fields | |
 | A4 | Output keeps source dims + FPS | `ffprobe` source vs `annotated.mp4` | |
-| A5 | Non-empty output dir rejected, source untouched | run twice into `runs/a2` → non-zero exit | |
-| A6 | Missing / bad input → clear message, non-zero exit | `--source nope.mp4`; `--source README.md` | |
-| A7 | `--device cuda` on this Mac → clear error | run with `--device cuda` | |
-| A8 | Ctrl-C mid-run → report status `interrupted`, files closed | send SIGINT, read report | |
+| A5 | Non-empty output dir rejected, source untouched | run twice into `runs/a2` → non-zero exit | PASS (pan clip): exit 2, `output directory must be new or empty` |
+| A6 | Missing / bad input → clear message, non-zero exit | `--source nope.mp4`; `--source AGENTS.md` | PASS: exit 2 each (not found / cannot open / odd 639x479); no dir created |
+| A7 | `--device cuda` on this Mac → clear error | run with `--device cuda` | PASS: exit 2, `CUDA is not available ... use --device cpu` |
+| A8 | Ctrl-C mid-run → report status `interrupted`, files closed | send SIGINT, read report | PASS: exit 130, one-line message; 188 = jsonl = decoded |
 | A9 | 3 benchmark runs + median recorded | README table | |
 | A10 | Fresh env install + test from README | new venv, follow README | |
 
@@ -55,3 +55,4 @@ on this Mac), anything in §2.
 - 2026-10-31 step 2: package + slice on a 90-frame 640x480 pan of bus.jpg: exit 0, 90 frames written = 90 decoded, h264 30fps, boxes/IDs/labels correct. Missing/not-video source and non-empty dir → exit 2. Real-clip check waits on D6. Color-by-ID pulled in from step 3.
 - 2026-10-31 step 3: `Trails` (≤30 pts, dropped at 60 unseen frames, none for null IDs); drawn only for objects visible this frame. tests/test_render.py 9 passed. Pan clip: 90/90 frames, trails visible in box colours.
 - 2026-10-31 step 4: JSONL streamed, metrics.py, report.json (atomic write, written on every exit once the dir is ours). `half=False` passed so FP32 is true; CUDA sync in Tracker.update (UNVERIFIED (env)). 26 tests pass, torch not imported. Pan clip: 90 = jsonl = decoded, status success. SIGINT mid-loop (360-frame clip): interrupted, 126 = jsonl = decoded, video playable. Finding for step 7: the first model.track call does ~1–2 s of lazy Ultralytics imports inside the wall time; SIGINT then leaves a 0-frame mp4.
+- 2026-10-31 step 5: MotionManError base; resolve_device (cpu never imports torch; auto→cpu logged; cuda w/o GPU → exit 2); ModelError on bad weights; --imgsz multiple of 32, --max-frames ≥1; exit codes 0/1/2/130; post-run decode check → `output_frames_decoded`. Ultralytics 8.4.196 deprecated `half` (warned per frame) → `quantize=32`. 42 tests pass. A5–A8 PASS.
