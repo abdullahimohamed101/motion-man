@@ -47,14 +47,14 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 4. [x] `ui/app.py`: header (wordmark, subtitle, actual device, state badge with text), ~280 px sidebar
    controls, Original/Tracked workspace, metrics strip, exports, collapsed Run details. No inference code.
 5. [x] CSS block (D3) and overlay checks: lime only on Run tracking, focus, selection and progress.
-6. [ ] AppTest tests for the states (Pending/N/A, processing disables Run, error clears old metrics);
+6. [x] AppTest tests for the states (Pending/N/A, processing disables Run, error clears old metrics);
    all in `scripts/check.sh`.
 7. [ ] Browser verification (U2–U10), screenshots; README UI section; log.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| U1 | Gate passes offline, UI tests included, CLI tests unchanged | `scripts/check.sh` | |
+| U1 | Gate passes offline, UI tests included, CLI tests unchanged | `scripts/check.sh` | PASS: 127 passed; INV-8 guard still green with Streamlit loaded |
 | U2 | App starts | `scripts/ui.sh`; `curl -f localhost:8501/_stcore/health` | PASS: 200; theme applied (canvas #040506, text #F5F5F5, Inter), no exceptions |
 | U3 | Demo run reaches Complete; every metric equals this run's report.json | browser DOM vs `report.json` | |
 | U4 | Before a run: badge Idle, metrics "Pending", playback FPS labelled separately | browser DOM | |
@@ -78,3 +78,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - 2026-10-31 step 3: Runner (worker thread, process-wide job lock, immutable JobState snapshots, runs/ui/<UTC ts>/ dirs, describe_error → message + next step, live elapsed during model load). 18 runner tests (104 total) incl. lock-leak guard; fixed a test race (tracker built on worker thread). Real-model smoke via runner on a 122-frame clip: auto→cpu, 122/122, complete.
 - 2026-10-31 step 4: app.py (sidebar source/metadata/device/confidence/Run; header + badge + live progress in a polling fragment that triggers a full rerun on state change; Original/Tracked; metrics; lazy downloads; Run details) + view.py pure display rules (15 tests, 119 total). Browser smoke on the demo clip: Idle → Processing (31/1,356 · 2%) → Complete; owner clicks mid-run didn't stop it; metrics == report.json (20.19 fps, 112.8 ms, 1,356, 67.15 s); Tracked video readyState 4, 56.6 s. Run text still white until step 5. UI runs ~20 fps vs CLI ~32 (shared CPU with the browser).
 - 2026-10-31 step 5: style.py (~45 lines CSS, data-testid + st-key- selectors only) + heading sizes in config. Measured: Run 12.7:1, captions #A1A1AA 7.8:1 on panel, h2 24px/600, h4 16px, metric values Geist Mono tabular, cards/video panel 16px #07080A + inset highlight, Tab focus ring solid 2px lime offset 2px, hover #B5EF59. 119 tests.
+- 2026-10-31 step 6: tests/test_app.py (8 AppTest cases: idle Pending + playback FPS label + downloads disabled, missing demo clip, Run passes chosen device/conf, refused start warns, processing disables Run, complete == report + downloads enabled, N/A latency, error next step + metrics —). Seam: MOTIONMAN_DEMO_CLIP env var. 127 tests.

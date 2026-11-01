@@ -5,6 +5,7 @@ Start with ``scripts/ui.sh``.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -13,7 +14,8 @@ from motionman.ui import style, view
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
 from motionman.video_io import VideoError
 
-DEMO_CLIP = Path("clips/crosswalk.mp4")
+# Overridable so tests (and other machines) can point at a different clip.
+DEMO_CLIP = Path(os.environ.get("MOTIONMAN_DEMO_CLIP", "clips/crosswalk.mp4"))
 DEVICES = {"CPU": "cpu", "Auto": "auto", "CUDA": "cuda"}
 MODEL_LABEL = "YOLO11n · yolo11n.pt · imgsz 640 · FP32"
 DOWNLOADS = (
