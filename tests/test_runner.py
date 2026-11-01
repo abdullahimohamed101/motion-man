@@ -230,3 +230,47 @@ def test_probe_upload_rejects_non_video_and_names_the_users_file():
     with pytest.raises(VideoError) as exc:
         probe_upload("notes.mp4", b"not a video")
     assert str(exc.value) == "cannot open video: notes.mp4"  # not the temporary probe path
+
+
+def test_failure_inside_start_ends_in_error_and_frees_the_lock(clip, tmp_path, monkeypatch):
+    runner = make_runner(tmp_path)
+
+    def broken_start(self):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(runner_module.threading.Thread, "start", broken_start)
+    assert runner.start(RunSettings(), source=clip)  # accepted, but it ends at once in an error state
+    s = runner.snapshot()
+    assert s.status == "error" and not s.busy  # not stuck on "processing" with Run disabled
+    assert "can't start new thread" in s.message and s.next_step
+    assert not any((tmp_path / "runs" / "ui").iterdir())  # the run folder it made is removed
+    monkeypatch.undo()
+    assert runner.start(RunSettings(), source=clip)  # the job lock was released
+    runner.join(30)
+
+
+def test_upload_that_cannot_be_written_leaves_no_folder(tmp_path):
+    runner = make_runner(tmp_path)
+    assert runner.start(RunSettings(), upload=("x." + "a" * 300, b"data"))  # file name too long for the filesystem
+    s = runner.snapshot()
+    assert s.status == "error"
+    assert not any((tmp_path / "runs" / "ui").iterdir())
+
+
+class HostStop(BaseException):
+    """Like SystemExit or Streamlit's StopException: not an Exception."""
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_non_exception_in_worker_still_ends_in_error(clip, tmp_path):
+    def stopping(cfg):
+        return FakeTracker(cfg, fail_at=3, exc=HostStop())
+
+    runner = make_runner(tmp_path, tracker=stopping)
+    s = run_to_end(runner, source=clip)
+    assert s.status == "error" and not s.busy and "HostStop" in s.message
+
+
+def test_device_error_message_drops_the_cli_flag_hint():
+    message, _ = describe_error(DeviceError("--device cuda requested but CUDA is not available; use --device cpu"))
+    assert message == "--device cuda requested but CUDA is not available"

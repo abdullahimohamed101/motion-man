@@ -24,8 +24,9 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 ## Decisions (confirmed 2026-10-31)
 - D1 Streamlit 1.66.1, pinned in `requirements.txt`.
 - D2 Inference runs in **one background worker thread** (`motionman/ui/runner.py`), one job at a time
-  (INV-1). Built: one Runner per process (`st.cache_resource`), so a refresh or second tab sees the run in progress. The page polls job state with `st.fragment(run_every=0.5 s)`. Reruns never touch the job.
-  Completed artifact paths live in `st.session_state`, so switching views or downloading never re-runs inference.
+  (INV-1). Built: one Runner per process (`st.cache_resource`), so a refresh or second tab sees the run in progress.
+  This deliberately differs from spec §9's "session state": per-session state would hide a running job after a refresh. The page polls job state with `st.fragment(run_every=0.5 s)`. Reruns never touch the job.
+  Completed artifact paths live in the job state, so switching views or downloading never re-runs inference.
 - D3 Styling is theme config first. One small scoped CSS block (`st.html`) for what config can't do:
   primary button text `#0B1105`, lime hover/pressed, 2 px lime `:focus-visible` outline with 2 px offset,
   mono tabular figures in metrics. Selectors limited to `data-testid` attributes; nothing else in the DOM.
@@ -80,3 +81,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - 2026-10-31 step 5: style.py (~45 lines CSS, data-testid + st-key- selectors only) + heading sizes in config. Measured: Run 12.7:1, captions #A1A1AA 7.8:1 on panel, h2 24px/600, h4 16px, metric values Geist Mono tabular, cards/video panel 16px #07080A + inset highlight, Tab focus ring solid 2px lime offset 2px, hover #B5EF59. 119 tests.
 - 2026-10-31 step 6: tests/test_app.py (8 AppTest cases: idle Pending + playback FPS label + downloads disabled, missing demo clip, Run passes chosen device/conf, refused start warns, processing disables Run, complete == report + downloads enabled, N/A latency, error next step + metrics —). Seam: MOTIONMAN_DEMO_CLIP env var. 127 tests.
 - 2026-10-31 step 7: U3–U10 PASS in the browser. Found and fixed: Streamlit listened on all interfaces (External URL shown) → server.address=localhost (now 127.0.0.1 only); `view` widget default + session_state warning; early failures left empty run dirs → removed when no output exists; upload probe errors showed the temp path → user's filename. Annotated output is byte-identical across runs (deterministic on CPU). README Local UI section. 127 tests.
+- 2026-11-01 verify: reviewer confirmed U1, U2, and U4/U8/U10 at AppTest/runner level; browser rows it could not reproduce. 0 P0/P1, 5 P2, all fixed: start() failure → error state + run folder removed + lock freed; worker BaseException / failing handler → error state; refused start reruns with fresh state, idle tabs poll every 2 s (second tab followed a run Idle→Processing→Complete unaided); D2 text corrected (process-wide runner, deliberate difference from §9's session state); CLI '--device' hint dropped in the UI. New tests fail on the old runner. 132 tests.

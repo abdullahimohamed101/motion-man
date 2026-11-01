@@ -78,12 +78,16 @@ with st.sidebar:
     if st.button("Run tracking", type="primary", disabled=state.busy or start_kwargs is None, width="stretch"):
         if runner.start(RunSettings(device=DEVICES[device], conf=conf), **start_kwargs):
             st.session_state["view"] = "Original"
-            st.rerun()
+        else:
+            st.session_state["refused"] = True  # shown after the rerun, which also picks up the run in progress
+        st.rerun()
+    if st.session_state.pop("refused", False):
         st.warning("A run is already in progress.")
 
 
 # --- Header and live status (polls the runner while a run is in progress) ---------------------------------
-@st.fragment(run_every=0.5 if state.busy else None)
+# Fast while a run is in progress; slow otherwise, so a tab notices a run started or ended in another tab.
+@st.fragment(run_every=0.5 if state.busy else 2.0)
 def live_status() -> None:
     s = runner.snapshot()
     if s.status != st.session_state.get("seen_status"):

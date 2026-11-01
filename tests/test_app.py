@@ -159,3 +159,14 @@ def test_error_page_gives_next_step_and_drops_old_numbers(fake):
     assert any(m.value == "**Next step:** Choose CPU or Auto and run again." for m in at.markdown)
     assert [m.value for m in at.metric] == ["—"] * 4
     assert not run_button(at).disabled  # the user can fix the setting and retry
+
+
+def test_complete_then_failed_run_shows_no_stale_results(fake, tmp_path):
+    at = render(fake, complete_state(tmp_path))
+    assert "Complete" in badge(at)
+    fake.state = JobState(status="error", message="boom", next_step="Try again.")  # the next run fails
+    at.run()
+    assert not at.exception
+    assert "Error" in badge(at) and not any("Complete" in m.value for m in at.markdown)
+    assert [m.value for m in at.metric] == ["—"] * 4
+    assert all(d.proto.disabled for d in at.get("download_button"))  # no downloads from the earlier run

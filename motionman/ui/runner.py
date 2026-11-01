@@ -95,6 +95,7 @@ class Runner:
             raise ValueError("pass exactly one of source or upload")
         if not _JOB_LOCK.acquire(blocking=False):
             return False
+        run_dir: Path | None = None
         try:
             run_dir = self._new_run_dir()
             if upload is not None:
@@ -118,7 +119,18 @@ class Runner:
             )
             self._thread = threading.Thread(target=self._work, args=(config,), name="motionman-run", daemon=True)
             self._thread.start()
+        except Exception as e:  # e.g. the upload can't be written or the thread can't start
+            log.exception("could not start the run")
+            if run_dir is not None:
+                shutil.rmtree(run_dir, ignore_errors=True)
+            message, next_step = describe_error(e)
+            # A terminal state, so the page doesn't stay on "processing" with Run disabled.
+            self._set(JobState(status="error", message=message, next_step=next_step))
+            _JOB_LOCK.release()
         except BaseException:
+            if run_dir is not None:
+                shutil.rmtree(run_dir, ignore_errors=True)
+            self._set(JobState())
             _JOB_LOCK.release()
             raise
         return True
@@ -134,23 +146,6 @@ class Runner:
             report = pipeline.run(
                 config, make_tracker=self._make_tracker, resolve=self._resolve_and_record, on_progress=self._progress
             )
-        except Exception as e:  # the worker must always end in a terminal state
-            if not isinstance(e, MotionManError):
-                log.exception("run failed")
-            message, next_step = describe_error(e)
-            if not config.output_dir.exists():
-                # Failed before writing anything (bad input, device, model): don't leave an empty run folder.
-                # It holds at most our copy of an upload; runs with output keep their partial artifacts.
-                shutil.rmtree(config.output_dir.parent, ignore_errors=True)
-            self._update(
-                status="error",
-                message=message,
-                next_step=next_step,
-                elapsed_s=perf_counter() - started,
-                report=_read_report(config.output_dir),  # partial report, if the run got that far
-                artifacts=_existing_artifacts(config.output_dir),
-            )
-        else:
             self._update(
                 status="complete",
                 report=report,
@@ -158,8 +153,35 @@ class Runner:
                 elapsed_s=perf_counter() - started,
                 artifacts=_existing_artifacts(config.output_dir),
             )
+        except BaseException as e:  # the worker must always end in a terminal state
+            self._fail(e, config, started)
+            if not isinstance(e, Exception):
+                raise
         finally:
+            if self.snapshot().status == "processing":  # the error handling itself failed
+                self._update(
+                    status="error",
+                    message="The run stopped unexpectedly.",
+                    next_step="See the terminal running the UI for details, then try again.",
+                )
             _JOB_LOCK.release()
+
+    def _fail(self, e: BaseException, config: RunConfig, started: float) -> None:
+        if not isinstance(e, MotionManError):
+            log.error("run failed", exc_info=e)
+        message, next_step = describe_error(e)
+        if not config.output_dir.exists():
+            # Failed before writing anything (bad input, device, model): don't leave an empty run folder.
+            # It holds at most our copy of an upload; runs with output keep their partial artifacts.
+            shutil.rmtree(config.output_dir.parent, ignore_errors=True)
+        self._update(
+            status="error",
+            message=message,
+            next_step=next_step,
+            elapsed_s=perf_counter() - started,
+            report=_read_report(config.output_dir),  # partial report, if the run got that far
+            artifacts=_existing_artifacts(config.output_dir),
+        )
 
     def _resolve_and_record(self, requested: str) -> str:
         used = self._resolve(requested)
@@ -193,7 +215,7 @@ def describe_error(e: BaseException) -> tuple[str, str]:
     """A short explanation and a next step for the page (spec §9: errors give a next step)."""
     text = str(e)
     if isinstance(e, DeviceError):
-        return text, "Choose CPU or Auto and run again."
+        return text.split("; use --device")[0], "Choose CPU or Auto and run again."  # drop the CLI-only hint
     if isinstance(e, ModelError):
         return text, "Check that yolo11n.pt is in the project folder or that the network is reachable, then retry."
     if isinstance(e, OutputCheckError):
