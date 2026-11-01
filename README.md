@@ -67,6 +67,13 @@ plus the same `manifest.json` and `runspec.json`. Legacy runs don't take the loc
 | `--model` | `yolo11n.pt` | Ultralytics weights |
 | `--imgsz` | `640` | Multiple of 32, from 32 to 4096 |
 | `--max-frames` | all | Stop early, useful while iterating |
+| `--telemetry` | off | Sample process memory about once a second into `telemetry.jsonl` |
+
+**Telemetry** (`--telemetry`) runs a background thread that records this process's resident memory (RSS) about
+once per second, from just before the first decode to the end of processing, and adds peak and median RSS to
+`report.json`. It never touches the tracker and does not change the configuration hash. GPU counters are read
+only through NVML on CUDA devices; elsewhere the report says `Unavailable` with the reason. On the crosswalk clip
+(CPU, battery at 95%) 33 samples showed a peak of 1,441 MB and a median of 1,403 MB.
 
 Detection thresholds are fixed and recorded in the report: confidence 0.25, IoU 0.7, FP32.
 

@@ -67,3 +67,4 @@ class RunConfig:
     limits: Limits = DEFAULT_LIMITS
     data_root: Path | None = None  # canonical mode only; None = MOTIONMAN_DATA_ROOT or ./data
     source_name: str | None = None  # display name for an imported input (e.g. an upload's original filename)
+    telemetry: bool = False  # opt-in resource sampling (plan P2 D9); observability only, not in the config hash

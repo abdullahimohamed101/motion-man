@@ -21,7 +21,7 @@ from typing import Protocol
 
 import numpy as np
 
-from motionman import metrics, records, render, store, video_io
+from motionman import metrics, records, render, store, telemetry, video_io
 from motionman.tracking import resolve_device
 from motionman.types import RunConfig, Track
 
@@ -29,6 +29,7 @@ ANNOTATED = "annotated.mp4"
 TRACKS = "tracks.jsonl"
 REPORT = "report.json"
 TIMINGS = "timings.jsonl"  # one row of stage times per processed frame (plan P2 D3)
+TELEMETRY = "telemetry.jsonl"  # opt-in, about one resource sample per second (plan P2 D9)
 PROGRESS_INTERVAL_S = 0.25  # keep UI redraws modest (spec §9)
 MANIFEST_STATUS = {"success": "SUCCEEDED", "error": "FAILED", "interrupted": "INTERRUPTED"}
 
@@ -122,7 +123,7 @@ def _run(
     input_id = runspec = records_sha = None
     out: Path | None = None
     validation = {"source_complete": "NOT_RUN", "records": "NOT_RUN", "video_decode": "NOT_RUN"}
-    writer = jsonl = timings = None
+    writer = jsonl = timings = sampler = None
     try:
         device_used = resolve(config.device)
         if root is not None:
@@ -158,6 +159,9 @@ def _run(
         store.write_json_atomic(out / store.RUNSPEC, runspec)
         jsonl = (out / TRACKS).open("w", encoding="utf-8")
         timings = (out / TIMINGS).open("w", encoding="utf-8")
+        if config.telemetry:
+            sampler = telemetry.Telemetry(out / TELEMETRY, device_used=device_used)
+            sampler.start()
         trails = render.Trails()
         total = _known_total(info.frame_count, config.max_frames)
         m.start()
@@ -202,6 +206,8 @@ def _run(
         timings.close()
         timings = None
         m.stop()
+        if sampler is not None:
+            m.telemetry = sampler.stop()
         # Validate before claiming success (A§5): counts, records, decoded video, unchanged source, budget.
         if m.processed_frames == 0:
             raise video_io.VideoError(f"no decodable frames in {config.source}")
@@ -250,6 +256,8 @@ def _run(
         if timings is not None:
             timings.close()
         m.stop()
+        if sampler is not None:
+            m.telemetry = sampler.stop()  # idempotent; a failed run still reports what was sampled
         report: dict = {"status": status, "error": error}
         if out is not None:
             if status != "success" and decoded is None:
@@ -288,7 +296,7 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
             config_sha256=runspec["config_sha256"] if runspec else None,
         )
         metrics.write_report(out / REPORT, report)
-        names = [n for n in (ANNOTATED, TRACKS, TIMINGS, REPORT, store.RUNSPEC) if (out / n).is_file()]
+        names = [n for n in (ANNOTATED, TRACKS, TIMINGS, TELEMETRY, REPORT, store.RUNSPEC) if (out / n).is_file()]
         artifacts = store.artifact_entries(out, names)
         if status == "success" and sum(a["bytes"] for a in artifacts) > config.limits.output_budget_bytes:
             status, error = "error", "OutputBudgetError: outputs exceed the configured budget"

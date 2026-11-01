@@ -53,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model", default="yolo11n.pt", help="Ultralytics weights (default: yolo11n.pt)")
     p.add_argument("--imgsz", type=_imgsz, default=640, help="inference size in pixels (default: 640)")
     p.add_argument("--max-frames", type=_positive_int, default=None, help="stop after this many frames")
+    p.add_argument("--telemetry", action="store_true", help="sample process memory about once a second")
     return p
 
 
@@ -61,7 +62,8 @@ def parse_args(argv: list[str] | None = None) -> RunConfig:
     a = parser.parse_args(argv)
     if a.output_dir is not None and a.data_root is not None:
         parser.error("--data-root applies to canonical runs; leave it out when using --output-dir")
-    return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames, data_root=a.data_root)
+    return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames, data_root=a.data_root,
+                     telemetry=a.telemetry)  # fmt: skip
 
 
 def main(argv: list[str] | None = None) -> int:

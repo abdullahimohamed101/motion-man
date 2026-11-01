@@ -57,6 +57,7 @@ class Metrics:
         self._job: float | None = None
         self._start: float | None = None
         self._stopped: float | None = None
+        self.telemetry: dict = {"enabled": False}
 
     def begin_job(self) -> None:
         self._job = perf_counter()
@@ -190,6 +191,7 @@ def build_report(
         },
         "device": {"requested": config.device, "used": device_used},
         "timing": timing_section(metrics),
+        "telemetry": metrics.telemetry,
         "environment": environment(device_used),
     }
 
