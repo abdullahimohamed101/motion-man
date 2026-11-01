@@ -259,3 +259,52 @@ def test_report_failure_does_not_mask_the_run_error(clip, tmp_path, monkeypatch)
     monkeypatch.setattr(pipeline.metrics, "write_report", broken_write)
     with pytest.raises(RuntimeError, match="boom"):  # the original error, not the OSError
         run(RunConfig(clip, tmp_path / "run"), fail_at=2, exc=RuntimeError("boom"))
+
+
+def test_progress_reports_every_frame_when_unthrottled(clip, tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "PROGRESS_INTERVAL_S", 0.0)
+    calls = []
+    run_with = pipeline.run(
+        RunConfig(clip, tmp_path / "run"),
+        make_tracker=FakeTracker,
+        resolve=lambda d: "cpu",
+        on_progress=lambda n, total, elapsed: calls.append((n, total, elapsed)),
+    )
+    assert [n for n, _, _ in calls] == list(range(1, 21))  # once per frame, no duplicate final call
+    assert all(total == 20 for _, total, _ in calls)
+    assert all(b[2] >= a[2] >= 0 for a, b in zip(calls, calls[1:], strict=False))  # elapsed never goes back
+    assert run_with["status"] == "success"
+
+
+def test_progress_is_throttled_but_always_reports_the_end(clip, tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "PROGRESS_INTERVAL_S", 3600.0)
+    calls = []
+    pipeline.run(
+        RunConfig(clip, tmp_path / "run", max_frames=7),
+        make_tracker=FakeTracker,
+        resolve=lambda d: "cpu",
+        on_progress=lambda n, total, elapsed: calls.append((n, total)),
+    )
+    assert calls == [(7, 7)]  # throttled to nothing mid-run, then the final count with max_frames as total
+
+
+@pytest.mark.parametrize(
+    ("container", "max_frames", "expected"),
+    [(None, None, None), (None, 5, 5), (90, None, 90), (90, 10, 10), (90, 500, 90)],
+)
+def test_known_total(container, max_frames, expected):
+    assert pipeline._known_total(container, max_frames) == expected
+
+
+class HostStop(BaseException):
+    """Stands in for Streamlit's StopException: a BaseException, not an Exception."""
+
+
+def test_non_exception_exit_is_recorded_by_name(clip, tmp_path):
+    out = tmp_path / "run"
+    with pytest.raises(HostStop):
+        run(RunConfig(clip, out), fail_at=4, exc=HostStop())
+    r = read_report(out)
+    assert r["status"] == "error"
+    assert r["error"] == "tests.test_pipeline.HostStop"  # not null
+    assert r["processed_frames"] == 4 == r["jsonl_records"] == r["output_frames_decoded"]

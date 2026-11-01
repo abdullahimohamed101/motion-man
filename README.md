@@ -9,7 +9,8 @@ pretrained YOLO11n model and ByteTrack, and writes three artifacts:
 | `tracks.jsonl` | One JSON record per processed frame: `frame_index`, `timestamp_s`, `objects` (track ID or null, class, confidence, `bbox_xyxy` in source pixels). |
 | `report.json` | Run status, source metadata, settings, package versions, hardware, and measured timings. |
 
-It runs on CPU. CUDA is supported by the code but has not been verified (see Limitations).
+It runs on CPU. CUDA is supported by the code but has not been verified (see Limitations). A small local web
+UI runs the same pipeline (see Local UI).
 
 ## Setup
 
@@ -59,15 +60,36 @@ says `error` or `interrupted`, with `processed_frames`, `jsonl_records` and `out
 each file actually holds. A run only reports `success` if the written video decodes back to exactly
 `processed_frames` frames.
 
+## Local UI
+
+```bash
+scripts/ui.sh
+```
+
+Opens a Streamlit workbench at http://localhost:8501, listening on localhost only. Choose the demo clip
+(`clips/crosswalk.mp4`, or set `MOTIONMAN_DEMO_CLIP`) or upload an MP4. Then pick CPU, Auto or CUDA, set the
+confidence threshold and press **Run tracking**. While it runs you see frames, percentage and elapsed time.
+When it finishes you can switch between the Original and Tracked video, read the metrics from that run's
+`report.json`, and download the three artifacts.
+
+- Each run writes to a new `runs/ui/<UTC timestamp>/` folder, so nothing is overwritten.
+- Tracking runs on a background thread, one run at a time, so clicking around the page never stops it.
+  Switching views or downloading never re-runs inference.
+- Metrics show "Pending" until a run completes and "N/A" when a value can't be computed (for example
+  latency on a run of 10 frames or fewer), never a placeholder zero. A failed run shows its error and a next
+  step instead of the previous run's results.
+- UI runs share the CPU with the browser playing video, so they are slower than CLI runs (about 20–24 fps
+  against 31–32 fps on the demo clip on the same machine). Use the CLI for benchmarks.
+
 ## Test
 
 ```bash
 scripts/check.sh
 ```
 
-This runs ruff and the pytest suite (78 tests, about a second). The tests use synthetic clips and a fake
-tracker. They block network access and fail if torch or Ultralytics gets imported, so they never need
-a GPU, the network, or the model weights.
+This runs ruff and the pytest suite (127 tests, about three seconds). The tests use synthetic clips and a fake
+tracker; the UI page is tested with Streamlit's AppTest. They block network access and fail if torch or
+Ultralytics gets imported, so they never need a GPU, the network, or the model weights.
 
 ## Modules
 
@@ -80,6 +102,10 @@ a GPU, the network, or the model weights.
 | `render.py` | Bounded trails (≤30 points per ID, dropped after 60 unseen frames) and drawing on a frame copy |
 | `metrics.py` | Timing, latency percentiles, environment details, atomic `report.json` write |
 | `types.py` | Plain records shared by every module (`Track`, `Frame`, `VideoInfo`, `RunConfig`) |
+| `ui/app.py` | Streamlit page layout and state only; no inference code |
+| `ui/runner.py` | Background runs: one job per process, run folders, progress, errors mapped to a next step |
+| `ui/view.py` | What the page shows for a given state ("Pending", "N/A", badges, progress text) |
+| `ui/style.py` | The few style rules the Streamlit theme config can't express |
 
 ## Benchmark
 
@@ -129,6 +155,8 @@ because a short run is still dominated by the slower first few frames.
   but has not been run: the development machine has no NVIDIA GPU. Apple's MPS backend is not supported.
 - **Input limits.** Constant-frame-rate video with valid FPS and even dimensions only. Audio is dropped.
 - **Single-threaded.** The optional decoder thread from the design was not built.
+- **UI:** one run at a time per process. A run keeps going if the browser tab is closed. Original-view preview
+  depends on the uploaded file's codec; the Tracked view is always H.264.
 - If OpenCV on another machine lacks H.264, output falls back to `mp4v` with a warning; that plays in QuickTime
   but usually not in browsers.
 

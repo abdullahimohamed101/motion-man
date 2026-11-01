@@ -1,0 +1,36 @@
+# MotionMan UI theme (spec §9). Tokens config can't express live in motionman/ui/style.py.
+[theme]
+base = "dark"
+primaryColor = "#A3E635"            # Motion Lime: Run tracking, focus, selection, progress only
+backgroundColor = "#040506"         # canvas
+secondaryBackgroundColor = "#111214" # inset surfaces: inputs and recessed controls
+textColor = "#F5F5F5"
+borderColor = "#363739"
+showWidgetBorder = true
+baseRadius = "8px"
+buttonRadius = "8px"
+font = "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"
+codeFont = "'Geist Mono', ui-monospace, Menlo, Consolas, monospace"
+baseFontSize = 14
+metricValueFontSize = "26px"
+headingFontSizes = ["28px", "24px", "16px", "16px", "14px", "14px"]  # h2 = app title, h4 = section labels
+headingFontWeights = 600
+redColor = "#F87171"
+yellowColor = "#FBBF24"
+greenColor = "#A3E635"
+
+[theme.sidebar]
+backgroundColor = "#07080A"         # panel
+secondaryBackgroundColor = "#111214"
+
+[server]
+headless = true
+address = "localhost"   # a local tool: never listen on the network
+port = 8501
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

@@ -1,5 +1,5 @@
 # Architecture
-Status: CLI MVP complete (plan cli-mvp, A1–A10 PASS). UI (spec §9) not started. Contracts live in `docs/spec.md` §4–§8.
+Status: CLI MVP complete (plan cli-mvp, A1–A10 PASS); local UI complete (plan ui, U1–U10 PASS). Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text
@@ -11,7 +11,7 @@ cli.py ──RunConfig──▶ pipeline.run(config)
                         │    writer.write(out); jsonl.write(record) video_io.py
                         │    metrics.record(timings)               metrics.py
                         └─ finally: release reader/writer, close JSONL, write report.json
-ui/app.py (spec §9, later) ──▶ the same pipeline.run(config)
+ui/app.py ──▶ ui/runner.py (worker thread) ──▶ the same pipeline.run(config, on_progress=…)
 ```
 
 ## Dependency direction
@@ -26,6 +26,7 @@ OpenCV-written clip: no weights, network or GPU (INV-8).
 ## Layout
 ```text
 motionman/  __init__ __main__ cli pipeline video_io tracking render metrics types
+  ui/      app (Streamlit layout) runner (worker thread) view (display rules) style (CSS)
 tests/      unit tests per module + test_pipeline (synthetic video, fake tracker); conftest enforces INV-8
 scripts/    check.sh
 ```

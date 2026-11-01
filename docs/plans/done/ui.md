@@ -1,0 +1,84 @@
+# Local UI: tracking workbench
+Status: Done · Branch: `feat/ui` (stacked on `feat/cli-mvp`, PR #1) · Spec: §9 · Budget: 2–3 h
+
+## Outcome
+`scripts/ui.sh` opens a local Streamlit page: pick the demo clip or upload an MP4, choose device and
+confidence, press **Run tracking**, watch progress, then play the Original or Tracked video, read metrics
+from this run's `report.json`, and download the three artifacts. Same `pipeline.run` as the CLI.
+
+## Non-goals (spec §2, §9)
+Synchronised players, custom timeline, clickable objects, live camera, other models, run history or
+database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour and benchmarks stay as they are.
+
+## Findings (spike, Streamlit 1.66.1, scratch venv)
+- Theme config covers most tokens: `base`, `primaryColor`, `backgroundColor`, `secondaryBackgroundColor`,
+  `textColor`, `borderColor`, `baseRadius`, `buttonRadius`, `font`, `codeFont`, `metricValueFontSize`.
+- **No option for primary-button text colour**: measured white on `#A3E635` (≈1.4:1), not the required
+  `#0B1105` (≈12.7:1).
+- **Any widget click mid-run kills the script**: a 60-step loop stopped at step 21 with
+  `streamlit...StopException`, which is a `BaseException`, not an `Exception`. Running inference in the
+  script thread would abort the run, and the current pipeline would write `status: error` with `error: null`.
+- `st.fragment(run_every=…)`, `st.segmented_control`, `st.download_button`, `st.html` and
+  `streamlit.testing.v1.AppTest` are all available.
+
+## Decisions (confirmed 2026-10-31)
+- D1 Streamlit 1.66.1, pinned in `requirements.txt`.
+- D2 Inference runs in **one background worker thread** (`motionman/ui/runner.py`), one job at a time
+  (INV-1). Built: one Runner per process (`st.cache_resource`), so a refresh or second tab sees the run in progress.
+  This deliberately differs from spec §9's "session state": per-session state would hide a running job after a refresh. The page polls job state with `st.fragment(run_every=0.5 s)`. Reruns never touch the job.
+  Completed artifact paths live in the job state, so switching views or downloading never re-runs inference.
+- D3 Styling is theme config first. One small scoped CSS block (`st.html`) for what config can't do:
+  primary button text `#0B1105`, lime hover/pressed, 2 px lime `:focus-visible` outline with 2 px offset,
+  mono tabular figures in metrics. Selectors limited to `data-testid` attributes; nothing else in the DOM.
+- D4 `pipeline.run` gains an optional `on_progress(processed, total_or_None, elapsed_s)` callback, called
+  at most every 0.25 s. The CLI passes nothing, so its behaviour and timings are unchanged.
+- D5 `pipeline.run` also records non-`Exception` exits (`StopException`, `SystemExit`) with their type
+  name instead of `error: null`.
+- D6 Each run gets a new directory `runs/ui/<UTC timestamp>/` (uploaded source copied in, outputs in
+  `out/`), so INV-5 holds without asking the user for a path.
+- D7 Demo clip = `clips/crosswalk.mp4` when present; otherwise the button is disabled with the README hint.
+- D8 Fonts: `Inter`, then the system sans stack; `Geist Mono`, then `ui-monospace, Menlo`. No font files committed.
+- D9 Confidence slider 0.05–0.95, step 0.05, default 0.25. Model fixed to YOLO11n and shown as metadata.
+
+## Steps
+1. [x] Pin Streamlit; `.streamlit/config.toml` theme; `scripts/ui.sh`; empty page loads (health 200).
+2. [x] `pipeline.run`: `on_progress` callback (D4) and BaseException status (D5), with tests.
+3. [x] `ui/runner.py`: worker thread, job states idle/processing/complete/error, run dirs, duplicate-run
+   guard, and errors mapped to a short message plus next step. Tests use the fake tracker.
+4. [x] `ui/app.py`: header (wordmark, subtitle, actual device, state badge with text), ~280 px sidebar
+   controls, Original/Tracked workspace, metrics strip, exports, collapsed Run details. No inference code.
+5. [x] CSS block (D3) and overlay checks: lime only on Run tracking, focus, selection and progress.
+6. [x] AppTest tests for the states (Pending/N/A, processing disables Run, error clears old metrics);
+   all in `scripts/check.sh`.
+7. [x] Browser verification (U2–U10), screenshots; README UI section; log.
+
+## Acceptance
+| # | Criterion | Command | Result |
+|---|-----------|---------|--------|
+| U1 | Gate passes offline, UI tests included, CLI tests unchanged | `scripts/check.sh` | PASS: 127 passed; INV-8 guard still green with Streamlit loaded |
+| U2 | App starts | `scripts/ui.sh`; `curl -f localhost:8501/_stcore/health` | PASS: 200; theme applied (canvas #040506, text #F5F5F5, Inter), no exceptions |
+| U3 | Demo run reaches Complete; every metric equals this run's report.json | browser DOM vs `report.json` | PASS: 23.86 / 105.0 ms / 1,356 / 56.83 s on page == report (success, 1,356 decoded) |
+| U4 | Before a run: badge Idle, metrics "Pending", playback FPS labelled separately | browser DOM | PASS: Idle badge, 4× Pending, "23.976 fps playback" in sidebar |
+| U5 | During a run: "Processing", frame count and elapsed rise, Run disabled; clicking other widgets doesn't stop it | browser; report `status: success` | PASS: 101→225 frames across device + view clicks; Run disabled; report success, device stayed cpu |
+| U6 | Tracked video plays in the browser | `<video>` readyState ≥ 2, duration ≈ 56.5 s | PASS: readyState 4, 56.6 s |
+| U7 | Original/Tracked switch and downloads never re-run inference | run count and report mtime unchanged | PASS: 4 switches + 3 downloads → 2 run dirs, mtime unchanged |
+| U8 | Bad upload or `CUDA` → short error plus next step; no stale Complete badge or metrics | browser DOM | PASS: CUDA after Complete → Error, metrics —, downloads off; bad upload → named error, Run disabled |
+| U9 | The 3 downloads serve the run's files | downloaded bytes == files on disk | PASS: SHA-256 equal for all 3 (fetched in page, no files saved) |
+| U10 | Run button text `#0B1105` on `#A3E635`; visible 2 px lime focus ring; unavailable latency shows N/A | computed styles, keyboard Tab | PASS: 12.7:1, Tab → 2 px lime ring @2 px, hover #B5EF59; 10-frame run shows N/A with reason tooltip |
+
+## Risks
+- Streamlit's `data-testid` names can change between versions: pinned (D1), and the CSS is under 30 lines.
+- A large upload is copied to disk once (81 MB for the demo clip); `server.maxUploadSize` stays 200 MB.
+- The worker thread outlives a closed tab; acceptable locally, and only one job can run at a time.
+- Original-view playback depends on the uploaded file's codec; non-H.264 uploads may not preview (Tracked always does).
+
+## Log
+- 2026-10-31 plan: spike in a scratch venv (Streamlit 1.66.1): primary text measured white on lime; mid-run click → StopException at step 21/60.
+- 2026-10-31 step 1: streamlit 1.66.1 pinned (no other pins moved); `.streamlit/config.toml` theme; `scripts/ui.sh` (PYTHONPATH=repo root); placeholder page. Health 200, theme verified in browser. Gate: 78 passed.
+- 2026-10-31 step 2: `on_progress(n, total|None, elapsed)` throttled by PROGRESS_INTERVAL_S=0.25 + one final call; total = min(container count, max_frames) or None. Non-Exception exits recorded as `module.Name`. +8 tests (86). CLI 120-frame run unchanged: exit 0, 120/120/120, p50 26.8 ms.
+- 2026-10-31 step 3: Runner (worker thread, process-wide job lock, immutable JobState snapshots, runs/ui/<UTC ts>/ dirs, describe_error → message + next step, live elapsed during model load). 18 runner tests (104 total) incl. lock-leak guard; fixed a test race (tracker built on worker thread). Real-model smoke via runner on a 122-frame clip: auto→cpu, 122/122, complete.
+- 2026-10-31 step 4: app.py (sidebar source/metadata/device/confidence/Run; header + badge + live progress in a polling fragment that triggers a full rerun on state change; Original/Tracked; metrics; lazy downloads; Run details) + view.py pure display rules (15 tests, 119 total). Browser smoke on the demo clip: Idle → Processing (31/1,356 · 2%) → Complete; owner clicks mid-run didn't stop it; metrics == report.json (20.19 fps, 112.8 ms, 1,356, 67.15 s); Tracked video readyState 4, 56.6 s. Run text still white until step 5. UI runs ~20 fps vs CLI ~32 (shared CPU with the browser).
+- 2026-10-31 step 5: style.py (~45 lines CSS, data-testid + st-key- selectors only) + heading sizes in config. Measured: Run 12.7:1, captions #A1A1AA 7.8:1 on panel, h2 24px/600, h4 16px, metric values Geist Mono tabular, cards/video panel 16px #07080A + inset highlight, Tab focus ring solid 2px lime offset 2px, hover #B5EF59. 119 tests.
+- 2026-10-31 step 6: tests/test_app.py (8 AppTest cases: idle Pending + playback FPS label + downloads disabled, missing demo clip, Run passes chosen device/conf, refused start warns, processing disables Run, complete == report + downloads enabled, N/A latency, error next step + metrics —). Seam: MOTIONMAN_DEMO_CLIP env var. 127 tests.
+- 2026-10-31 step 7: U3–U10 PASS in the browser. Found and fixed: Streamlit listened on all interfaces (External URL shown) → server.address=localhost (now 127.0.0.1 only); `view` widget default + session_state warning; early failures left empty run dirs → removed when no output exists; upload probe errors showed the temp path → user's filename. Annotated output is byte-identical across runs (deterministic on CPU). README Local UI section. 127 tests.
+- 2026-11-01 verify: reviewer confirmed U1, U2, and U4/U8/U10 at AppTest/runner level; browser rows it could not reproduce. 0 P0/P1, 5 P2, all fixed: start() failure → error state + run folder removed + lock freed; worker BaseException / failing handler → error state; refused start reruns with fresh state, idle tabs poll every 2 s (second tab followed a run Idle→Processing→Complete unaided); D2 text corrected (process-wide runner, deliberate difference from §9's session state); CLI '--device' hint dropped in the UI. New tests fail on the old runner. 132 tests.

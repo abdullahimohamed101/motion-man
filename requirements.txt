@@ -6,3 +6,4 @@ torchvision==0.29.2
 numpy==2.4.6
 lap==0.5.13  # ByteTrack assignment; pinned so Ultralytics never auto-installs it at runtime
 pytest==9.2.0
+streamlit==1.66.1  # local UI (spec §9); pinned because the UI CSS targets its data-testid attributes
