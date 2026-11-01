@@ -79,7 +79,7 @@ When it finishes you can switch between the Original and Tracked video, read the
   latency on a run of 10 frames or fewer), never a placeholder zero. A failed run shows its error and a next
   step instead of the previous run's results.
 - UI runs share the CPU with the browser playing video, so they are slower than CLI runs (about 20–24 fps
-  against 31–32 fps on the demo clip on the same machine). Use the CLI for benchmarks.
+  against 31–32 fps on the demo clip, both on battery). Use the CLI for benchmarks.
 
 ## Test
 
@@ -109,8 +109,19 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 
 ## Benchmark
 
-Three runs of the same clip and configuration (`clips/crosswalk.mp4`: 1,356 frames, 1920×1080, 23.976 fps,
-56.5 s; YOLO11n, imgsz 640, FP32, CPU):
+Three runs of the same clip and configuration in each power state (`clips/crosswalk.mp4`: 1,356 frames,
+1920×1080, 23.976 fps, 56.5 s; YOLO11n, imgsz 640, FP32, CPU).
+
+**On mains power** (AC, battery 65% and charging):
+
+| Run | End-to-end FPS | Processing wall time | detect+track p50 | detect+track p95 | Model load |
+|---|---|---|---|---|---|
+| 1 | 45.02 | 30.12 s | 19.89 ms | 21.94 ms | 2.85 s |
+| 2 | 44.27 | 30.63 s | 20.27 ms | 22.38 ms | 2.93 s |
+| 3 | 44.29 | 30.62 s | 20.18 ms | 22.12 ms | 2.99 s |
+| **Median** | **44.29** | | | | |
+
+**On battery** (27–35%):
 
 | Run | End-to-end FPS | Processing wall time | detect+track p50 | detect+track p95 | Model load |
 |---|---|---|---|---|---|
@@ -120,14 +131,13 @@ Three runs of the same clip and configuration (`clips/crosswalk.mp4`: 1,356 fram
 | **Median** | **32.14** | | | | |
 
 Hardware: Apple M5 Pro (15 CPU cores, 24 GB RAM), macOS 26.6, Python 3.11.17, torch 2.15.0,
-ultralytics 8.4.196, opencv-python 5.0.0.93. The laptop was on battery (27–35%) during these runs; results on
-mains power may differ. Each run exited 0 with 1,356 frames processed, 1,356 JSONL records and 1,356 frames
-decoded from the output.
+ultralytics 8.4.196, opencv-python 5.0.0.93. Every run exited 0 with 1,356 frames processed, 1,356 JSONL
+records and 1,356 frames decoded from the output.
 
-**Run-to-run variance is real.** An earlier set of three runs on the same machine, before the model warmup
-moved into model load, measured 25.95 / 25.19 / 26.01 fps (median 25.95) with a detect+track p50 near 31 ms.
-The warmup explains only about 2.5 s of the 10 s difference in wall time; the rest is not isolated (power
-state is the likely cause). Treat these as one laptop's numbers on one afternoon, not a performance claim.
+**Power state is the biggest variable.** The same code on the same clip runs about 38% faster on mains power,
+and detect+track p50 drops from about 27 ms to about 20 ms; macOS throttles the CPU on battery. An earlier set
+on battery, before the model warmup moved into model load, measured a median of 25.95 fps. Treat all of these
+as one laptop's numbers, not a performance claim, and compare runs only within the same power state.
 
 What the numbers mean:
 - **End-to-end FPS** is processed frames divided by processing wall time, measured from before the first
@@ -139,8 +149,8 @@ What the numbers mean:
   includes one prediction on a blank frame; without it, about 2.5 s of setup would land in the first frame of the
   wall time and make short runs look slow. The warmup runs in predict mode, so tracker state is untouched.
 
-Where the time goes: at the median, a frame takes about 31 ms end to end, and the median detect+track call is
-about 27 ms. So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
+Where the time goes: on mains power a frame takes about 22.6 ms end to end, and the median detect+track call is
+about 20 ms (about 31 ms and 27 ms on battery). So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
 make up most of the rest. A 48-frame run now measures 23 fps end to end (it was 11 fps before the warmup fix),
 because a short run is still dominated by the slower first few frames.
 

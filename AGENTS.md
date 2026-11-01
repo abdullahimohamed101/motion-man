@@ -49,3 +49,4 @@ Branch `feat/<slug>` off `main`. Commit per step. Push / PR / merge only when as
 - `docs/reference/`: original briefs; open only to settle a spec ambiguity
 - `docs/decisions/INDEX.md`: one line per ADR; open an ADR only for the area you touch
 - `docs/plans/`: active plans; `docs/plans/done/` is archive, ignore unless asked
+- `docs/interview.md`, `docs/demo-script.md`: handoff material; update their numbers if benchmarks change
