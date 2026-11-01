@@ -4,16 +4,16 @@
 Updated: 2026-10-31
 
 ## Now
-- Active plan: none. CLI MVP shipped for review: `docs/plans/done/cli-mvp.md` (A1–A10 PASS, reviewer findings fixed).
-- Branch: `feat/cli-mvp` → PR into `main` (includes the docs commits; `feat/project-docs` is superseded)
+- Active plan: `docs/plans/ui.md` (Draft; decisions D1–D9 await owner). CLI MVP in review: PR #1, `docs/plans/done/cli-mvp.md`.
+- Branch: `feat/ui`, stacked on `feat/cli-mvp` (PR #1, open). `feat/project-docs` is superseded.
 - Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/crosswalk.mp4` local and gitignored (README has the commands)
 
 ## Next step (exact)
-1. Owner reviews and merges the PR (never merged by an agent).
-2. `plan` the local UI (spec §9) as `docs/plans/ui.md`, on a new branch off `main` after the merge.
+1. Owner confirms UI decisions D1–D9, then `build` step 1 (pin Streamlit, theme config, `scripts/ui.sh`).
+2. Owner reviews and merges PR #1 (never merged by an agent); rebase `feat/ui` on `main` afterwards.
 
 ## Blocked / needs owner
-- PR review and merge
+- UI decisions D1–D9; PR #1 review and merge
 
 ## Last check
 - `scripts/check.sh`: ruff ok, 78 passed. Crosswalk benchmarks: exit 0 ×3, median 32.14 fps (CPU, battery).
