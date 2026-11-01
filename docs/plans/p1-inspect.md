@@ -64,7 +64,7 @@ cancel buttons, run deletion.
 6. [x] UI restructure (D8, D9): header, setup screen, Inspect tab (playback + still + frame slider + object
    panel with intervals; confidence, gaps, contact sheet behind disclosure), Performance tab, Export disclosure.
    AppTest incl. a tracker factory that raises if called.
-7. [ ] Browser verification (P1-9, P1-10), README, log.
+7. [x] Browser verification (P1-9, P1-10), README, log.
 
 ## Acceptance
 | # | Criterion | Command | Result |
@@ -77,8 +77,8 @@ cancel buttons, run deletion.
 | P1-6 | Shelf lists only SUCCEEDED published runs; legacy runs read-only and labelled | tests + browser | |
 | P1-7 | Per-run context restores; IDs from another run never carry over | AppTest | |
 | P1-8 | Frame cache ≤ 8; a one-frame step forward is fast (measured, reported) | test + script | |
-| P1-9 | First run: Try demo → Run tracking → inspect an object → export PNG, without opening Advanced settings | browser | |
-| P1-10 | Keyboard-only path and 320 px / tablet / desktop widths: no overflow, visible focus | browser | |
+| P1-9 | First run: Try demo → Run tracking → inspect an object → export PNG, without opening Advanced settings | browser | Pass: demo run r_20261101T065533Z_a53b2e (1,356 frames) opened itself; object picked; evidence.png + export.json written; Advanced never opened |
+| P1-10 | Keyboard-only path and 320 px / tablet / desktop widths: no overflow, visible focus | browser | Pass: scrollWidth = viewport at 320/768/1440; every stop in bounds with a focus ring; run opened, object picked and frame stepped by keyboard only |
 
 ## Risks
 - Large seeks stay up to ~0.4 s on sparse-keyframe clips: mitigated by forward stepping and the cache; reported,
@@ -99,3 +99,4 @@ no-hidden-inference behaviour.
 - 2026-11-01 step 4: render.ViewOptions (labels, trail length/opacity, spotlight, class filter) + annotate_still (MP4 path untouched); inspection: tracks_of, observed (this exact frame), trails_for (observed centres only, bounded), render_still (source frame + its own record), export_evidence (exports/<recipe hash>/evidence.png + export.json; reused for the same recipe). 7 tests, 247 total. Real: baseline frame 1064, spotlight #3262 (216 frames, 13 intervals): PNG pixel-identical to the still, hash = export.json, render 188 ms incl. a seek. Feeds P1-4.
 - 2026-11-01 step 5: presets.py (data/presets/<name>.json; view = labels/trail length/opacity/classes, tracking = device/conf; allowlisted fields with type and range checks; names [A-Za-z0-9_-]{1,40}; explicit overwrite). Spotlight deliberately never saved: track IDs are run-local (D9). 21 tests, 268 total.
 - 2026-11-01 step 6: app.py rewritten around the shelf. Header: run selector (legacy behind "Show legacy runs"), written status badge, New video. Setup: Try demo / Choose video, Advanced settings collapsed (tracking presets, device, detection threshold), Run tracking. Result: Inspect tab (native playback marked unsynchronized; exact still from the source frame + its own record; frame slider; view options; object panel with observed-in-this-frame, intervals, First/Last seen, details and contact sheet behind disclosures), Performance tab, Export popover (3 downloads + evidence PNG). ui/workspace.py: per-run context restored per run with stale frames/IDs dropped (D9). Bug caught by AppTest: two runs of one clip in the same minute had identical labels and Streamlit selectboxes match by label, so picking run B reopened A; labels now end with the run ID's tail. 22 tests (14 AppTest with a runner and model entry points that raise, 8 workspace), 281 total. Browser on the real baseline: open run, select #892, Last seen → frame 686 with spotlight; New video stays on setup; no console errors.
+- 2026-11-01 step 7: browser on the real app. P1-9: Try demo → Run tracking (real model, 1,356 frames) → result opened itself → object picked → Create evidence PNG wrote exports/441052d0…/evidence.png; Advanced settings never opened. P1-10: no horizontal scroll at 320, 768 and 1440 px; full tab order recorded at 320 px, all stops in bounds with visible focus; Saved runs, object selector and Source frame slider (arrow keys: frame 0 → 5) driven by keyboard alone. Found and fixed: Streamlit's heading anchor links added four empty tab stops ("Link to heading"); hidden in style.py. README Local UI section rewritten for the workbench. 281 tests.

@@ -9,12 +9,12 @@ Updated: 2026-11-01
   resolved RunSpec, CFR + limits, data root with staging → validate → manifest → atomic publish, lease, UI on the
   data root. Merged as PR #6 (CI: 212 passed, 2 real-media tests skipped: no ffmpeg on the runner).
 - Baseline: `data/runs/r_20261101T062222Z_2ad4d6` at clean commit `8f9ec5e` (1,356 frames, 44.67 fps, mains).
-- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–6 done). Branch `feat/p1-inspect` (local).
+- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–7 done). Branch `feat/p1-inspect` (local).
 - Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored.
 
 ## Next step (exact)
-1. P1 step 7: browser verification (P1-9 first-run path, P1-10 keyboard + 320 px / tablet / desktop widths), README
-   UI/inspect section, log. Then verify (reviewer) and ship P1 as a PR.
+1. P1 verify: reviewer pass over `feat/p1-inspect`, fill the remaining acceptance rows (P1-1..P1-8).
+2. Ship P1 as a PR (confirm CI runs the real-media ffmpeg tests, P1-1). Then stop for the owner's P2 go-ahead.
 
 ## Blocked / needs owner
 - none
