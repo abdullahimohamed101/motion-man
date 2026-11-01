@@ -15,7 +15,7 @@ import streamlit as st
 
 from motionman import inspection, presets, records, runs, store
 from motionman.presets import Preset, PresetError
-from motionman.ui import style, view, workspace
+from motionman.ui import style, view, workspace, zones
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
 from motionman.video_io import VideoError
 
@@ -277,7 +277,7 @@ def result_page(summary: runs.RunSummary) -> None:
     with actions:
         export_slot = st.container(key="export")  # filled once the inspected frame and view options are known
         details_menu(run, summary)
-    inspect_tab, perf_tab = st.tabs(["Inspect", "Performance"])
+    inspect_tab, zones_tab, perf_tab = st.tabs(["Inspect", "Events & zones", "Performance"])
 
     with inspect_tab:
         left, right = st.columns([3, 1], gap="medium")
@@ -335,6 +335,9 @@ def result_page(summary: runs.RunSummary) -> None:
             unassigned = sum(1 for o in record["objects"] if o["track_id"] is None)
             st.caption(f"Unassigned detections in this frame: {unassigned}")
         contexts[rid] = workspace.RunContext(frame, track, dict(vd), spotlight)
+
+    with zones_tab:
+        zones.zones_tab(run, derived, frames, root)
 
     with perf_tab:
         perf_panel(run, summary)

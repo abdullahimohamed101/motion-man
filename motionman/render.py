@@ -140,3 +140,34 @@ def annotate_still(
             prefix = "#?" if t.track_id is None else f"#{t.track_id}"
             _label(out, f"{prefix} {t.class_name} {t.confidence:.2f}", (x1, y1), color, scale, thickness)
     return out
+
+
+REGION_COLOR = (224, 214, 208)  # mist: saved regions
+PENDING_COLOR = (34, 242, 228)  # acid lime, as a signal stroke: the region being edited
+
+
+def draw_regions(image: np.ndarray, regions: Sequence, pending=None) -> np.ndarray:
+    """Draw region outlines on a copy of a source frame (plan P3 D12). Lines get an arrowhead at B and a "+" on
+    their positive side (left when facing A→B on screen); ``pending`` is drawn in the signal colour."""
+    img = image.copy()
+    h, w = img.shape[:2]
+    scale = max(1, round(w / 960))
+    for region, color in [*((r, REGION_COLOR) for r in regions), *(((pending, PENDING_COLOR),) if pending else ())]:
+        c = [round(v) for v in region.to_px(w, h)]
+        if region.kind == "line":
+            ax, ay, bx, by = c
+            length = max(1.0, ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5)
+            tip = min(0.3, 24 * scale / length)  # arrowhead about 24 px, whatever the line's length
+            cv2.arrowedLine(img, (ax, ay), (bx, by), color, 2 * scale, cv2.LINE_AA, tipLength=tip)
+            nx, ny = (by - ay) / length, -(bx - ax) / length  # left normal on screen (image y points down)
+            mx, my = (ax + bx) / 2, (ay + by) / 2
+            plus = (round(mx + nx * 18 * scale), round(my + ny * 18 * scale))
+            cv2.putText(img, "+", (plus[0] - 6 * scale, plus[1] + 6 * scale), _FONT, 0.7 * scale, color,
+                        2 * scale, cv2.LINE_AA)  # fmt: skip
+            anchor = (min(ax, bx), min(ay, by))
+        else:
+            x1, y1, x2, y2 = c
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2 * scale, cv2.LINE_AA)
+            anchor = (x1, y1)
+        _label(img, region.name, anchor, color, 0.5 * scale, scale)
+    return img
