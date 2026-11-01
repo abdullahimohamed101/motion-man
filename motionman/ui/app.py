@@ -83,7 +83,7 @@ def new_video() -> None:
     st.session_state["run_picker"] = None
 
 
-st.set_page_config(page_title="MotionMan", page_icon="◰", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="MotionMan", page_icon=style.FAVICON, layout="wide", initial_sidebar_state="collapsed")
 st.html(style.CSS)
 runner = get_runner()
 state = runner.snapshot()
@@ -104,7 +104,7 @@ if page == "result" and current is None:
     page = st.session_state["page"] = "setup"  # the run disappeared (or legacy runs were hidden)
 
 
-# --- Header: wordmark, source, run selector, written status, New video ------------------------------------
+# --- Top bar: logo + wordmark + source | saved-run picker, legacy toggle, status pill, New video / Export -----
 @st.fragment(run_every=0.5 if state.busy else 2.0)
 def status_badge() -> None:
     s = runner.snapshot()
@@ -118,36 +118,41 @@ def status_badge() -> None:
         badge = view.BADGES["error"]
     else:
         badge = view.Badge("Ready", "gray", ":material/radio_button_unchecked:")
-    st.badge(badge.label, icon=badge.icon, color=badge.color)
+    st.badge(badge.label, icon=badge.icon, color=badge.color, width="stretch")
 
 
-head_left, head_runs, head_status, head_new = st.columns([3, 4, 1.2, 1.4], vertical_alignment="center")
-with head_left:
-    st.markdown("## MotionMan")
-    st.caption(current.display_name if current else "Object Tracking Workbench")
-with head_runs:
-    ids = [r.run_id for r in shelf]
-    if ids:
-        if st.session_state.get("run_picker") not in ids:
-            st.session_state["run_picker"] = current.run_id if current else None
-        choice = st.selectbox(
-            "Saved runs",
-            ids,
-            format_func=lambda rid: by_id[rid].label,
-            placeholder="Open a saved run",
-            key="run_picker",
-        )
-        if choice is not None and (current is None or choice != current.run_id):
-            show_run(choice, sync_picker=False)
-            st.rerun()
-    else:
-        st.caption("No saved runs yet.")
-    st.toggle("Show legacy runs", key="show_legacy", help="Older outputs from before verified runs. Read-only.")
-with head_status:
-    status_badge()
-with head_new:
-    if page == "result":
-        st.button("New video", icon=":material/add:", on_click=new_video, width="stretch")
+with st.container(key="topbar"):
+    bar_brand, bar_runs, bar_legacy, bar_status, bar_actions = st.columns(
+        [2.4, 3.2, 1.5, 1.2, 2.9], vertical_alignment="center"
+    )
+    with bar_brand:
+        st.html(style.brand_html(current.display_name if current else None))
+    with bar_runs:
+        ids = [r.run_id for r in shelf]
+        if ids:
+            if st.session_state.get("run_picker") not in ids:
+                st.session_state["run_picker"] = current.run_id if current else None
+            choice = st.selectbox(
+                "Saved runs",
+                ids,
+                format_func=lambda rid: by_id[rid].label,
+                placeholder="Open a saved run",
+                key="run_picker",
+                label_visibility="collapsed",
+            )
+            if choice is not None and (current is None or choice != current.run_id):
+                show_run(choice, sync_picker=False)
+                st.rerun()
+        else:
+            st.caption("No saved runs yet.")
+    with bar_legacy:
+        st.toggle("Legacy", key="show_legacy", help="Show legacy runs: outputs from before verified runs. Read-only.")
+    with bar_status:
+        status_badge()
+    with bar_actions:
+        act_new, act_export = st.columns(2)
+        if page == "result":
+            act_new.button("New video", icon=":material/add:", on_click=new_video, width="stretch")
 
 
 # --- Setup: Choose video / Try demo → Run tracking ---------------------------------------------------------
@@ -165,11 +170,19 @@ def progress_panel() -> None:
 
 
 def setup_page() -> None:
-    st.markdown("### Choose a video to track objects, or try the demo.")
-    st.caption(LIMITS)
+    with st.container(key="pagehead"):
+        st.markdown("### Choose a video to track objects, or try the demo.")
+        st.caption(LIMITS)
+    with st.container(border=True, key="setup-card", width=720):
+        source_card()
+
+
+def source_card() -> None:
+    st.markdown("#### Source")
     demo_ok = DEMO_CLIP.is_file()
     options = (["Try demo"] if demo_ok else []) + ["Choose video"]
-    mode = st.segmented_control("Source", options, default=options[0], required=True, key="mode")
+    mode = st.segmented_control("Source", options, default=options[0], required=True, key="mode",
+                                label_visibility="collapsed")  # fmt: skip
     info, source_error, start_kwargs = None, None, None
     if mode == "Try demo":
         info, source_error = probe_cached(f"demo:{DEMO_CLIP.stat().st_mtime_ns}", lambda: probe(DEMO_CLIP))
@@ -177,13 +190,14 @@ def setup_page() -> None:
     else:
         if not demo_ok:
             st.caption(f"The demo clip isn't at `{DEMO_CLIP}` (see README → Sample clip).")
-        upload = st.file_uploader("Video file", type=["mp4", "m4v", "mov"], key="upload")
+        upload = st.file_uploader("Video file", type=["mp4", "m4v", "mov"], key="upload",
+                                  label_visibility="collapsed")  # fmt: skip
         if upload is not None:
             data = upload.getvalue()
             info, source_error = probe_cached(f"upload:{upload.file_id}", lambda: probe_upload(upload.name, data))
             start_kwargs = {"upload": (upload.name, data)}
     if info is not None:
-        st.caption("  \n".join(view.source_lines(info)))
+        st.caption(" · ".join(view.source_lines(info)))
     if source_error:
         st.error(source_error, icon=":material/error:")
         start_kwargs = None
@@ -247,31 +261,36 @@ def result_page(summary: runs.RunSummary) -> None:
     contexts: dict = st.session_state.setdefault("contexts", {})
     ctx = workspace.restore(contexts.get(rid), count, derived.tracks)
 
-    top_left, top_right = st.columns([5, 1], vertical_alignment="center")
-    with top_left:
+    with st.container(key="pagehead"):
+        st.markdown(f"### {summary.display_name}")
         note = " · source unverified (legacy run)" if not run.source_verified else ""
         st.caption(f"Run `{rid}` · {count:,} frames · {run.width}×{run.height} at {run.fps:.3f} fps playback{note}")
     inspect_tab, perf_tab = st.tabs(["Inspect", "Performance"])
 
     with inspect_tab:
-        left, right = st.columns([3, 1], gap="large")
-        with right:
+        left, right = st.columns([3, 1], gap="medium")
+        object_card = right.container(border=True)
+        with object_card:
             st.markdown("#### Object")
             order = workspace.track_order(derived.tracks)
             track = st.selectbox(
                 "Selected object", [None, *order], key=bind(f"track-{rid}", ctx.track),
                 format_func=lambda t: "None" if t is None else workspace.track_label(derived.tracks[t]),
+                label_visibility="collapsed",
             )  # fmt: skip
-        with left:
+        with left.container(border=True):
             frame_key = bind(f"frame-{rid}", ctx.frame)
-            st.markdown("#### Playback")
-            choice = st.segmented_control("Video", ["Tracked", "Original"], default="Tracked", required=True,
-                                          key=f"playback-{rid}")  # fmt: skip
+            title, control = st.columns([2, 1], vertical_alignment="center")
+            title.markdown("#### Playback")
+            with control.container(horizontal=True, horizontal_alignment="right"):
+                choice = st.segmented_control("Video", ["Tracked", "Original"], default="Tracked", required=True,
+                                              key=f"playback-{rid}", label_visibility="collapsed")  # fmt: skip
             if choice == "Original" and run.source_path is None:
                 st.caption("The original video for this legacy run isn't available.")
             else:
                 st.video(str(run.video_path if choice == "Tracked" else run.source_path))
             st.caption("Native playback. It is not synchronized with the inspected frame below.")
+        with left.container(border=True):
             st.markdown("#### Inspected frame")
             frame = st.slider("Source frame", 0, count - 1, key=frame_key)
             with st.expander("View options", expanded=False):
@@ -299,7 +318,7 @@ def result_page(summary: runs.RunSummary) -> None:
                              caption=workspace.frame_caption(frame, record["source_t_us"], count))  # fmt: skip
                 except inspection.InspectError as e:
                     st.warning(f"{e}. Try another frame.", icon=":material/warning:")
-        with right:
+        with object_card:
             object_panel(run, derived, frames, track, record, frame_key)
             unassigned = sum(1 for o in record["objects"] if o["track_id"] is None)
             st.caption(f"Unassigned detections in this frame: {unassigned}")
@@ -308,7 +327,7 @@ def result_page(summary: runs.RunSummary) -> None:
     with perf_tab:
         perf_panel(run, summary)
 
-    with top_right:
+    with act_export:
         export_menu(run, derived, frames, frame, options, record)
 
 
@@ -365,19 +384,12 @@ def perf_panel(run, summary) -> None:
     for col, m in zip(st.columns(4), view.phase_metrics(report), strict=True):
         col.metric(m.label, m.value, help=m.help, border=True)
     rows = view.stage_breakdown(report)
-    if rows is None:
-        st.caption(f"Per-stage timing: {view.NOT_RECORDED.lower()} (it was made before stage timings existed).")
-    else:
-        st.dataframe(
-            [{"Stage": r.label, "p50": r.p50, "p95": r.p95, "Share of processing": r.share} for r in rows],
-            column_config={"Share of processing": st.column_config.ProgressColumn(format="percent", min_value=0,
-                                                                                  max_value=1)},
-            hide_index=True, width="stretch", key=f"stages-{run.run_id}",
-        )  # fmt: skip
-        warm = report["timing"].get("warmup") or {}
-        st.caption(f"p50/p95 exclude the first {warm.get('frames', 10)} frames as warmup "
-                   f"({warm.get('samples', 0):,} samples); shares count every frame. Decode and write time the calls "
-                   "only: the video codec may do part of its work on background threads.")  # fmt: skip
+    with st.container(border=True):
+        st.markdown("#### Per-stage timing")
+        if rows is None:
+            st.caption(f"{view.NOT_RECORDED} (it was made before stage timings existed).")
+        else:
+            stage_table(run, report, rows)
     with st.expander("Run details", expanded=False):
         rows = view.report_details(report, summary.display_name, summary.path)
         rows.insert(0, ("Run ID", run.run_id))
@@ -386,6 +398,19 @@ def perf_panel(run, summary) -> None:
                      ("Input", f"{run.manifest['input_id'][:19]}… (verified)")]  # fmt: skip
         for k, v in rows:
             st.markdown(f"**{k}** · `{v}`")
+
+
+def stage_table(run, report, rows) -> None:
+    st.dataframe(
+        [{"Stage": r.label, "p50": r.p50, "p95": r.p95, "Share of processing": r.share} for r in rows],
+        column_config={"Share of processing": st.column_config.ProgressColumn(format="percent", min_value=0,
+                                                                              max_value=1)},
+        hide_index=True, width="stretch", key=f"stages-{run.run_id}",
+    )  # fmt: skip
+    warm = report["timing"].get("warmup") or {}
+    st.caption(f"p50/p95 exclude the first {warm.get('frames', 10)} frames as warmup "
+               f"({warm.get('samples', 0):,} samples); shares count every frame. Decode and write time the calls "
+               "only: the video codec may do part of its work on background threads.")  # fmt: skip
 
 
 def export_menu(run, derived, frames, frame, options, record) -> None:

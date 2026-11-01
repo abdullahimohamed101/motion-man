@@ -1,27 +1,40 @@
-# MotionMan UI theme (spec §9). Tokens config can't express live in motionman/ui/style.py.
+# MotionMan UI theme (spec §9): near-black surfaces, grey type, one acid-lime accent for the primary action.
+# Tokens config can't express (cards, top bar, type scale details) live in motionman/ui/style.py.
 [theme]
 base = "dark"
-primaryColor = "#A3E635"            # Motion Lime: Run tracking, focus, selection, progress only
-backgroundColor = "#040506"         # canvas
-secondaryBackgroundColor = "#111214" # inset surfaces: inputs and recessed controls
-textColor = "#F5F5F5"
-borderColor = "#363739"
+primaryColor = "#E4F222"            # acid lime: the one primary action per view, focus, selection, progress
+backgroundColor = "#08090A"         # void: canvas
+secondaryBackgroundColor = "#161718" # obsidian: inputs and recessed controls
+textColor = "#D0D6E0"               # mist: body text; headings are forced to paper in style.py
+borderColor = "#23252A"             # graphite hairline
 showWidgetBorder = true
-baseRadius = "8px"
-buttonRadius = "8px"
+baseRadius = "6px"
+buttonRadius = "6px"
 font = "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"
-codeFont = "'Geist Mono', ui-monospace, Menlo, Consolas, monospace"
 baseFontSize = 14
-metricValueFontSize = "26px"
-headingFontSizes = ["28px", "24px", "16px", "16px", "14px", "14px"]  # h2 = app title, h4 = section labels
-headingFontWeights = 600
-redColor = "#F87171"
-yellowColor = "#FBBF24"
-greenColor = "#A3E635"
+baseFontWeight = 400
+codeFont = "'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace"
+codeFontSize = "12px"
+codeBackgroundColor = "#161718"
+headingFont = "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif"
+headingFontSizes = ["32px", "24px", "20px", "16px", "14px", "12px"]  # h2 = page title, h4 = card title
+headingFontWeights = [590, 590, 590, 510, 510, 510]
+metricValueFontSize = "24px"
+metricValueFontWeight = 510
+linkColor = "#D0D6E0"
+dataframeBorderColor = "#23252A"
+dataframeHeaderBackgroundColor = "#0F1011"
+redColor = "#EB5757"
+greenColor = "#27A644"
+yellowColor = "#E4F222"
+blueColor = "#02B8CC"
+violetColor = "#6366F1"
+grayColor = "#8A8F98"
+grayBackgroundColor = "#161718"
 
 [theme.sidebar]
-backgroundColor = "#07080A"         # panel
-secondaryBackgroundColor = "#111214"
+backgroundColor = "#0F1011"
+secondaryBackgroundColor = "#161718"
 
 [server]
 headless = true
