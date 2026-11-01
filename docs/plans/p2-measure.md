@@ -69,7 +69,7 @@ Release A is then complete.
 1. [x] Stage timings (D1–D4): pipeline instrumentation, `timings.jsonl` artifact in the manifest, report
    timing fields + warmup policy. Tests: rows = frames, stage sums ≤ wall, short-run nulls with reasons,
    failed runs still report what was measured.
-2. [ ] UI Performance breakdown (D12) and README timing definitions; one real crosswalk run to name the
+2. [x] UI Performance breakdown (D12) and README timing definitions; one real crosswalk run to name the
    measured bottleneck.
 3. [ ] Telemetry (D9) with a fake sampler/clock in tests; Unavailable paths tested.
 4. [ ] `benchmark` (D5). Tests with the fake tracker: N tracker constructions, N distinct run_ids, a failing
@@ -108,3 +108,4 @@ Release A is then complete.
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
 - 2026-11-01 step 1: pipeline times decode (inside next()), detect_track, render, write per frame → timings.jsonl (streamed, in the manifest); Metrics gains begin_job/add_frame/finish; report timing adds setup_s, finalize_s, job_wall_s, per-stage p50/p95/total, unattributed remainder, warmup policy + samples, instrumentation mode; old keys kept. 9 tests, 303 total. Real crosswalk (battery 97%, discharging): 44.4 fps; setup 3.33 s (model load 2.99), wall 30.54 s, finalize 0.79 s, job 34.66 s; detect_track 89.5% of wall (p50 19.35 ms), render 3.7%, write 3.7%, decode 2.1%, unattributed 0.9%. Caveat for README: decode/write time the calls only; OpenCV's codec may work on background threads.
+- 2026-11-01 step 2: Performance tab gains "Where the time went": Setup / Processing / Finalize / Job total cards and a stage table (p50, p95, share of processing as a bar, unattributed row) with the warmup and codec-thread caveats. view.stage_breakdown / phase_metrics are pure; runs from before P2 show "—" with "Not recorded in this run" as help and a caption (the full phrase was cut off in the cards in the browser). README "Where the time goes" rewritten: field table, warmup rule, lower-bound note for decode/write, measured bottleneck (detect+track 89.5% of wall). 3 tests, 306 total. Browser: new run shows the table with real numbers; baseline 2ad4d6 shows not recorded, no zeros.

@@ -95,3 +95,32 @@ def test_run_details_only_for_a_report():
     details = dict(view.run_details(JobState(status="complete", report=report(), run_dir=Path("runs/ui/x"))))
     assert details["Device"] == "requested auto · used cpu"
     assert details["Packages"] == "torch 2.15.0"  # missing packages are left out
+
+
+def p2_report():
+    stage = {"p50": 2.0, "p95": 3.0, "samples": 10, "warmup_excluded": 10, "total_s": 0.5}
+    return {
+        "timing": {
+            "processing_wall_s": 10.0, "setup_s": 3.0, "finalize_s": 0.8, "job_wall_s": 13.8,
+            "stages": {"decode_ms": stage, "detect_track_ms": {**stage, "total_s": 8.9},
+                       "render_ms": {**stage, "p50": None, "p95": None, "reason": "too few"}, "write_ms": stage},
+            "stage_scopes": {"decode_ms": "inside next()"},
+            "unattributed": {"total_s": 0.1, "share_of_wall": 0.01, "scope": "loop work"},
+        }
+    }  # fmt: skip
+
+
+def test_stage_breakdown_shows_shares_and_na_never_zero():
+    rows = view.stage_breakdown(p2_report())
+    assert [r.label for r in rows] == ["Decode", "Detect + track", "Render", "Write", "Unattributed"]
+    assert rows[1].share == pytest.approx(0.89) and rows[0].p50 == "2.00 ms" and rows[0].scope == "inside next()"
+    assert rows[2].p50 == view.NOT_AVAILABLE and rows[4].share == 0.01
+
+
+def test_phase_metrics_for_new_and_old_runs():
+    assert [m.value for m in view.phase_metrics(p2_report())] == ["3.00 s", "10.00 s", "0.80 s", "13.80 s"]
+    old = {"timing": {"processing_wall_s": 30.1, "end_to_end_fps": 45.0}}  # a report from before P2
+    assert view.stage_breakdown(old) is None
+    phases = view.phase_metrics(old)
+    assert [m.value for m in phases] == [view.NO_RESULT, "30.10 s", view.NO_RESULT, view.NO_RESULT]
+    assert phases[0].help == phases[3].help == view.NOT_RECORDED  # never a zero

@@ -201,10 +201,40 @@ What the numbers mean:
   includes one prediction on a blank frame; without it, about 2.5 s of setup would land in the first frame of the
   wall time and make short runs look slow. The warmup runs in predict mode, so tracker state is untouched.
 
-Where the time goes: on mains power a frame takes about 22.6 ms end to end, and the median detect+track call is
-about 20 ms (about 31 ms and 27 ms on battery). So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
-make up most of the rest. A 48-frame run now measures 23 fps end to end (it was 11 fps before the warmup fix),
-because a short run is still dominated by the slower first few frames.
+### Where the time goes
+
+Every run since P2 records stage timings (`report.json` → `timing`, and one row per frame in `timings.jsonl`):
+
+| Field | What it covers |
+|---|---|
+| `setup_s` | Run start to just before the first decode: input checks, import and hashing, model load, writer open |
+| `decode_ms` | Time inside the frame reader's `next()`, including the source timestamp check |
+| `detect_track_ms` | The whole `model.track` call (YOLO + ByteTrack) plus conversion to records |
+| `render_ms` | Trail update plus drawing boxes, labels and trails |
+| `write_ms` | Writing the annotated frame to the encoder plus the JSONL record line |
+| `unattributed` | Wall time outside the four stages (record building, timing rows, progress updates) |
+| `finalize_s` | Writer release to the report write: output decode check, records validation, hashing |
+| `job_wall_s` | Setup + processing + finalize. The final rename into `runs/` comes after the report and is excluded |
+
+Stage p50/p95 exclude the first 10 frames as warmup (the policy and sample count are saved in the report); stage
+totals and shares count every frame. Stage times are wall clock; they need not add up to the wall time, and the
+remainder is reported rather than hidden. Decode and write time the calls only: OpenCV's codec may do part of its
+work on background threads, so treat those two as lower bounds.
+
+**Measured bottleneck.** One CLI run of the crosswalk clip (`r_20261101T072747Z_15bbeb`, battery at 97% and
+discharging, 44.4 fps end to end):
+
+| Stage | Share of processing wall | p50 per frame |
+|---|---|---|
+| Detect + track | 89.5% | 19.35 ms |
+| Render | 3.7% | 0.81 ms |
+| Write | 3.7% | 0.79 ms |
+| Decode | 2.1% | 0.43 ms |
+| Unattributed | 0.9% | |
+
+Setup took 3.33 s (2.99 s of it model load), processing 30.54 s and finalize 0.79 s, for a 34.66 s job. The model
+and tracker are the bottleneck by a wide margin, so faster decoding or drawing would barely move end-to-end FPS;
+a smaller input size, a lighter model or a GPU would. A short run is still dominated by its slower first frames.
 
 ## Limitations
 
