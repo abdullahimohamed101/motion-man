@@ -61,7 +61,7 @@ give the same events, no matter how fast the clip was processed, and the model n
 ## Steps
 1. [x] `regions.py`: schema, validation (zero length/area, range, ids, duplicate ids), px conversion, save
    (content-addressed) / load / list per input. Tests: valid and each refusal; same content gives same id.
-2. [ ] `analytics.py` rules, pure functions over observation streams: side and stability, segment intersection,
+2. [x] `analytics.py` rules, pure functions over observation streams: side and stability, segment intersection,
    line state machine, rect state machine, occupancy, dwell, thresholds. Tests on synthetic tracks: MD fixtures
    1–4, endpoint pass, touch-and-return, edge-inside occupancy, disappear-on-one-side-reappear-on-other.
 3. [ ] Analysis runner: AnalysisSpec, `analysis_id`, one streaming pass over records via the P1 index, outputs
@@ -105,3 +105,4 @@ give the same events, no matter how fast the clip was processed, and the model n
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
 - 2026-11-01 step 1: regions.py: RegionSet/Region (line A→B or rect, normalized coords rounded to 6 decimals so float noise keeps ids stable, optional class filter, rect-only dwell/occupancy thresholds); parse refuses unknown fields, bad schema/input_id, 0 or >32 regions, duplicate or malformed ids, zero-length lines, non-positive-area boxes, out-of-range/NaN/bool coords, bad thresholds and class lists; content-addressed save under regions/<input hex>/rs_<16 hex>.json (identical content → same file), load by id refuses hand-edited files, list per video skips unreadable ones. 31 tests, 393 total.
+- 2026-11-01 step 2: analytics.py Engine: per-frame feed in order (refuses out-of-order), any absent frame or >500 ms gap drops a track's state (no event on reacquire, no bridged dwell), line side/deadband/confirmation (≥100 ms and ≥2 stable obs), crossing tested from the last point strictly on the stable side (found while testing: a centre exactly on the line otherwise slipped through as a silent side switch), endpoint pass = silent side change, rearm on confirm; rect INSIDE/OUTSIDE/UNKNOWN with the same deadband rules, edge-inclusive occupancy, time-weighted occupancy_us, per-visit dwell, dwell/occupancy thresholds on upward transitions only; null IDs only counted as unassigned. Integer µs throughout. 23 tests (fixtures 1–4, on-line centre, endpoint, unconfirmed excursion, long gap, class filter, ordering, determinism), 416 total.
