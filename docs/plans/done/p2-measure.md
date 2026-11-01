@@ -1,5 +1,5 @@
 # P2 Measure: stage timings, benchmarks, doctor and debug bundles
-Status: Active · Branch: `feat/p2-measure` · Spec: A§9, A§10 (MD§12, MD§17, MD§21)
+Status: Done (merged PR #8, 2026-11-01) · Branch: `feat/p2-measure` · Spec: A§9, A§10 (MD§12, MD§17, MD§21)
 
 ## Outcome
 Every run records where its time went (setup, decode, detect+track, render, write, finalize) with per-frame
@@ -86,7 +86,7 @@ Release A is then complete.
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| P2-1 | Offline gate passes; new suites need no weights, GPU or network | `scripts/check.sh`; CI || Local pass, 355 tests (doctor's torch probe and model loader injected; no weights or network). CI: pending on the P2 PR |
+| P2-1 | Offline gate passes; new suites need no weights, GPU or network | `scripts/check.sh`; CI || Pass: local 360 tests (doctor's torch probe and model loader injected; no weights or network); PR #8 CI check SUCCESS |
 | P2-2 | Every run reports setup, decode, detect_track, render, write, finalize and job wall; rows = frames | test + real run || Pass: test_stages (rows = frames, totals ≤ wall, job = setup + wall + finalize); real runs report all fields (e.g. setup 3.45 s, wall 29.36 s) |
 | P2-3 | Warmup policy and sample counts persisted; too few samples → null with a reason | test || Pass: test_stages::test_warmup_policy_and_short_runs_are_explicit; report.timing.warmup = exclude_first_inferred / 10 / samples |
 | P2-4 | Benchmark repeats never reuse inference: N trackers, N run_ids, N fresh records hashes on real repeats | test + real || Pass: test_benchmark (3 trackers, 3 run_ids, 3 records hashes); real: 6 trials, 6 distinct run_ids and records hashes |
