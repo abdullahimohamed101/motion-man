@@ -26,8 +26,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "requirements*.txt"
 
-      - name: System libraries for opencv-python
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgl1 libglib2.0-0
+      - name: System libraries (opencv-python; ffmpeg so the real-media tests run instead of skipping)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgl1 libglib2.0-0 ffmpeg
 
       - name: Install pinned dependencies (CPU-only torch)
         run: |

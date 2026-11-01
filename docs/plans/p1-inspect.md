@@ -1,5 +1,5 @@
 # P1: make completed work inspectable
-Status: Draft · Branch: `feat/p1-inspect` · Spec: A§7, A§8 · Design: MD§9, MD§11, MD§20 P1, UI2 · Estimate: 1.5–2.5 days
+Status: Active · Branch: `feat/p1-inspect` · Spec: A§7, A§8 · Design: MD§9, MD§11, MD§20 P1, UI2 · Estimate: 1.5–2.5 days
 
 ## Outcome
 Opening and exploring a published run is useful without ever invoking the model: pick a run, scrub to an exact
@@ -21,7 +21,7 @@ cancel buttons, run deletion.
   a sparse index every 128 records (11 offsets, 2 ms), summaries for all 701 tracks (24 ms).
 - Legacy MVP runs record `source.path` (e.g. `clips/crosswalk.mp4`) but no hashes.
 
-## Decisions (confirm before build)
+## Decisions (confirmed 2026-11-01)
 - D1 Exact frames come from the run's managed source, never the annotated video. A `FrameSource` keeps one
   reader open: forward steps of ≤ 48 frames decode forward; other jumps seek. Every returned frame's timestamp
   is checked against `index / fps`; a mismatch shows "Couldn't position this frame exactly", never a wrong frame.
@@ -51,8 +51,8 @@ cancel buttons, run deletion.
 - D10 Step 0: install ffmpeg in CI so the two real-media tests run on GitHub instead of skipping.
 
 ## Steps
-0. [ ] CI: install ffmpeg; confirm the real-media tests run (not skipped) on the PR.
-1. [ ] `motionman/runs.py`: discovery, open + verify (D4), legacy read-only listing (D5). Tests incl. tampered
+0. [x] CI: install ffmpeg; confirm the real-media tests run (not skipped) on the PR.
+1. [x] `motionman/runs.py`: discovery, open + verify (D4), legacy read-only listing (D5). Tests incl. tampered
    artifact, tampered source, staging never listed.
 2. [ ] `motionman/inspect.py` part 1: derived index + track summaries (D3), random record access by frame.
    Tests incl. stale index rebuild, gaps/intervals on synthetic records.
@@ -93,3 +93,4 @@ no-hidden-inference behaviour.
 ## Log
 - 2026-11-01 plan: spike measured seek exactness (8/8 byte-equal) and cost (31–396 ms, keyframes every ~10 s),
   verify-on-open 36 ms, index 2 ms, 701 track summaries 24 ms.
+- 2026-11-01 steps 0–1: ffmpeg added to the CI apt step (verified on the PR, P1-1). runs.py: list_runs (SUCCEEDED manifests only, newest first; legacy MVP folders read-only), open_run (re-hash every artifact + managed source, runspec hash checks; RunError on mismatch). Manifest times now ms precision (two runs in one second sorted arbitrarily — caught by test). 11 tests, 225 total. Real: 19 runs listed in 9 ms (3 canonical, 16 legacy); baseline opened + verified in 87 ms; legacy demo-recording opens with source found, unverified. UI note: hide legacy behind a toggle (16 mostly test runs).
