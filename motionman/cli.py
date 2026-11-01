@@ -1,7 +1,7 @@
 """Command-line entry point (spec §5).
 
 ``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
-(plan P2 D11) dispatches instead: ``benchmark``, ``compare``.
+(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``.
 
 Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
 locked · 130 interrupted.
@@ -190,4 +190,38 @@ def compare_main(argv: list[str]) -> int:
     return EXIT_OK  # a confounded comparison is information, not a failure (D6)
 
 
-SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main}
+def doctor_main(argv: list[str]) -> int:
+    """``motionman doctor``: read-only environment checks, each with a next step (plan P2 D7, D8)."""
+    from motionman import doctor
+
+    p = argparse.ArgumentParser(prog="motionman doctor", description=doctor_main.__doc__.split(": ", 1)[1])
+    p.add_argument("--source", type=Path, default=None, help="also preflight this video and give input-quality hints")
+    p.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="device to check (default: cpu)")
+    p.add_argument("--model", default="yolo11n.pt", help="weights to check (default: yolo11n.pt)")
+    p.add_argument("--no-model", action="store_true", help="skip loading the model (faster)")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    p.add_argument("--json", action="store_true", help="print the result as JSON")
+    a = p.parse_args(argv)
+    result = doctor.run_doctor(source=a.source, device=a.device, model=a.model, data_root=a.data_root,
+                               load_model=not a.no_model)  # fmt: skip
+    if a.json:
+        print(json.dumps(result, indent=2))
+        return EXIT_OK if result["ok"] else EXIT_FAILURE
+    for c in result["checks"]:
+        took = f" ({c['duration_ms']:.0f} ms)" if c["duration_ms"] is not None else ""
+        print(f"{c['status']:<11} {c['name']}: {c['detail']}{took}")
+        if c["next_step"] and c["status"] != doctor.PASS:
+            print(f"{'':<11} next: {c['next_step']}")
+    q = result["input_quality"]
+    if q is not None:
+        print(
+            f"input quality ({q['samples']} sampled frames): "
+            + ("; ".join(f"{h['hint']} ({h['value']} vs {h['threshold']})" for h in q["hints"]) or "no hints")
+        )
+        if q["hints"]:
+            print("hints are possibilities from simple heuristics, not faults")
+    print("ok" if result["ok"] else "FAIL: see the checks above")
+    return EXIT_OK if result["ok"] else EXIT_FAILURE
+
+
+SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main}

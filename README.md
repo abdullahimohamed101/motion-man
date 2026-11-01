@@ -138,6 +138,26 @@ While it runs you see frames, percentage and elapsed time. When it finishes the 
 - UI runs share the CPU with the browser playing video, so they are slower than CLI runs (about 20–24 fps
   against 31–32 fps on the demo clip, both on battery). Use the CLI for benchmarks.
 
+## Doctor
+
+```bash
+.venv/bin/python -m motionman doctor --source clips/crosswalk.mp4
+```
+
+Read-only checks, each `PASS`, `WARN`, `FAIL` or `UNAVAILABLE` with a next step: Python version, the required
+packages against `requirements.txt`, weights present, device (resolved like a run, and whether CUDA or MPS exist),
+model load with warmup (skip with `--no-model`), an encode/decode probe with the run's video writer, the
+`--source` preflight a run would do, storage, free space against the output budget, and timer resolution. It never
+installs anything, changes settings or touches existing data; its only file is a 24-frame probe in a temporary
+folder that it removes. Exit code 1 if any check fails. `--json` prints the full result.
+
+With `--source` it also gives **input-quality hints** from 60 evenly spaced frames, each compared with the frame
+before it: *possibly dark* (median luma below 40 of 255), *possibly blurry* (median Laplacian variance below 50 at
+640 px wide) and *possible repeated frames* (more than 20% identical to the previous frame). These are hints, not
+faults: a plain or static scene can trigger them. The crosswalk clip measures luma 121.4, Laplacian variance 3,604
+and 0% repeats, so it gets no hints. On this Mac, `doctor --device cuda` fails the device check with "use
+--device cpu" as the next step and skips the model load.
+
 ## Test
 
 ```bash
