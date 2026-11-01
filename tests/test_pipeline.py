@@ -58,7 +58,7 @@ def test_success_writes_three_agreeing_artifacts(clip, tmp_path):
     out = tmp_path / "run"
     report = run(RunConfig(clip, out))
     assert sorted(p.name for p in out.iterdir()) == [
-        "annotated.mp4", "manifest.json", "report.json", "runspec.json", "tracks.jsonl"
+        "annotated.mp4", "manifest.json", "report.json", "runspec.json", "timings.jsonl", "tracks.jsonl"
     ]  # fmt: skip
     records = read_jsonl(out)
     assert len(records) == 20 == report["processed_frames"] == report["output_frames_decoded"]

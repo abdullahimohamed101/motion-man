@@ -67,6 +67,13 @@ plus the same `manifest.json` and `runspec.json`. Legacy runs don't take the loc
 | `--model` | `yolo11n.pt` | Ultralytics weights |
 | `--imgsz` | `640` | Multiple of 32, from 32 to 4096 |
 | `--max-frames` | all | Stop early, useful while iterating |
+| `--telemetry` | off | Sample process memory about once a second into `telemetry.jsonl` |
+
+**Telemetry** (`--telemetry`) runs a background thread that records this process's resident memory (RSS) about
+once per second, from just before the first decode to the end of processing, and adds peak and median RSS to
+`report.json`. It never touches the tracker and does not change the configuration hash. GPU counters are read
+only through NVML on CUDA devices; elsewhere the report says `Unavailable` with the reason. On the crosswalk clip
+(CPU, battery at 95%) 33 samples showed a peak of 1,441 MB and a median of 1,403 MB.
 
 Detection thresholds are fixed and recorded in the report: confidence 0.25, IoU 0.7, FP32.
 
@@ -131,6 +138,45 @@ While it runs you see frames, percentage and elapsed time. When it finishes the 
 - UI runs share the CPU with the browser playing video, so they are slower than CLI runs (about 20–24 fps
   against 31–32 fps on the demo clip, both on battery). Use the CLI for benchmarks.
 
+## Doctor
+
+```bash
+.venv/bin/python -m motionman doctor --source clips/crosswalk.mp4
+```
+
+Read-only checks, each `PASS`, `WARN`, `FAIL` or `UNAVAILABLE` with a next step: Python version, the required
+packages against `requirements.txt`, weights present, device (resolved like a run, and whether CUDA or MPS exist),
+model load with warmup (skip with `--no-model`), an encode/decode probe with the run's video writer, the
+`--source` preflight a run would do, storage, free space against the output budget, and timer resolution. It never
+installs anything, changes settings or touches existing data; its only file is a 24-frame probe in a temporary
+folder that it removes. Exit code 1 if any check fails. `--json` prints the full result.
+
+With `--source` it also gives **input-quality hints** from 60 evenly spaced frames, each compared with the frame
+before it: *possibly dark* (median luma below 40 of 255), *possibly blurry* (median Laplacian variance below 50 at
+640 px wide) and *possible repeated frames* (more than 20% identical to the previous frame). These are hints, not
+faults: a plain or static scene can trigger them. The crosswalk clip measures luma 121.4, Laplacian variance 3,604
+and 0% repeats, so it gets no hints. On this Mac, `doctor --device cuda` fails the device check with "use
+--device cpu" as the next step and skips the model load.
+
+## Debug bundle
+
+```bash
+.venv/bin/python -m motionman bundle --run <run_id>
+.venv/bin/python -m motionman bundle --verify data/exports/bundle-<run_id>-<hex>/bundle.zip
+```
+
+Writes `data/exports/bundle-<run_id>-<hex>/bundle.zip` for a published run, after re-verifying the run's hashes. It
+is built from an allowlist: `manifest.json`, `runspec.json`, `report.json`, `tracks.jsonl`, `timings.jsonl`,
+`telemetry.jsonl` (if recorded), a fresh `doctor.json` (no model load), a `README.txt` with reproduce commands,
+and `bundle_manifest.json` with the size and SHA-256 of every entry. Absolute paths become `<redacted>/<name>` (only
+the file or folder name is kept, never the username) unless you pass `--include-paths`; the source video and
+`annotated.mp4` are added only with `--include-footage`. Environment variables are never read into it.
+`--verify` re-hashes every entry and refuses unknown, nested, missing, damaged or changed entries, a bundle
+without the core run files, and a run ID that disagrees with `manifest.json` (exit 1). It is an integrity check,
+not proof of who made the bundle. A real bundle
+of the crosswalk run with telemetry is 610 KiB with 8 entries plus the manifest, and contains no home folder
+path or username.
+
 ## Test
 
 ```bash
@@ -160,6 +206,50 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 | `ui/style.py` | The few style rules the Streamlit theme config can't express |
 
 ## Benchmark
+
+```bash
+.venv/bin/python -m motionman benchmark --source clips/crosswalk.mp4 --repeats 3 --label "mains, lid open"
+```
+
+Runs the same clip and settings `--repeats` times (default 3). Every trial is a fresh, published canonical run
+with its own tracker, run ID and records; nothing is reused between trials. It prints each trial and the median
+with its range, and writes `data/benchmarks/<id>/benchmark.json`: settings, per-trial run ID, status, fps, stage
+p50/p95, power state (AC, battery with percent, or unknown) and the environment. A failed trial stays listed and is
+left out of the median; the exit code is 1 if any trial failed. Invalid input, device or model (2) or another
+active run (75) stops the series at that trial and exits with the run command's code. A trial cut off by Ctrl-C
+is listed as `interrupted` (exit 130). Options: `--device`, `--imgsz`, `--max-frames`,
+`--telemetry`, `--label`, `--data-root`. A short smoke run (3 × 240 frames, battery 93%) gave a median of
+42.42 fps with a range of 37.76–43.11, which is why the range is reported and not just one number.
+
+```bash
+.venv/bin/python -m motionman compare <baseline-id> <candidate-id> --intended imgsz
+```
+
+`compare` checks the factors the protocol requires: input, frame range, sampling, output policy, warmup, task,
+model weights, class map, tracker config, imgsz, conf, IoU, class filter, precision, device, telemetry, code
+commit, software, hardware, platform and power. Factors you list in `--intended` are expected to differ; any other
+difference is printed as a **CONFOUNDER** and the verdict says the comparison is not controlled. It also notes
+failed trials, mixed power within a benchmark, and fewer than 3 trials, and says when the two trial ranges overlap.
+It compares speed only and writes `data/comparisons/<id>/comparison.json`; it exits 0 even when confounded.
+
+**Measured with these commands** (full clip, 3 trials each, clean commit `2d4ca5e`, battery 86% → 80%):
+
+| Benchmark | Trial FPS | Median | Detect+track p50 (median of trials) |
+|---|---|---|---|
+| imgsz 640 (`b_20261101T081304Z_73cb9b`) | 46.19, 45.86, 43.99 | **45.86** | 19.48 ms |
+| imgsz 480 (`b_20261101T081646Z_7ffa58`) | 55.16, 54.21, 50.61 | **54.21** | 16.23 ms |
+
+`compare … --intended imgsz` reported +18.2% median FPS, ranges not overlapping, and "Controlled: nothing else
+differs"; the other stages moved by 0.1 ms or less, so the gain is all in detect+track. `compare` checks the power
+*source* only: the charge fell from 86% to 80% across the two, which it does not see. The first trial's setup was
+3.45 s and later trials' about 0.39 s, because the first model load in a process pays one-time startup costs.
+An earlier pair of short smoke runs from different commits was flagged as confounded by `code`, as it should be.
+
+**Instrumentation cost.** Three runs of the pre-P2 code (`6a419d7`) under the same conditions measured 45.98,
+44.91 and 45.14 fps (median 45.14). With stage timing the median was 45.86 (43.99–46.19). The ranges overlap, so
+the per-frame timers have no measurable cost here.
+
+The tables below were measured before the benchmark command existed, by running the CLI three times by hand.
 
 Three runs of the same clip and configuration in each power state (`clips/crosswalk.mp4`: 1,356 frames,
 1920×1080, 23.976 fps, 56.5 s; YOLO11n, imgsz 640, FP32, CPU).
@@ -201,10 +291,40 @@ What the numbers mean:
   includes one prediction on a blank frame; without it, about 2.5 s of setup would land in the first frame of the
   wall time and make short runs look slow. The warmup runs in predict mode, so tracker state is untouched.
 
-Where the time goes: on mains power a frame takes about 22.6 ms end to end, and the median detect+track call is
-about 20 ms (about 31 ms and 27 ms on battery). So the model and tracker are most of the cost; decoding, drawing and encoding 1080p frames
-make up most of the rest. A 48-frame run now measures 23 fps end to end (it was 11 fps before the warmup fix),
-because a short run is still dominated by the slower first few frames.
+### Where the time goes
+
+Every run since P2 records stage timings (`report.json` → `timing`, and one row per frame in `timings.jsonl`):
+
+| Field | What it covers |
+|---|---|
+| `setup_s` | Run start to just before the first decode: input checks, import and hashing, model load, writer open |
+| `decode_ms` | Time inside the frame reader's `next()`, including the source timestamp check |
+| `detect_track_ms` | The whole `model.track` call (YOLO + ByteTrack) plus conversion to records |
+| `render_ms` | Trail update plus drawing boxes, labels and trails |
+| `write_ms` | Writing the annotated frame to the encoder plus the JSONL record line |
+| `unattributed` | Processing wall outside the four stages: record building, timing rows, progress updates, the last `next()` that ends the loop, writer release and file closes |
+| `finalize_s` | Writer release to the report write: output decode check, records validation, hashing |
+| `job_wall_s` | Setup + processing + finalize. The final rename into `runs/` comes after the report and is excluded |
+
+Stage p50/p95 exclude the first 10 frames as warmup (the policy and sample count are saved in the report); stage
+totals and shares count every frame. Stage times are wall clock; they need not add up to the wall time, and the
+remainder is reported rather than hidden. Decode and write time the calls only: OpenCV's codec may do part of its
+work on background threads, so treat those two as lower bounds.
+
+**Measured bottleneck.** One CLI run of the crosswalk clip (`r_20261101T072747Z_15bbeb`, battery at 97% and
+discharging, 44.4 fps end to end):
+
+| Stage | Share of processing wall | p50 per frame |
+|---|---|---|
+| Detect + track | 89.5% | 19.35 ms |
+| Render | 3.7% | 0.81 ms |
+| Write | 3.7% | 0.79 ms |
+| Decode | 2.1% | 0.43 ms |
+| Unattributed | 0.9% | |
+
+Setup took 3.33 s (2.99 s of it model load), processing 30.54 s and finalize 0.79 s, for a 34.66 s job. The model
+and tracker are the bottleneck by a wide margin, so faster decoding or drawing would barely move end-to-end FPS;
+a smaller input size, a lighter model or a GPU would. A short run is still dominated by its slower first frames.
 
 ## Limitations
 

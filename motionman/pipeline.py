@@ -21,13 +21,15 @@ from typing import Protocol
 
 import numpy as np
 
-from motionman import metrics, records, render, store, video_io
+from motionman import metrics, records, render, store, telemetry, video_io
 from motionman.tracking import resolve_device
 from motionman.types import RunConfig, Track
 
 ANNOTATED = "annotated.mp4"
 TRACKS = "tracks.jsonl"
 REPORT = "report.json"
+TIMINGS = "timings.jsonl"  # one row of stage times per processed frame (plan P2 D3)
+TELEMETRY = "telemetry.jsonl"  # opt-in, about one resource sample per second (plan P2 D9)
 PROGRESS_INTERVAL_S = 0.25  # keep UI redraws modest (spec §9)
 MANIFEST_STATUS = {"success": "SUCCEEDED", "error": "FAILED", "interrupted": "INTERRUPTED"}
 
@@ -114,13 +116,14 @@ def _run(
     started_at = datetime.now(UTC)
     run_id = store.new_run_id(started_at)
     m = metrics.Metrics()
+    m.begin_job()
     status, error = "error", None
     device_used: str | None = None
     decoded: int | None = None
     input_id = runspec = records_sha = None
     out: Path | None = None
     validation = {"source_complete": "NOT_RUN", "records": "NOT_RUN", "video_decode": "NOT_RUN"}
-    writer = jsonl = None
+    writer = jsonl = timings = sampler = None
     try:
         device_used = resolve(config.device)
         if root is not None:
@@ -155,6 +158,10 @@ def _run(
         )
         store.write_json_atomic(out / store.RUNSPEC, runspec)
         jsonl = (out / TRACKS).open("w", encoding="utf-8")
+        timings = (out / TIMINGS).open("w", encoding="utf-8")
+        if config.telemetry:
+            sampler = telemetry.Telemetry(out / TELEMETRY, device_used=device_used)
+            sampler.start()
         trails = render.Trails()
         total = _known_total(info.frame_count, config.max_frames)
         m.start()
@@ -163,18 +170,29 @@ def _run(
         frames = video_io.read_frames(
             cap, info.fps, config.max_frames, config.limits.max_frames, config.limits.max_duration_s
         )
-        for frame in frames:
+        # Stage boundaries (plan P2 D1): decode = inside next(); detect_track = tracker.update;
+        # render = trails + drawing; write = the video frame and the JSONL line. The rest is unattributed.
+        while True:
+            t0 = perf_counter()
+            frame = next(frames, None)
+            t1 = perf_counter()
+            if frame is None:
+                break
             m.decoded_frames += 1
-            t = perf_counter()
             tracks = tracker.update(frame.image)
-            m.detect_track_ms.append((perf_counter() - t) * 1000)
+            t2 = perf_counter()
             m.inferred_frames += 1
             record = records.frame_record(run_id, frame.index, info.fps, info.width, info.height, tracks)
             trails.update(frame.index, tracks)
-            writer.write(render.annotate(frame.image, tracks, trails))
+            annotated = render.annotate(frame.image, tracks, trails)
+            t3 = perf_counter()
+            writer.write(annotated)
             jsonl.write(json.dumps(record) + "\n")  # streamed (INV-3)
+            t4 = perf_counter()
             m.jsonl_records += 1
             m.processed_frames += 1
+            row = m.add_frame((t1 - t0) * 1000, (t2 - t1) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000)
+            timings.write(json.dumps({"source_frame_index": frame.index, **row}) + "\n")
             if on_progress is not None and perf_counter() - last_report >= PROGRESS_INTERVAL_S:
                 last_report = perf_counter()
                 reported = m.processed_frames
@@ -185,7 +203,11 @@ def _run(
         writer = None
         jsonl.close()
         jsonl = None
+        timings.close()
+        timings = None
         m.stop()
+        if sampler is not None:
+            m.telemetry = sampler.stop()
         # Validate before claiming success (A§5): counts, records, decoded video, unchanged source, budget.
         if m.processed_frames == 0:
             raise video_io.VideoError(f"no decodable frames in {config.source}")
@@ -231,7 +253,11 @@ def _run(
             writer.release()
         if jsonl is not None:
             jsonl.close()
+        if timings is not None:
+            timings.close()
         m.stop()
+        if sampler is not None:
+            m.telemetry = sampler.stop()  # idempotent; a failed run still reports what was sampled
         report: dict = {"status": status, "error": error}
         if out is not None:
             if status != "success" and decoded is None:
@@ -249,6 +275,7 @@ def _run(
 def _finish(out, root, run_id, status, error, config, info, m, device_used, decoded,
             input_id, runspec, records_sha, validation, started_at, final_dir):  # fmt: skip
     """Write report and manifest; publish a SUCCEEDED canonical run. Never masks the run's own error."""
+    m.finish()  # finalize ends here: the report records it, so the rename below is excluded (plan P2 D2)
     report: dict = {"status": status, "error": error}
     budget_breach = False
     try:
@@ -269,7 +296,7 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
             config_sha256=runspec["config_sha256"] if runspec else None,
         )
         metrics.write_report(out / REPORT, report)
-        names = [n for n in (ANNOTATED, TRACKS, REPORT, store.RUNSPEC) if (out / n).is_file()]
+        names = [n for n in (ANNOTATED, TRACKS, TIMINGS, TELEMETRY, REPORT, store.RUNSPEC) if (out / n).is_file()]
         artifacts = store.artifact_entries(out, names)
         if status == "success" and sum(a["bytes"] for a in artifacts) > config.limits.output_budget_bytes:
             status, error = "error", "OutputBudgetError: outputs exceed the configured budget"

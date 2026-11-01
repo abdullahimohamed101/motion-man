@@ -1,5 +1,5 @@
 # P1: make completed work inspectable
-Status: Active · Branch: `feat/p1-inspect` · Spec: A§7, A§8 · Design: MD§9, MD§11, MD§20 P1, UI2 · Estimate: 1.5–2.5 days
+Status: Done · Branch: `feat/p1-inspect` · Spec: A§7, A§8 · Design: MD§9, MD§11, MD§20 P1, UI2 · Estimate: 1.5–2.5 days
 
 ## Outcome
 Opening and exploring a published run is useful without ever invoking the model: pick a run, scrub to an exact

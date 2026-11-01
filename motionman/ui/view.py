@@ -13,6 +13,8 @@ from motionman.ui.runner import JobState, SourceInfo
 PENDING = "Pending"
 NOT_AVAILABLE = "N/A"
 NO_RESULT = "—"  # error state: there are no results to show, and a partial run's numbers are not results
+NOT_RECORDED = "Not recorded in this run"  # runs made before stage timings existed (plan P2 D12)
+STAGE_LABELS = {"decode_ms": "Decode", "detect_track_ms": "Detect + track", "render_ms": "Render", "write_ms": "Write"}
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,56 @@ def report_metrics(report: dict) -> list[Metric]:
         Metric(labels[1], p95, latency.get("reason") or "model.track incl. ByteTrack, first 10 frames excluded."),
         Metric(labels[2], f"{report['processed_frames']:,}"),
         Metric(labels[3], _num(t["processing_wall_s"], "{:.2f} s"), "Model load not included."),
+    ]
+
+
+@dataclass(frozen=True)
+class StageRow:
+    label: str
+    p50: str
+    p95: str
+    share: float | None  # fraction of processing wall time over every frame, warmup included
+    scope: str | None = None
+
+
+def stage_breakdown(report: dict) -> list[StageRow] | None:
+    """Per-stage p50/p95 and share of wall time, plus the unattributed remainder; None for runs before P2."""
+    t = report.get("timing") or {}
+    stages, wall = t.get("stages"), t.get("processing_wall_s")
+    if not stages:
+        return None
+    scopes = t.get("stage_scopes") or {}
+    rows = [
+        StageRow(
+            label,
+            _num(stages[key]["p50"], "{:.2f} ms"),
+            _num(stages[key]["p95"], "{:.2f} ms"),
+            stages[key]["total_s"] / wall if wall else None,
+            scopes.get(key),
+        )  # fmt: skip
+        for key, label in STAGE_LABELS.items()
+    ]
+    u = t.get("unattributed")
+    rows.append(StageRow("Unattributed", NO_RESULT, NO_RESULT, u["share_of_wall"] if u else None,
+                         u["scope"] if u else None))  # fmt: skip
+    return rows
+
+
+def phase_metrics(report: dict) -> list[Metric]:
+    """Setup, processing, finalize and the whole job; runs before P2 say so instead of showing zeros."""
+    t = report.get("timing") or {}
+    recorded = "job_wall_s" in t
+
+    def metric(label: str, key: str, scope: str | None) -> Metric:
+        if recorded or key == "processing_wall_s":
+            return Metric(label, _num(t.get(key), "{:.2f} s"), scope)
+        return Metric(label, NO_RESULT, NOT_RECORDED)  # a dash fits the card; the help says why
+
+    return [
+        metric("Setup", "setup_s", t.get("setup_scope")),
+        metric("Processing", "processing_wall_s", t.get("processing_wall_scope")),
+        metric("Finalize", "finalize_s", t.get("finalize_scope")),
+        metric("Job total", "job_wall_s", "Setup + processing + finalize."),
     ]
 
 

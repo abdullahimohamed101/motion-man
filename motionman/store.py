@@ -32,6 +32,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 _CHUNK = 1 << 20
 
 
+def sha256_bytes(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
 def sha256_file(path: Path) -> str:
     """Streamed SHA-256 of a file's bytes, as ``sha256:<hex>``."""
     h = hashlib.sha256()

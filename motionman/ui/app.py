@@ -361,6 +361,23 @@ def perf_panel(run, summary) -> None:
     for col, m in zip(st.columns(4), view.report_metrics(report), strict=True):
         col.metric(m.label, m.value, help=m.help, border=True)
     st.caption(f"Source playback: {run.fps:.3f} fps. Processing FPS above is work completed per wall second.")
+    st.markdown("#### Where the time went")
+    for col, m in zip(st.columns(4), view.phase_metrics(report), strict=True):
+        col.metric(m.label, m.value, help=m.help, border=True)
+    rows = view.stage_breakdown(report)
+    if rows is None:
+        st.caption(f"Per-stage timing: {view.NOT_RECORDED.lower()} (it was made before stage timings existed).")
+    else:
+        st.dataframe(
+            [{"Stage": r.label, "p50": r.p50, "p95": r.p95, "Share of processing": r.share} for r in rows],
+            column_config={"Share of processing": st.column_config.ProgressColumn(format="percent", min_value=0,
+                                                                                  max_value=1)},
+            hide_index=True, width="stretch", key=f"stages-{run.run_id}",
+        )  # fmt: skip
+        warm = report["timing"].get("warmup") or {}
+        st.caption(f"p50/p95 exclude the first {warm.get('frames', 10)} frames as warmup "
+                   f"({warm.get('samples', 0):,} samples); shares count every frame. Decode and write time the calls "
+                   "only: the video codec may do part of its work on background threads.")  # fmt: skip
     with st.expander("Run details", expanded=False):
         rows = view.report_details(report, summary.display_name, summary.path)
         rows.insert(0, ("Run ID", run.run_id))

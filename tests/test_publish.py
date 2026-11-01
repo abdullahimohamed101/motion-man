@@ -35,7 +35,13 @@ def test_success_is_published_with_a_verifiable_manifest(clip, tmp_path):
     assert m["counts"] == {
         "source_frames_reported": 20, "decoded_frames": 20, "inferred_frames": 20, "records": 20, "written_frames": 20
     }  # fmt: skip
-    assert {a["path"] for a in m["artifacts"]} == {"annotated.mp4", "tracks.jsonl", "report.json", "runspec.json"}
+    assert {a["path"] for a in m["artifacts"]} == {
+        "annotated.mp4",
+        "tracks.jsonl",
+        "timings.jsonl",
+        "report.json",
+        "runspec.json",
+    }
     for a in m["artifacts"]:  # every hash and size matches the bytes on disk
         assert (
             store.sha256_file(run_dir / a["path"]) == a["sha256"] and (run_dir / a["path"]).stat().st_size == a["bytes"]

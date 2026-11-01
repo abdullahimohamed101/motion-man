@@ -18,6 +18,20 @@ from motionman.types import RunConfig, VideoInfo
 
 WARMUP_FRAMES = 10
 PACKAGES = ("ultralytics", "torch", "torchvision", "opencv-python", "numpy", "lap")
+STAGES = ("decode_ms", "detect_track_ms", "render_ms", "write_ms")
+STAGE_SCOPES = {
+    "decode_ms": "time inside next() on the frame reader, including the source timestamp check",
+    "render_ms": "trail update plus drawing boxes, labels and trails",
+    "write_ms": "writing the annotated frame to the video encoder plus the JSONL record line",
+}
+SETUP_SCOPE = (
+    "from run start to just before the first decode: input checks, import and hashing, model load, writer open"
+)
+FINALIZE_SCOPE = (
+    "from writer release to the report write: output decode check, records validation, hashing; "
+    "the final atomic rename into runs/ happens afterwards and is not included"
+)
+WARMUP_POLICY = "exclude_first_inferred"
 DETECT_TRACK_SCOPE = (
     "Tracker.update: model.track (YOLO detection + ByteTrack association) plus conversion to records; "
     "not inference-only"
@@ -32,16 +46,48 @@ class Metrics:
         self.inferred_frames = 0  # frames the tracker processed
         self.model_load_s: float | None = None
         self.processing_wall_s: float | None = None
-        self.detect_track_ms: list[float] = []  # one sample per processed frame; fine for short demo clips
+        # One float per processed frame and stage: bounded by the input frame limit (INV-4 is about frames).
+        self.decode_ms: list[float] = []
+        self.detect_track_ms: list[float] = []
+        self.render_ms: list[float] = []
+        self.write_ms: list[float] = []
+        self.setup_s: float | None = None
+        self.finalize_s: float | None = None
+        self.job_wall_s: float | None = None
+        self._job: float | None = None
         self._start: float | None = None
+        self._stopped: float | None = None
+        self.telemetry: dict = {"enabled": False}
+
+    def begin_job(self) -> None:
+        self._job = perf_counter()
 
     def start(self) -> None:
         self._start = perf_counter()
+        if self._job is not None:
+            self.setup_s = self._start - self._job
+
+    def add_frame(self, decode: float, detect_track: float, render: float, write: float) -> dict:
+        """Record one processed frame's stage times (ms); returns the rounded row for timings.jsonl."""
+        row = dict(zip(STAGES, (decode, detect_track, render, write), strict=True))
+        for name, value in row.items():
+            getattr(self, name).append(value)
+        return {k: round(v, 3) for k, v in row.items()}
 
     def stop(self) -> None:
         """Idempotent: the first call after start() fixes the wall time."""
         if self._start is not None and self.processing_wall_s is None:
-            self.processing_wall_s = perf_counter() - self._start
+            self._stopped = perf_counter()
+            self.processing_wall_s = self._stopped - self._start
+
+    def finish(self) -> None:
+        """Idempotent: fixes finalize (from stop) and the whole job's wall time."""
+        if self._job is None or self.job_wall_s is not None:
+            return
+        now = perf_counter()
+        if self._stopped is not None:
+            self.finalize_s = now - self._stopped
+        self.job_wall_s = now - self._job
 
     @property
     def end_to_end_fps(self) -> float | None:
@@ -69,6 +115,47 @@ def latency_summary(samples_ms: list[float], warmup: int = WARMUP_FRAMES) -> dic
     }
 
 
+def stage_summary(samples_ms: list[float], warmup: int = WARMUP_FRAMES) -> dict:
+    """Steady-state percentiles (warmup excluded) plus the total over every frame, for share of wall time."""
+    return {**latency_summary(samples_ms, warmup), "total_s": round(sum(samples_ms) / 1000, 3)}
+
+
+def timing_section(metrics: Metrics) -> dict:
+    wall = metrics.processing_wall_s
+    stages = {name: stage_summary(getattr(metrics, name)) for name in STAGES}
+    unattributed = None
+    if wall and metrics.processed_frames:
+        attributed = sum(sum(getattr(metrics, name)) for name in STAGES) / 1000
+        unattributed = {
+            "total_s": round(wall - attributed, 3),
+            "share_of_wall": round((wall - attributed) / wall, 4),
+            "scope": "processing wall outside the four stages: record building, timing rows, progress updates, "
+            "the final next() that ends the loop, writer release and closing the JSONL and timings files",
+        }
+    return {
+        "model_load_s": _round(metrics.model_load_s, 3),
+        "setup_s": _round(metrics.setup_s, 3),
+        "setup_scope": SETUP_SCOPE,
+        "processing_wall_s": _round(wall, 3),
+        "processing_wall_scope": "perf_counter from before the first decode to after the writer is released",
+        "finalize_s": _round(metrics.finalize_s, 3),
+        "finalize_scope": FINALIZE_SCOPE,
+        "job_wall_s": _round(metrics.job_wall_s, 3),
+        "end_to_end_fps": _round(metrics.end_to_end_fps, 2),
+        "detect_track_ms": latency_summary(metrics.detect_track_ms),
+        "detect_track_scope": DETECT_TRACK_SCOPE,
+        "stages": stages,
+        "stage_scopes": {"detect_track_ms": DETECT_TRACK_SCOPE, **STAGE_SCOPES},
+        "unattributed": unattributed,
+        "warmup": {
+            "policy": WARMUP_POLICY,
+            "frames": WARMUP_FRAMES,
+            "samples": max(0, metrics.processed_frames - WARMUP_FRAMES),
+        },  # fmt: skip
+        "instrumentation": "wall clock (perf_counter) per stage; no device synchronization",
+    }
+
+
 def build_report(
     *,
     status: str,
@@ -79,7 +166,6 @@ def build_report(
     device_used: str | None,
     output_frames_decoded: int | None = None,
 ) -> dict:
-    fps = metrics.end_to_end_fps
     return {
         "status": status,  # success | error | interrupted; anything but success is a partial run
         "error": error,
@@ -105,14 +191,8 @@ def build_report(
             "precision": "fp32",
         },
         "device": {"requested": config.device, "used": device_used},
-        "timing": {
-            "model_load_s": _round(metrics.model_load_s, 3),
-            "processing_wall_s": _round(metrics.processing_wall_s, 3),
-            "processing_wall_scope": "perf_counter from before the first decode to after the writer is released",
-            "end_to_end_fps": _round(fps, 2),
-            "detect_track_ms": latency_summary(metrics.detect_track_ms),
-            "detect_track_scope": DETECT_TRACK_SCOPE,
-        },
+        "timing": timing_section(metrics),
+        "telemetry": metrics.telemetry,
         "environment": environment(device_used),
     }
 

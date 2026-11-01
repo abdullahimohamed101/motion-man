@@ -261,3 +261,13 @@ def test_saving_over_an_existing_view_preset_needs_replace(world):
     at = render(at)
     assert "already exists" in at.error[0].value
     assert presets.load(world["root"], "mine").view.trail_length == 7
+
+
+def test_performance_shows_where_the_time_went(world):
+    at = open_run(render(), world["a"])
+    labels = [m.label for m in at.metric]
+    assert labels[4:] == ["Setup", "Processing", "Finalize", "Job total"]
+    assert all(m.value.endswith(" s") for m in at.metric[4:])
+    stages = at.dataframe[0].value
+    assert list(stages["Stage"]) == ["Decode", "Detect + track", "Render", "Write", "Unattributed"]
+    assert any("warmup" in c and "background threads" in c for c in captions(at))
