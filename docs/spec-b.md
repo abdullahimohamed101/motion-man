@@ -19,9 +19,10 @@ network service. After each phase gate, stop for the owner's go-ahead.
 - Undefined numbers are `null` with a reason, never 0 (INV-7). All times are source time in µs from the
   records' `source_t_us`, never wall clock, so processing speed cannot change a result (MD fixture 5).
 - Layout under the data root (JSON/JSONL, no database):
-  `regions/<input_id>/<region_set_id>.json` · `derived/<run_id>/analyses/<analysis_id>/` ·
-  `datasets/<dataset_id>/{draft.json, revisions/r<N>.json}` · `derived/<run_id>/evaluations/<evaluation_id>/` ·
-  `derived/<run_a>/disagreements/<id>/`. Each derived folder has a `manifest.json` with artifact hashes.
+  `regions/<input_id>/<region_set_id>.json` · `analyses/<run_id>/<analysis_id>/` ·
+  `datasets/<dataset_id>/{draft.json, revisions/r<N>.json}` · `evaluations/<run_id>/<evaluation_id>/` ·
+  `disagreements/<id>/`. Each result folder has a `manifest.json` with artifact hashes. These are durable
+  results, kept apart from `derived/`, which stays P1's disposable inspection cache.
 
 ## B§3 P3 regions (MD§10)
 - Shapes: axis-aligned rectangles and oriented finite line segments only. Coordinates normalized to [0, 1] of

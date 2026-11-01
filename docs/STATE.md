@@ -7,17 +7,16 @@ Updated: 2026-11-01
 - **Release A complete** (`docs/spec-a.md`, P0–P2), merged (PRs #6, #7, #8). UI redesign merged (PRs #10, #11):
   top bar = brand + Library menu + New video; title once with status; bone primary; lime as a signal only.
   Rules in `docs/design/ui.md`.
-- **Release B part 1 spec drafted**: `docs/spec-b.md` (P3 zones and events, P4 review and evaluation) on branch
-  `docs/spec-b`, awaiting the owner's approval. No plan or code yet.
+- **Release B part 1 spec approved** (`docs/spec-b.md`, P3 then P4; owner reviews the P4 frames; MotionMan JSON
+  import only). Active plan: `docs/plans/p3-zones.md` (Draft, D1–D13, 8 steps) on `feat/p3-zones`.
 - Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored. psutil 7.2.2 pinned.
 - Known: `data/runs/r_20261101T060711Z_a0b0a2` is an early-P0 run; listed but refused on open. Safe to delete locally.
 
 ## Next step (exact)
-1. Owner approves `docs/spec-b.md` and answers B§10 (sequence, who reviews the P4 subset, import formats).
-2. Then `plan` P3: `docs/plans/p3-zones.md` on `feat/p3-zones`, stop for approval, then build.
+1. Owner approves the P3 plan (D1–D13). Then build step 1 (`regions.py`).
 
 ## Blocked / needs owner
-- Spec approval and the B§10 answers.
+- P3 plan approval.
 
 ## Last check
 - `scripts/check.sh` on `main` after PR #11: ruff ok, 362 passed; CI green on PR #11.
