@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 from motionman import pipeline, presets, store, tracking
 from motionman.presets import Preset, TrackingSettings
+from motionman.render import ViewOptions
 from motionman.types import RunConfig, Track
 from motionman.ui import runner as runner_module
 from motionman.ui.runner import JobState, RunSettings
@@ -105,6 +106,8 @@ def test_run_tracking_passes_the_advanced_settings(world, clip):
 def test_a_tracking_preset_fills_the_next_runs_settings(world):
     presets.save(world["root"], Preset("night", tracking=TrackingSettings(device="cuda", conf=0.6)))
     at = render()
+    presets.save(world["root"], Preset("look", view=ViewOptions(labels=False)))
+    assert at.selectbox(key="tracking_preset").options == ["None", "night"]  # view-only presets aren't listed here
     at.selectbox(key="tracking_preset").set_value("night")
     render(at)
     assert at.segmented_control(key="device").value == "CUDA" and at.slider(key="conf").value == 0.6
@@ -218,3 +221,43 @@ def test_legacy_runs_are_hidden_until_asked_for(world, clip):
     at.toggle(key="show_legacy").set_value(True)
     at = render(at)
     assert any("Legacy (unverified)" in o for o in at.selectbox(key="run_picker").options)
+
+
+def test_a_broken_legacy_run_shows_an_error_not_a_crash(world, clip):
+    pipeline.run(RunConfig(clip, world["tmp"] / "legacy" / "old"), make_tracker=FakeTracker, resolve=lambda d: "cpu")
+    tracks = world["tmp"] / "legacy" / "old" / "tracks.jsonl"
+    tracks.write_text(tracks.read_text()[:-40])  # truncated mid-record
+    at = render()
+    at.toggle(key="show_legacy").set_value(True)
+    at = open_run(render(at), "legacy:old")
+    assert at.error[0].value.startswith("This run can't be opened")
+
+
+def test_a_file_changed_after_opening_is_verified_again(world):
+    at = open_run(render(), world["a"])
+    with (world["root"].runs / world["a"] / "tracks.jsonl").open("ab") as f:
+        f.write(b"x")
+    at.slider(key=f"frame-{world['a']}").set_value(2)
+    at = render(at)
+    assert at.error[0].value.startswith("This run can't be opened")
+
+
+def test_a_view_preset_applies_to_this_runs_view_only(world):
+    presets.save(world["root"], Preset("quiet", view=ViewOptions(labels=False, trail_length=5)))
+    presets.save(world["root"], Preset("gpu", tracking=TrackingSettings(device="cuda")))
+    at = open_run(render(), world["a"])
+    assert at.selectbox(key=f"view_preset-{world['a']}").options == ["None", "quiet"]
+    at.selectbox(key=f"view_preset-{world['a']}").set_value("quiet")
+    at = render(at)
+    assert at.toggle(key=f"labels-{world['a']}").value is False and at.slider(key=f"trail-{world['a']}").value == 5
+    assert world["fake"].starts == []
+
+
+def test_saving_over_an_existing_view_preset_needs_replace(world):
+    presets.save(world["root"], Preset("mine", view=ViewOptions(trail_length=7)))
+    at = open_run(render(), world["a"])
+    at.text_input(key="preset_name").set_value("mine")
+    next(b for b in at.button if b.label == "Save view").click()
+    at = render(at)
+    assert "already exists" in at.error[0].value
+    assert presets.load(world["root"], "mine").view.trail_length == 7

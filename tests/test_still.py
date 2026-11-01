@@ -105,3 +105,26 @@ def test_same_recipe_reuses_the_export_and_a_new_view_makes_a_new_one(opened):
     assert inspection.export_evidence(options=ViewOptions(), **kw) == a and a.stat().st_mtime_ns == stamp
     b = inspection.export_evidence(options=ViewOptions(labels=False), **kw)
     assert b.parent != a.parent
+
+
+def test_a_damaged_export_is_rewritten_not_reused(opened):
+    root, run, derived, frames = opened
+    kw = {"run_id": run.run_id, "records_sha256": derived.records_sha256, "input_id": None, "source_verified": True,
+          "frames": frames, "index": derived.index, "frame": 4, "options": ViewOptions(), "root": root}  # fmt: skip
+    png = inspection.export_evidence(**kw)
+    good = png.read_bytes()
+    png.write_bytes(b"not the evidence")
+    assert inspection.export_evidence(**kw).read_bytes() == good
+
+
+def test_a_record_whose_time_does_not_match_the_frame_is_refused(opened):
+    _, _, derived, frames = opened
+
+    class Shifted:
+        count = derived.index.count
+
+        def record(self, f):
+            return {**derived.index.record(f), "source_t_us": derived.index.record(f)["source_t_us"] + 40_000}
+
+    with pytest.raises(inspection.FrameError, match="record time"):
+        inspection.render_still(frames, Shifted(), 4, ViewOptions())

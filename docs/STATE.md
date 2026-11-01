@@ -13,12 +13,11 @@ Updated: 2026-11-01
 - Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored.
 
 ## Next step (exact)
-1. P1 verify: reviewer pass over `feat/p1-inspect`, fill the remaining acceptance rows (P1-1..P1-8).
-2. Ship P1 as a PR (confirm CI runs the real-media ffmpeg tests, P1-1). Then stop for the owner's P2 go-ahead.
+1. Ship P1 as a PR (confirm CI runs the real-media ffmpeg tests, P1-1). Then stop for the owner's P2 go-ahead.
 
 ## Blocked / needs owner
 - none
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 281 passed; CI green on main.
+- `scripts/check.sh`: ruff ok, 294 passed; CI green on main.
 - Benchmarks (CLI, crosswalk, M5 Pro CPU): median 44.29 fps on mains, 32.14 on battery (README tables).

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from motionman import inspection, presets, runs, store
+from motionman import inspection, presets, records, runs, store
 from motionman.presets import Preset, PresetError
 from motionman.ui import style, view, workspace
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
@@ -44,21 +44,31 @@ def probe_cached(key: str, load) -> tuple[SourceInfo | None, str | None]:
     return cache[key]
 
 
+def _signature(run) -> tuple:
+    """Size and mtime of every file a run serves; if any changes after opening, the run is verified again."""
+    paths = (run.records_path, run.video_path, run.records_path.parent / "report.json", run.source_path)
+    return tuple((p.stat().st_size, p.stat().st_mtime_ns) if p and p.is_file() else None for p in paths)
+
+
 def open_cached(summary: runs.RunSummary, root: store.DataRoot):
     """Open (verify), index and attach a frame reader to a run once per session; keep the last few."""
     cache: dict = st.session_state.setdefault("opened", {})
     if summary.run_id in cache:
-        cache[summary.run_id] = cache.pop(summary.run_id)  # most recent last
-        return cache[summary.run_id]
+        entry = cache.pop(summary.run_id)
+        if _signature(entry[0]) == entry[3]:
+            cache[summary.run_id] = entry  # most recent last
+            return entry[:3]
+        if entry[2] is not None:
+            entry[2].close()  # a file changed since it was verified: open it from scratch
     run = runs.open_run(summary, root)
     derived = inspection.load_or_build(run.records_path, root, run.records_sha256)
     frames = inspection.FrameSource(run.source_path, run.fps, derived.index.count) if run.source_path else None
-    cache[summary.run_id] = (run, derived, frames)
+    cache[summary.run_id] = (run, derived, frames, _signature(run))
     while len(cache) > OPEN_RUNS_KEPT:
-        _, _, old_frames = cache.pop(next(iter(cache)))  # the least recently used run
+        old_frames = cache.pop(next(iter(cache)))[2]  # the least recently used run
         if old_frames is not None:
             old_frames.close()
-    return cache[summary.run_id]
+    return cache[summary.run_id][:3]
 
 
 def show_run(run_id: str, *, sync_picker: bool = True) -> None:
@@ -179,9 +189,9 @@ def setup_page() -> None:
         start_kwargs = None
 
     with st.expander("Advanced settings", expanded=False):
-        names = presets.list_names(root)
+        names = preset_names("tracking")
         if names:
-            chosen = st.selectbox("Apply a saved preset", [None, *names], format_func=lambda n: n or "None",
+            chosen = st.selectbox("Apply a tracking preset", [None, *names], format_func=lambda n: n or "None",
                                   key="tracking_preset")  # fmt: skip
             if chosen and st.session_state.get("applied_preset") != chosen:
                 try:
@@ -226,11 +236,14 @@ def bind(key: str, value):
 def result_page(summary: runs.RunSummary) -> None:
     try:
         run, derived, frames = open_cached(summary, root)
-    except (runs.RunError, inspection.InspectError) as e:
+    except (runs.RunError, records.RecordError, OSError) as e:  # RecordError covers InspectError
         st.error(f"This run can't be opened: {e}", icon=":material/error:")
         st.markdown("**Next step:** Choose another saved run, or start a new video.")
         return
     rid, count = run.run_id, derived.index.count
+    if count == 0:
+        st.warning("This run has no frame records, so there is nothing to inspect.", icon=":material/warning:")
+        return
     contexts: dict = st.session_state.setdefault("contexts", {})
     ctx = workspace.restore(contexts.get(rid), count, derived.tracks)
 
@@ -274,7 +287,7 @@ def result_page(summary: runs.RunSummary) -> None:
                                                placeholder="All classes") or None  # fmt: skip
                 spotlight = st.toggle("Spotlight the selected object", key=bind(f"spot-{rid}", ctx.spotlight))
                 st.caption("View updated. Saved results are unchanged.")
-                view_presets(vd)
+                view_presets(vd, rid)
             options = workspace.view_options(vd, spotlight=track if spotlight else None)
             record = derived.index.record(frame)
             if frames is None:
@@ -327,13 +340,17 @@ def object_panel(run, derived, frames, track, record, frame_key) -> None:
         with st.expander("Contact sheet", expanded=False):
             if st.button("Show contact sheet", key=f"sheet-{run.run_id}-{track}"):
                 crops, caps = [], []
-                for f in workspace.contact_frames(s):
-                    obj = next(o for o in derived.index.record(f)["objects"] if o["track_id"] == track)
-                    x1, y1, x2, y2 = workspace.crop_box(obj["bbox_xyxy"], run.width, run.height)
-                    crops.append(frames.frame(f)[y1:y2, x1:x2])
-                    caps.append(f"{f / run.fps:.1f} s")
-                st.image(crops, channels="BGR", caption=caps, width=80)
-                st.caption("Samples come only from frames where the object was observed.")
+                try:
+                    for f in workspace.contact_frames(s):
+                        obj = next(o for o in derived.index.record(f)["objects"] if o["track_id"] == track)
+                        x1, y1, x2, y2 = workspace.crop_box(obj["bbox_xyxy"], run.width, run.height)
+                        crops.append(frames.frame(f)[y1:y2, x1:x2])
+                        caps.append(f"{f / run.fps:.1f} s")
+                except inspection.InspectError as e:
+                    st.warning(f"Contact sheet unavailable: {e}", icon=":material/warning:")
+                else:
+                    st.image(crops, channels="BGR", caption=caps, width=80)
+                    st.caption("Samples come only from frames where the object was observed.")
 
 
 def perf_panel(run, summary) -> None:
@@ -380,12 +397,15 @@ def export_menu(run, derived, frames, frame, options, record) -> None:
         if frames is None:
             st.caption("Not available: the source video for this legacy run is missing.")
         elif st.button("Create evidence PNG", key=f"evidence-{run.run_id}", width="stretch"):
-            png = inspection.export_evidence(
-                run_id=run.run_id, records_sha256=derived.records_sha256,
-                input_id=run.manifest["input_id"] if run.manifest else None, source_verified=run.source_verified,
-                frames=frames, index=derived.index, frame=frame, options=options, root=root,
-            )  # fmt: skip
-            st.session_state[f"png-{run.run_id}"] = str(png)
+            try:
+                png = inspection.export_evidence(
+                    run_id=run.run_id, records_sha256=derived.records_sha256,
+                    input_id=run.manifest["input_id"] if run.manifest else None, source_verified=run.source_verified,
+                    frames=frames, index=derived.index, frame=frame, options=options, root=root,
+                )  # fmt: skip
+                st.session_state[f"png-{run.run_id}"] = str(png)
+            except (inspection.InspectError, OSError) as e:
+                st.warning(f"Couldn't create the evidence PNG: {e}", icon=":material/warning:")
         made = st.session_state.get(f"png-{run.run_id}")
         if made and Path(made).is_file():
             st.download_button("Download evidence PNG", data=lambda p=Path(made): p.read_bytes(),
@@ -393,18 +413,53 @@ def export_menu(run, derived, frames, frame, options, record) -> None:
                                icon=":material/download:", width="stretch", key=f"dl-png-{run.run_id}")  # fmt: skip
 
 
-def view_presets(vd: dict) -> None:
-    names = presets.list_names(root)
+def preset_names(kind: str) -> list[str]:
+    """Saved presets that carry ``kind`` ("view" or "tracking") settings; unreadable ones are left out."""
+    names = []
+    for name in presets.list_names(root):
+        try:
+            if getattr(presets.load(root, name), kind) is not None:
+                names.append(name)
+        except PresetError:
+            pass
+    return names
+
+
+def apply_view_preset(rid: str) -> None:
+    """Callback: write a view preset into this run's view widgets before they render. Only re-renders."""
+    name = st.session_state.get(f"view_preset-{rid}")
+    if not name:
+        return
+    try:
+        v = presets.load(root, name).view
+    except PresetError as e:
+        st.session_state["preset_error"] = str(e)
+        return
+    if v is None:
+        return
+    classes = sorted({s.class_name for s in st.session_state["opened"][rid][1].tracks.values()})
+    st.session_state[f"labels-{rid}"] = v.labels
+    st.session_state[f"trail-{rid}"] = v.trail_length
+    st.session_state[f"opacity-{rid}"] = max(0.1, v.trail_opacity)
+    st.session_state[f"classes-{rid}"] = [c for c in (v.classes or []) if c in classes]
+
+
+def view_presets(vd: dict, rid: str) -> None:
+    names = preset_names("view")
+    if names:
+        st.selectbox("Apply a view preset", [None, *names], format_func=lambda n: n or "None",
+                     key=f"view_preset-{rid}", on_change=apply_view_preset, args=(rid,))  # fmt: skip
+    if err := st.session_state.pop("preset_error", None):
+        st.error(err, icon=":material/error:")
     cols = st.columns([3, 2])
     name = cols[0].text_input("Save view as preset", placeholder="busy-street", key="preset_name")
+    replace = st.checkbox("Replace a preset with the same name", key="preset_replace")
     if cols[1].button("Save view", key="save_view") and name:
         try:
-            presets.save(root, Preset(name, view=workspace.view_options(vd)), overwrite=True)
+            presets.save(root, Preset(name, view=workspace.view_options(vd)), overwrite=replace)
             st.toast(f"Saved view preset {name}")
         except PresetError as e:
             st.error(str(e), icon=":material/error:")
-    if names:
-        st.caption("Saved presets: " + ", ".join(names))
 
 
 if page == "result" and current is not None:

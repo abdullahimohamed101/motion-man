@@ -115,3 +115,34 @@ def test_labels_read_well():
     assert s.label == "crosswalk.mp4 · 2026-11-01 06:22 · 2ad4d6"
     old = runs.RunSummary("legacy:demo", "legacy", None, "demo.mp4", None, 20)
     assert old.label == "demo.mp4 · demo · Legacy (unverified)"
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda m: {**m, "artifacts": [a for a in m["artifacts"] if a["path"] != "tracks.jsonl"]},
+         "doesn't cover tracks.jsonl"),
+        (lambda m: {**m, "records_sha256": None}, "doesn't cover the records hash"),
+        (lambda m: {**m, "artifacts": [*m["artifacts"], {"path": "../../escape", "sha256": "x"}]},
+         "outside the run folder"),
+        (lambda m: {**m, "artifacts": [{"sha256": "x"}, *m["artifacts"]]}, "outside the run folder"),
+        (lambda m: {**m, "artifacts": "nope"}, "artifacts are malformed"),
+    ],
+)  # fmt: skip
+def test_a_manifest_that_does_not_cover_the_run_is_refused(clip, root, change, message):
+    canonical_run(clip, root.path)
+    (summary,) = runs.list_runs(root)
+    manifest = json.loads((summary.path / store.MANIFEST).read_text())
+    (summary.path / store.MANIFEST).write_text(json.dumps(change(manifest)))
+    with pytest.raises(runs.RunError, match=message):
+        runs.open_run(summary, root)
+
+
+def test_a_legacy_report_without_source_timing_is_refused_not_a_crash(root, tmp_path):
+    folder = tmp_path / "runs" / "odd"
+    folder.mkdir(parents=True)
+    (folder / "tracks.jsonl").write_text("")
+    (folder / "report.json").write_text(json.dumps({"status": "success", "source": {"path": "x.mp4"}}))
+    (summary,) = runs.list_runs(root, tmp_path / "runs")
+    with pytest.raises(runs.RunError, match="no usable source timing"):
+        runs.open_run(summary, root)

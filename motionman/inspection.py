@@ -147,13 +147,17 @@ def _load(folder: Path, records_sha: str, records_path: Path) -> Derived | None:
             return None
     if index.get("stride") != INDEX_STRIDE:
         return None
-    summaries = {}
-    for t in tracks.get("tracks", []):
-        t["intervals"] = [tuple(x) for x in t["intervals"]]
-        t["gaps"] = [tuple(x) for x in t["gaps"]]
-        summaries[t["track_id"]] = TrackSummary(**t)
+    try:  # metadata can match while entries are damaged: rebuild rather than crash
+        summaries = {}
+        for t in tracks.get("tracks", []):
+            t["intervals"] = [tuple(x) for x in t["intervals"]]
+            t["gaps"] = [tuple(x) for x in t["gaps"]]
+            summaries[t["track_id"]] = TrackSummary(**t)
+        offsets, count = list(index["offsets"]), int(index["count"])
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return None
     return Derived(
-        RecordIndex(records_path, index["offsets"], index["count"]),
+        RecordIndex(records_path, offsets, count),
         summaries,
         tracks.get("unassigned_observations", 0),
         folder,
@@ -261,6 +265,16 @@ class FrameSource:
             self._cap = None
 
 
+def _intact(folder: Path) -> bool:
+    """An existing export is reused only if its PNG still matches the hash export.json recorded."""
+    png, meta = folder / "evidence.png", folder / "export.json"
+    try:
+        recorded = json.loads(meta.read_text(encoding="utf-8"))["png"]["sha256"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return png.is_file() and store.sha256_file(png) == recorded
+
+
 # --- Stills and evidence export (plan P1 D2, D6) ---------------------------------------------------------------
 
 EXPORT_IMPL_VERSION = 1
@@ -296,6 +310,9 @@ def render_still(
 ) -> tuple[np.ndarray, dict]:
     """The exact source frame with overlays drawn from its own record. Returns (image, record)."""
     record = index.record(frame)
+    # FrameSource checks the decoder's timestamp against frame / fps; tie that to this record's own time too.
+    if abs(record["source_t_us"] - frame * 1_000_000 / frames.fps) * frames.fps / 1_000_000 > 0.5:
+        raise FrameError(f"frame {frame}'s record time {record['source_t_us']} µs doesn't match the source timing")
     image = frames.frame(frame)
     trails = trails_for(index, frame, options.trail_length)
     return render.annotate_still(image, tracks_of(record), trails, options), record
@@ -330,7 +347,7 @@ def export_evidence(
     export_id = store.sha256_json(recipe).removeprefix("sha256:")
     folder = root.path / "exports" / export_id
     png = folder / "evidence.png"
-    if not (png.is_file() and (folder / "export.json").is_file()):
+    if not _intact(folder):
         folder.mkdir(parents=True, exist_ok=True)
         ok, encoded = cv2.imencode(".png", still)
         if not ok:

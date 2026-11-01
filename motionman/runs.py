@@ -113,10 +113,20 @@ def _open_canonical(summary: RunSummary, root: store.DataRoot) -> OpenRun:
         raise RunError(f"{summary.run_id}: unsupported manifest schema {manifest.get('schema_version')!r}")
     if manifest.get("status") != "SUCCEEDED":
         raise RunError(f"{summary.run_id}: run status is {manifest.get('status')}, not SUCCEEDED")
-    for artifact in manifest.get("artifacts") or []:
-        path = folder / artifact["path"]
-        if not path.is_file() or store.sha256_file(path) != artifact["sha256"]:
-            raise RunError(f"{summary.run_id}: {artifact['path']} does not match its manifest; the run may be damaged")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or not all(isinstance(a, dict) for a in artifacts):
+        raise RunError(f"{summary.run_id}: manifest artifacts are malformed")
+    listed = {a.get("path") for a in artifacts}
+    missing = {pipeline.TRACKS, pipeline.ANNOTATED, pipeline.REPORT} - listed
+    if missing or not manifest.get("records_sha256"):
+        raise RunError(f"{summary.run_id}: manifest doesn't cover {', '.join(sorted(missing)) or 'the records hash'}")
+    for artifact in artifacts:
+        name, digest = artifact.get("path"), artifact.get("sha256")
+        path = folder / str(name)
+        if not isinstance(name, str) or Path(name).is_absolute() or folder.resolve() not in path.resolve().parents:
+            raise RunError(f"{summary.run_id}: manifest names a file outside the run folder")
+        if not path.is_file() or store.sha256_file(path) != digest:
+            raise RunError(f"{summary.run_id}: {name} does not match its manifest; the run may be damaged")
     runspec = _read_json(folder / store.RUNSPEC)
     if not runspec or runspec.get("config_sha256") != manifest.get("config_sha256"):
         raise RunError(f"{summary.run_id}: runspec.json does not match the manifest")
@@ -126,7 +136,11 @@ def _open_canonical(summary: RunSummary, root: store.DataRoot) -> OpenRun:
     source = root.inputs / str(input_id).removeprefix("sha256:") / store.MANAGED_SOURCE
     if not source.is_file() or store.sha256_file(source) != input_id:
         raise RunError(f"{summary.run_id}: its source video is missing or changed in {source.parent}")
-    inp = runspec["settings"]["input"]
+    try:
+        inp = runspec["settings"]["input"]
+        fps, width, height = float(inp["fps"]), int(inp["width"]), int(inp["height"])
+    except (KeyError, TypeError, ValueError):
+        raise RunError(f"{summary.run_id}: runspec.json has no usable input timing") from None
     return OpenRun(
         summary=summary,
         report=_read_json(folder / pipeline.REPORT) or {},
@@ -136,10 +150,10 @@ def _open_canonical(summary: RunSummary, root: store.DataRoot) -> OpenRun:
         video_path=folder / pipeline.ANNOTATED,
         source_path=source,
         source_verified=True,
-        fps=inp["fps"],
-        width=inp["width"],
-        height=inp["height"],
-        records_sha256=manifest.get("records_sha256"),
+        fps=fps,
+        width=width,
+        height=height,
+        records_sha256=manifest["records_sha256"],
     )
 
 
@@ -149,6 +163,10 @@ def _open_legacy(summary: RunSummary) -> OpenRun:
     if not report:
         raise RunError(f"{summary.run_id}: report.json missing or unreadable")
     src = report.get("source") or {}
+    try:
+        fps, width, height = float(src["fps"]), int(src["width"]), int(src["height"])
+    except (KeyError, TypeError, ValueError):
+        raise RunError(f"{summary.run_id}: report.json has no usable source timing") from None
     recorded = Path(src["path"]) if src.get("path") else None
     return OpenRun(
         summary=summary,
@@ -159,9 +177,9 @@ def _open_legacy(summary: RunSummary) -> OpenRun:
         video_path=folder / pipeline.ANNOTATED,
         source_path=recorded if recorded is not None and recorded.is_file() else None,
         source_verified=False,  # MVP runs recorded no hashes; the file at that path may not be the one used
-        fps=src["fps"],
-        width=src["width"],
-        height=src["height"],
+        fps=fps,
+        width=width,
+        height=height,
         records_sha256=None,
     )
 

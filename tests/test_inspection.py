@@ -116,3 +116,11 @@ def test_legacy_records_are_indexed_through_the_adapter(tmp_path, root):
     )  # fmt: skip
     d = inspection.load_or_build(path, root)
     assert d.tracks[4].intervals == [(0, 1), (3, 4)] and d.index.record(3)["legacy"] is True
+
+
+def test_a_cache_with_matching_metadata_but_damaged_entries_is_rebuilt(tmp_path, root):
+    path = write_records(tmp_path / "t.jsonl", scripted())
+    d = inspection.load_or_build(path, root)
+    meta = json.loads((d.folder / "tracks.json").read_text())
+    (d.folder / "tracks.json").write_text(json.dumps({**meta, "tracks": [{"track_id": 1}]}))
+    assert inspection.load_or_build(path, root).tracks[1].intervals == [(0, 4), (8, 9)]
