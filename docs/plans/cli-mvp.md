@@ -23,7 +23,7 @@ on this Mac), anything in §2.
 1. [x] Env + smoke: uv venv 3.11, install ultralytics/opencv/pytest, one-frame detection on CPU.
    Pin `requirements.txt`. Confirm the installed `model.track` result API (`boxes.id/xyxy/cls/conf`).
 2. [x] Vertical slice: `types`, `video_io`, `tracking`, `pipeline`, `__main__` with boxes + IDs; playable output.
-3. [ ] Trails + overlays (`render.py`): bounded deque, 60-frame expiry, colour from ID, label backing.
+3. [x] Trails + overlays (`render.py`): bounded deque, 60-frame expiry, colour from ID, label backing.
 4. [ ] JSONL streaming + `metrics.py` + `report.json` (wall time, e2e FPS, p50/p95 after warmup, versions).
 5. [ ] `cli.py` flags + validation + clear failures and exit codes; `finally` cleanup; interrupted/error status;
    post-run frame-count check.
@@ -53,3 +53,4 @@ on this Mac), anything in §2.
 ## Log
 - 2026-10-31 step 1: py3.11.17 venv; bus.jpg CPU: 5 dets, track IDs 1–5 stable over 2 frames, empty frame → `boxes.id` None; `boxes.xyxy/cls/conf` are tensors. Pinned. Weights download prints a long progress bar: use `verbose=False` and pre-fetched weights.
 - 2026-10-31 step 2: package + slice on a 90-frame 640x480 pan of bus.jpg: exit 0, 90 frames written = 90 decoded, h264 30fps, boxes/IDs/labels correct. Missing/not-video source and non-empty dir → exit 2. Real-clip check waits on D6. Color-by-ID pulled in from step 3.
+- 2026-10-31 step 3: `Trails` (≤30 pts, dropped at 60 unseen frames, none for null IDs); drawn only for objects visible this frame. tests/test_render.py 9 passed. Pan clip: 90/90 frames, trails visible in box colours.

@@ -43,9 +43,11 @@ def run(config: RunConfig, make_tracker: Callable[[RunConfig], FrameTracker] = d
         prepare_output_dir(config)
         tracker = make_tracker(config)  # fresh tracker per run; never shared across videos (INV-1)
         writer = video_io.open_writer(config.output_dir / ANNOTATED, info)
+        trails = render.Trails()
         for frame in video_io.read_frames(cap, info.fps, config.max_frames):
             tracks = tracker.update(frame.image)
-            writer.write(render.annotate(frame.image, tracks))
+            trails.update(frame.index, tracks)
+            writer.write(render.annotate(frame.image, tracks, trails))
             processed += 1
     finally:
         cap.release()
