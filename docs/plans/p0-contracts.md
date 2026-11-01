@@ -64,18 +64,18 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 5. [x] UI runner uses canonical mode and the lease; UI behaviour otherwise unchanged (UI2 redesign is P1).
 6. [x] Failure tests (MD§25 P0.4): invalid input, empty detections, writer failure, interruption, lease
    held, limit exceeded, source modified mid-run; none produce a SUCCEEDED manifest or a published run.
-7. [ ] Baseline (P0.2): real CPU clip in canonical mode; reopen artifacts; verify manifest hashes from disk.
+7. [x] Baseline (P0.2): real CPU clip in canonical mode; reopen artifacts; verify manifest hashes from disk.
 8. [ ] Gate decision (P0.5): pass/fail per criterion, revised P1/P2 estimate, known limitations.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| P0-1 | Offline gate passes, existing tests unchanged in intent | `scripts/check.sh` | |
+| P0-1 | Offline gate passes, existing tests unchanged in intent | `scripts/check.sh` | PASS: ruff ok, 200 passed |
 | P0-2 | Canonical run publishes `data/runs/<run_id>/` with manifest; staging empty afterwards | `python -m motionman --source clips/crosswalk.mp4 --device cpu`; `ls data/runs data/staging` | PASS: r_20261101T060226Z_90470c, 1356 frames, 45.19 fps, staging empty |
 | P0-3 | Manifest hashes match the files on disk; counts decoded = inferred = written | `shasum -a 256` vs manifest | PASS: 4/4 artifacts hash+size = shasum; input_id = shasum(source); 1356 = 1356 = 1356 |
-| P0-4 | Records validate as v1.0; legacy `runs/demo-recording` still reads via adapter | test + script | |
-| P0-5 | Legacy `--output-dir` mode unchanged for users, plus `manifest.json` | old command | |
-| P0-6 | VFR clip and over-limit clip rejected before inference, nothing published | synthetic clips | |
+| P0-4 | Records validate as v1.0; legacy `runs/demo-recording` still reads via adapter | test + script | PASS: published run 1356 v1.0 records, one run_id; legacy file 1356 records via adapter, unchanged; both 25,361 observations |
+| P0-5 | Legacy `--output-dir` mode unchanged for users, plus `manifest.json` | old command | PASS: same files + manifest/runspec, SUCCEEDED, hashes = shasum, data/ untouched; rerun refused exit 2 |
+| P0-6 | VFR clip and over-limit clip rejected before inference, nothing published | synthetic clips | PASS: real VFR and 2560x1440 clips exit 2; data/ inputs/staging/runs counts unchanged |
 | P0-7 | Second concurrent run refused by the lease; failed/interrupted runs never in `runs/` | two processes; SIGINT | PASS: second process exit 75; SIGINT exit 130, INTERRUPTED manifest in staging (118 frames), not published |
 | P0-8 | UI run lands in `data/runs/` and shows as before | browser | PASS: r_20261101T060711Z_a0b0a2 published; Complete, N/A latency, 3 downloads; CLI-held lease → UI error + next step |
 
@@ -96,3 +96,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 - 2026-11-01 step 4: store.py data root/import (dedup by hash, temp+verify+rename)/flock lease (LeaseError exit 75)/records-file validation/manifest/publish (rename, never overwrite); pipeline: canonical (lease, import, staging, publish) and legacy (in place + manifest) share one path; v1.0 records; runspec.json; validation before success (decode count, records order/count/schema, source unchanged, output budget); open_writer returns the codec; Tracker.class_names; CLI --output-dir optional, --data-root. Bug caught by test: budget breach returned early without raising; fixed. Removed dead types.frame_record/Track.to_dict. 190 tests. Real: see P0-2/3/7.
 - 2026-11-01 step 5: UI runner runs canonical (data root, lease via pipeline); uploads written to data/.uploads temp, imported by hash, then removed; failed attempts are not offered as results (no partial downloads; diagnostics stay in staging, UI2 copy); LeaseError/StoreError mapped to next steps; runs/ui retired. Tests adapted + lease-held test. 191 tests. Browser: P0-8.
 - 2026-11-01 step 6: audit of P0.4 + MD§18 fixture 9 per mode. Legacy already covered everything; canonical gaps filled in tests/test_failures.py (9): invalid input creates nothing in data/ (no import), all-empty run succeeds, writer failure and non-finalizing output (fixture 9: FAILED manifest, video_decode FAIL, not published), tracker box outside the image fails the run, lease released after error and interrupt. 200 tests.
+- 2026-11-01 step 7: all acceptance rows recorded with real commands (P0-1..8 PASS). Baseline: r_20261101T060226Z_90470c (1356 frames, 45.19 fps, AC). The v1.0 run and the MVP-era run of the same clip have identical observation counts (25,361).

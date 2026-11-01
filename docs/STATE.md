@@ -6,13 +6,13 @@ Updated: 2026-11-01
 ## Now
 - MVP done on `main` (CLI #1, UI #4, CI #3, handoff docs #5). Owner chose **Release A** (P0–P2) from the
   master design (`docs/reference/master-design.txt`, condensed in `docs/spec-a.md`).
-- Active plan: `docs/plans/p0-contracts.md` (Active; D1–D8 confirmed; steps 1–6 done; P0-2/3/7/8 PASS). Branch `feat/p0-contracts`
+- Active plan: `docs/plans/p0-contracts.md` (Active; steps 1–7 done; P0-1..8 all PASS). Branch `feat/p0-contracts`
   (local, not pushed).
 - Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/` local and gitignored; future data root `./data` gitignored.
 
 ## Next step (exact)
-1. P0 step 7: record remaining acceptance with real commands: P0-1 gate, P0-4 v1.0 records + legacy read, P0-5 legacy
-   --output-dir run, P0-6 VFR/over-limit rejection. Then step 8: gate decision, README (modes, data root, manifest), estimate.
+1. P0 step 8: gate decision + known limitations + revised P1/P2 estimate in the plan; README (two modes, data root,
+   manifest, limits, exit 75); then verify (reviewer) and ship P0, and stop for the owner's P1 go-ahead.
 2. After the P0 gate: write `docs/plans/p1-inspect.md` (A§8), then P2 (A§9). Stop at each gate.
 
 ## Blocked / needs owner
