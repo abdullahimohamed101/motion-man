@@ -1,5 +1,5 @@
 # P0: verify the baseline and formalize contracts
-Status: Active · Branch: `feat/p0-contracts` · Spec: A§1–A§6, A§10 · Design: MD§20 P0, MD§25 first work package
+Status: Done · Branch: `feat/p0-contracts` · Spec: A§1–A§6, A§10 · Design: MD§20 P0, MD§25 first work package
 
 ## Outcome
 The working MVP keeps working, and every new run becomes a reproducible, identified, validated artifact:
