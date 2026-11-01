@@ -58,7 +58,7 @@ CSS = """
    sized to their labels so nothing truncates at narrow widths. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-topbar) {
   position: sticky; top: 0; z-index: 99;  /* the wrapper, not the block: a sticky needs room inside its parent */
-  margin: 0 -24px; padding: 10px 24px;
+  padding: 10px 0;  /* no negative margin: the wrapper's width is fixed, so it only shifted the bar left */
   background: var(--mm-carbon);
   /* Full bleed: the content stays on the 1280 px grid while the fill and the hairline reach both window edges. */
   box-shadow: 0 0 0 100vmax var(--mm-carbon), 0 1px 0 100vmax var(--mm-graphite);
