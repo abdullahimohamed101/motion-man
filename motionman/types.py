@@ -22,20 +22,6 @@ class Track:
     confidence: float
     bbox_xyxy: tuple[float, float, float, float]  # original-frame pixel coordinates
 
-    def to_dict(self) -> dict:
-        return {
-            "track_id": self.track_id,
-            "class_id": self.class_id,
-            "class_name": self.class_name,
-            "confidence": round(self.confidence, 4),
-            "bbox_xyxy": [round(v, 2) for v in self.bbox_xyxy],
-        }
-
-
-def frame_record(index: int, timestamp_s: float, tracks: list[Track]) -> dict:
-    """One JSONL line (spec §6): written for every processed frame, even with no objects."""
-    return {"frame_index": index, "timestamp_s": round(timestamp_s, 6), "objects": [t.to_dict() for t in tracks]}
-
 
 @dataclass(frozen=True)
 class Frame:
@@ -71,7 +57,7 @@ DEFAULT_LIMITS = Limits()
 @dataclass(frozen=True)
 class RunConfig:
     source: Path
-    output_dir: Path
+    output_dir: Path | None  # legacy mode writes here; None = canonical run under the data root (D2)
     device: str = "cpu"
     model: str = "yolo11n.pt"
     imgsz: int = 640
@@ -79,3 +65,4 @@ class RunConfig:
     conf: float = 0.25  # D5: explicit, recorded thresholds
     iou: float = 0.7
     limits: Limits = DEFAULT_LIMITS
+    data_root: Path | None = None  # canonical mode only; None = MOTIONMAN_DATA_ROOT or ./data

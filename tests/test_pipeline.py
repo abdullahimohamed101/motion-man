@@ -57,12 +57,15 @@ def read_report(out: Path) -> dict:
 def test_success_writes_three_agreeing_artifacts(clip, tmp_path):
     out = tmp_path / "run"
     report = run(RunConfig(clip, out))
-    assert sorted(p.name for p in out.iterdir()) == ["annotated.mp4", "report.json", "tracks.jsonl"]
+    assert sorted(p.name for p in out.iterdir()) == [
+        "annotated.mp4", "manifest.json", "report.json", "runspec.json", "tracks.jsonl"
+    ]  # fmt: skip
     records = read_jsonl(out)
     assert len(records) == 20 == report["processed_frames"] == report["output_frames_decoded"]
     assert count_frames(out / pipeline.ANNOTATED) == 20
-    assert [r["frame_index"] for r in records] == list(range(20))
-    assert records[4]["timestamp_s"] == pytest.approx(4 / FPS, abs=1e-6)
+    assert [r["source_frame_index"] for r in records] == list(range(20))
+    assert records[4]["source_t_us"] == round(4 * 1_000_000 / FPS)
+    assert {r["run_id"] for r in records} == {report["run_id"]}
     assert read_report(out) == report and report["status"] == "success" and report["error"] is None
 
 

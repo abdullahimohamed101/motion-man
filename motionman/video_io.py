@@ -112,14 +112,15 @@ def _mib(n: int) -> str:
     return f"{n / 1024**2:.0f} MiB"
 
 
-def open_writer(path: Path, info: VideoInfo) -> cv2.VideoWriter:
-    """Writer with the source's dimensions and playback FPS, whatever the processing speed."""
+def open_writer(path: Path, info: VideoInfo) -> tuple[cv2.VideoWriter, str]:
+    """Writer with the source's dimensions and playback FPS, whatever the processing speed; returns the
+    writer and the codec actually used, which the run records."""
     for codec in _CODECS:
         writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*codec), info.fps, (info.width, info.height))
         if writer.isOpened():
             if codec != _CODECS[0]:
                 log.warning("H.264 writer unavailable; using %s (may not play in browsers)", codec)
-            return writer
+            return writer, codec
         writer.release()
     raise VideoError(f"cannot open video writer: {path}")
 

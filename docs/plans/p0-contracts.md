@@ -58,7 +58,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
    (weights hash, ByteTrack YAML contents + hash, code revision, requirements hash, env). Tests.
 3. [x] `video_io`: CFR timestamp check + limits in preflight and per frame. Tests with synthetic CFR and
    a deliberately VFR clip.
-4. [ ] Pipeline canonical mode: staging dir → write → validate (order, counts, schema, decode) → hash →
+4. [x] Pipeline canonical mode: staging dir → write → validate (order, counts, schema, decode) → hash →
    `manifest.json` (A§3) → atomic rename to `runs/`; legacy mode writes the same manifest in place. Lease.
 5. [ ] UI runner uses canonical mode and the lease; UI behaviour otherwise unchanged (UI2 redesign is P1).
 6. [ ] Failure tests (MD§25 P0.4): invalid input, empty detections, writer failure, interruption, lease
@@ -70,12 +70,12 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
 | P0-1 | Offline gate passes, existing tests unchanged in intent | `scripts/check.sh` | |
-| P0-2 | Canonical run publishes `data/runs/<run_id>/` with manifest; staging empty afterwards | `python -m motionman --source clips/crosswalk.mp4 --device cpu`; `ls data/runs data/staging` | |
-| P0-3 | Manifest hashes match the files on disk; counts decoded = inferred = written | `shasum -a 256` vs manifest | |
+| P0-2 | Canonical run publishes `data/runs/<run_id>/` with manifest; staging empty afterwards | `python -m motionman --source clips/crosswalk.mp4 --device cpu`; `ls data/runs data/staging` | PASS: r_20261101T060226Z_90470c, 1356 frames, 45.19 fps, staging empty |
+| P0-3 | Manifest hashes match the files on disk; counts decoded = inferred = written | `shasum -a 256` vs manifest | PASS: 4/4 artifacts hash+size = shasum; input_id = shasum(source); 1356 = 1356 = 1356 |
 | P0-4 | Records validate as v1.0; legacy `runs/demo-recording` still reads via adapter | test + script | |
 | P0-5 | Legacy `--output-dir` mode unchanged for users, plus `manifest.json` | old command | |
 | P0-6 | VFR clip and over-limit clip rejected before inference, nothing published | synthetic clips | |
-| P0-7 | Second concurrent run refused by the lease; failed/interrupted runs never in `runs/` | two processes; SIGINT | |
+| P0-7 | Second concurrent run refused by the lease; failed/interrupted runs never in `runs/` | two processes; SIGINT | PASS: second process exit 75; SIGINT exit 130, INTERRUPTED manifest in staging (118 frames), not published |
 | P0-8 | UI run lands in `data/runs/` and shows as before | browser | |
 
 ## Risks
@@ -92,3 +92,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 - 2026-11-01 step 1: records.py (v1.0 writer with observation_ids and integer source_t_us, box policy: clip ≤0.5 px overrun, reject the rest; validate(); read_records() adapting pre-v1.0 lines with legacy=True and unknown dims/run_id left None). 20 tests. Real legacy file runs/demo-recording/tracks.jsonl: 1,356 records contiguous, t_us = formula exactly (0 µs diff), 25,361 objects. Pipeline still writes the old format until step 4. 152 tests.
 - 2026-11-01 step 2: store.py (streamed sha256, canonical JSON rejecting NaN, run_id r_<UTC>_<6hex>, ByteTrack YAML read from package files without importing Ultralytics, git commit + dirty, resolve_runspec: config_sha256 over settings; reproducibility recorded but not hashed; missing weights null + reason). 11 tests. Real hashes match shasum (yolo11n.pt, crosswalk.mp4 81 MB in 0.03 s). 163 tests.
 - 2026-11-01 step 3: measured first: OpenCV POS_MSEC after grab() = current frame's PTS (CFR clips: 0.00-frame drift; ffmpeg VFR 30→15 fps clip: OpenCV reports a plausible 20.69 fps, timestamps drift 9.3 frames). Limits dataclass (A§6) on RunConfig; open_reader checks size/dims/frames/duration, then CFR on the first 240 frames, then reopens at frame 0; read_frames checks every frame and treats the frame limit as an error, never truncation. 15 tests (real ffmpeg VFR clip; skips without ffmpeg). Real CLI: crosswalk preflight 0.23 s (outside wall time), 60-frame run exit 0; VFR clip exit 2 'frame 2 is at 66.7 ms, expected 96.7 ms', no dir. 178 tests.
+- 2026-11-01 step 4: store.py data root/import (dedup by hash, temp+verify+rename)/flock lease (LeaseError exit 75)/records-file validation/manifest/publish (rename, never overwrite); pipeline: canonical (lease, import, staging, publish) and legacy (in place + manifest) share one path; v1.0 records; runspec.json; validation before success (decode count, records order/count/schema, source unchanged, output budget); open_writer returns the codec; Tracker.class_names; CLI --output-dir optional, --data-root. Bug caught by test: budget breach returned early without raising; fixed. Removed dead types.frame_record/Track.to_dict. 190 tests. Real: see P0-2/3/7.

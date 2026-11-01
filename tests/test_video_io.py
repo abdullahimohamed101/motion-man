@@ -90,7 +90,8 @@ def test_rejects_bad_metadata_and_releases_capture(monkeypatch, tmp_path, width,
 def test_writer_keeps_source_dimensions_and_fps(clip, tmp_path):
     cap, info = open_reader(clip)
     out = tmp_path / "out.mp4"
-    writer = open_writer(out, info)
+    writer, codec = open_writer(out, info)
+    assert codec in {"avc1", "mp4v"}
     try:
         for frame in read_frames(cap, info.fps):
             writer.write(frame.image)

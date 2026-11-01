@@ -39,10 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="motionman",
         description="Detect, track and annotate objects in one recorded video.",
-        epilog="Writes annotated.mp4, tracks.jsonl and report.json to --output-dir.",
+        epilog="Without --output-dir, each run is staged, validated and published to <data-root>/runs/<run_id>/.",
     )
     p.add_argument("--source", type=Path, required=True, help="input video (constant frame rate, even dimensions)")
-    p.add_argument("--output-dir", type=Path, required=True, help="new or empty directory for the results")
+    p.add_argument("--output-dir", type=Path, default=None, help="legacy mode: new or empty directory for the results")
+    p.add_argument(
+        "--data-root",
+        type=Path,
+        default=None,
+        help="canonical mode data folder (default: $MOTIONMAN_DATA_ROOT or ./data)",
+    )
     p.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="default: cpu")
     p.add_argument("--model", default="yolo11n.pt", help="Ultralytics weights (default: yolo11n.pt)")
     p.add_argument("--imgsz", type=_imgsz, default=640, help="inference size in pixels (default: 640)")
@@ -52,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def parse_args(argv: list[str] | None = None) -> RunConfig:
     a = build_parser().parse_args(argv)
-    return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames)
+    return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames, data_root=a.data_root)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,10 +66,11 @@ def main(argv: list[str] | None = None) -> int:
     config = parse_args(argv)  # argparse exits with 2 on bad flags
     out = config.output_dir
     # Only point at a report this run wrote, never at an earlier run's results in a refused directory.
-    preexisting = out.exists() and (not out.is_dir() or any(out.iterdir()))
+    # Canonical runs log where their unpublished diagnostics are kept.
+    preexisting = out is not None and out.exists() and (not out.is_dir() or any(out.iterdir()))
 
     def partial_note(status: str) -> str:
-        ours = not preexisting and (out / pipeline.REPORT).exists()
+        ours = out is not None and not preexisting and (out / pipeline.REPORT).exists()
         return f"partial results and report (status: {status}) in {out}" if ours else ""
 
     try:
@@ -86,6 +93,6 @@ def main(argv: list[str] | None = None) -> int:
     t = report["timing"]
     print(
         f"done: {report['processed_frames']} frames in {t['processing_wall_s']} s "
-        f"({t['end_to_end_fps']} fps end to end, device {report['device']['used']}) → {config.output_dir}"
+        f"({t['end_to_end_fps']} fps end to end, device {report['device']['used']}) → {report['run_dir']}"
     )
     return EXIT_OK

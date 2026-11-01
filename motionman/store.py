@@ -1,25 +1,30 @@
-"""Identity and provenance for runs (spec A§2, A§3): content hashes, canonical JSON, run IDs, resolved RunSpec.
-
-Data-root layout, staging, publication and the execution lease are added here in P0 step 4. Nothing in this
-module imports Ultralytics or torch, so it stays usable in offline tests (INV-8).
+"""Identity, provenance and storage for runs (spec A§2, A§3, A§5): content hashes, canonical JSON, run IDs, the
+resolved RunSpec, the data root, the execution lease, manifests and atomic publication. Nothing here imports
+Ultralytics or torch, so it stays usable in offline tests (INV-8).
 """
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import importlib.util
 import json
+import os
 import platform
 import secrets
+import shutil
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from motionman.types import RunConfig, VideoInfo
+from motionman import records
+from motionman.types import MotionManError, RunConfig, VideoInfo
 
 RUNSPEC_SCHEMA = "1.0"
 TRACKER_CONFIG = "bytetrack.yaml"
@@ -146,3 +151,153 @@ def resolve_runspec(
             "platform": platform.platform(),
         },
     }
+
+
+# --- Data root, lease, staging and publication (spec A§2, A§5) ------------------------------------------
+
+MANIFEST = "manifest.json"
+RUNSPEC = "runspec.json"
+MANIFEST_SCHEMA = "1.0"
+DEFAULT_DATA_ROOT = Path("data")
+
+
+class StoreError(MotionManError):
+    """A storage contract was violated (lease held, publication blocked, record file invalid)."""
+
+
+class LeaseError(StoreError):
+    exit_code = 75  # EX_TEMPFAIL: another run is active; try again later
+
+
+@dataclass(frozen=True)
+class DataRoot:
+    path: Path
+
+    @property
+    def inputs(self) -> Path:
+        return self.path / "inputs"
+
+    @property
+    def staging(self) -> Path:
+        return self.path / "staging"
+
+    @property
+    def runs(self) -> Path:
+        return self.path / "runs"
+
+    def ensure(self) -> DataRoot:
+        for d in (self.inputs, self.staging, self.runs):
+            d.mkdir(parents=True, exist_ok=True)
+        return self
+
+
+def data_root(path: Path | None = None) -> DataRoot:
+    """``--data-root``, else ``MOTIONMAN_DATA_ROOT``, else ``./data`` (D1)."""
+    return DataRoot(Path(path or os.environ.get("MOTIONMAN_DATA_ROOT") or DEFAULT_DATA_ROOT))
+
+
+@contextmanager
+def execution_lease(root: DataRoot) -> Iterator[None]:
+    """One active run per data root, across processes (D6). Released on every exit, including Ctrl-C."""
+    root.path.mkdir(parents=True, exist_ok=True)
+    fd = os.open(root.path / ".execution.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise LeaseError(
+                f"another MotionMan run is using {root.path}; wait for it to finish, then try again"
+            ) from None
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the lock
+
+
+def import_input(source: Path, root: DataRoot) -> tuple[str, Path]:
+    """Copy a source into ``inputs/<hex>/`` once, deduplicated by content hash (D5). Returns (input_id, path).
+    The filename is display metadata only; the managed path comes from the hash, never from user text."""
+    input_id = sha256_file(source)
+    folder = root.inputs / input_id.removeprefix("sha256:")
+    managed = folder / f"source{_safe_suffix(source)}"
+    if not managed.is_file():
+        folder.mkdir(parents=True, exist_ok=True)
+        tmp = folder / f".{managed.name}.tmp"
+        shutil.copyfile(source, tmp)
+        if sha256_file(tmp) != input_id:
+            tmp.unlink(missing_ok=True)
+            raise StoreError(f"{source} changed while it was being imported")
+        os.replace(tmp, managed)
+        write_json_atomic(
+            folder / "meta.json",
+            {"input_id": input_id, "display_name": source.name, "bytes": managed.stat().st_size,
+             "imported_at_utc": datetime.now(UTC).isoformat(timespec="seconds")},
+        )  # fmt: skip
+    return input_id, managed
+
+
+def write_json_atomic(path: Path, obj: Any) -> None:
+    """Temp file then rename, so a crash never leaves half a JSON file."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(obj, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def validate_records_file(path: Path, expected: int) -> str:
+    """Check order, count and schema of a run's frame records (A§5 step 3); return their hash."""
+    n = -1
+    for n, rec in enumerate(records.read_records(path)):
+        if rec["source_frame_index"] != n:
+            raise StoreError(f"{path.name}: record {n} has source_frame_index {rec['source_frame_index']}")
+    if n + 1 != expected:
+        raise StoreError(f"{path.name}: {n + 1} records, expected {expected}")
+    return sha256_file(path)
+
+
+def artifact_entries(folder: Path, names: list[str]) -> list[dict]:
+    return [{"path": n, "bytes": (folder / n).stat().st_size, "sha256": sha256_file(folder / n)} for n in names]
+
+
+def build_manifest(
+    *,
+    run_id: str,
+    status: str,
+    input_id: str | None,
+    config_sha256: str | None,
+    records_sha256: str | None,
+    started_at: datetime,
+    finished_at: datetime,
+    counts: dict,
+    artifacts: list[dict],
+    validation: dict,
+    error: str | None = None,
+) -> dict:
+    """Terminal manifest (A§3). status is SUCCEEDED, FAILED or INTERRUPTED; only SUCCEEDED runs publish."""
+    return {
+        "schema_version": MANIFEST_SCHEMA,
+        "run_id": run_id,
+        "status": status,
+        "error": error,
+        "input_id": input_id,
+        "config_sha256": config_sha256,
+        "records_sha256": records_sha256,
+        "started_at_utc": started_at.isoformat(timespec="seconds"),
+        "finished_at_utc": finished_at.isoformat(timespec="seconds"),
+        "counts": counts,
+        "artifacts": artifacts,
+        "validation": validation,
+        "capabilities": {"masks": False, "gpu_telemetry": False},
+    }
+
+
+def publish(staging: Path, root: DataRoot, run_id: str) -> Path:
+    """Atomically move a validated staging folder into ``runs/`` (same filesystem). Never overwrites."""
+    target = root.runs / run_id
+    if target.exists():
+        raise StoreError(f"run {run_id} is already published")
+    os.rename(staging, target)
+    return target
+
+
+def _safe_suffix(path: Path) -> str:
+    suffix = path.suffix.lower()
+    return suffix if suffix in {".mp4", ".m4v", ".mov"} else ".mp4"
