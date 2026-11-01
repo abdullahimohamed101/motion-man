@@ -1,0 +1,1013 @@
+# MOTIONMAN
+## Architecture and phased implementation plan
+Version 1.1 | November 1, 2026 | Owner: Abdullahi Mohamed
+
+MotionMan is a local computer-vision workbench for inspecting tracked video, deriving spatial events, measuring pipeline behavior, and reproducing failures. Its distinguishing capability is a closed engineering loop: run a clip, inspect evidence, change one condition, compare results, and preserve a reproducible case.
+
+## 1. Executive decisions
+
+Extend the working MVP rather than replace it. Keep Python, the existing OpenCV pipeline, YOLO11n, an explicit ByteTrack configuration, and the green Streamlit interface unless the repository audit finds a concrete reason to change them. Current implementation status is user-reported as nearly complete; the repository, hardware, tests, and measured performance have not been inspected for this plan.
+
+The architecture is a local modular monolith with separate execution, evidence, analysis, and presentation responsibilities. Inference writes immutable run artifacts. Inspection, zones, events, heatmaps, review, and exports consume those artifacts. Changing a display preference or analysis rule must not silently run the model again.
+
+Begin with one execution owner. Retain synchronous execution through the first releases; introduce a local scheduler and isolated worker only when the batch-queue phase requires background execution and cancellation. Do not add a network inference API, Redis, Kafka, Kubernetes, accounts, billing, or a cloud control plane.
+
+| Release boundary | Outcome | Additional effort estimate |
+| --- | --- | --- |
+| Verified baseline, P0 | Existing MVP demonstrated and its actual limitations recorded | 0.5-1 focused day |
+| Release A, P0-P2 | Inspectable runs, trustworthy measurement, environment doctor, debug bundles | 3-6 focused days total |
+| Release B, P0-P5 | Spatial analytics, reviewed evaluation, repeatable robustness experiments | 9-16 focused days total |
+| Elective completion, P0-P8 | Batch exports plus both advanced-mode branches and TensorRT | 18-33 focused days total |
+
+A focused day means approximately six implementation/testing hours for one developer with coding-agent assistance. These are planning ranges, not delivery promises; add 25% contingency and re-estimate after P0. The expanded roadmap is not a two-day project. Release A is the recommended first interview-ready stopping point; Release B is a strong standalone product boundary.
+
+## Reading map
+
+| Pages | Subject |
+| --- | --- |
+| 2-8 | Scope, architecture, storage, schemas, lifecycle, time, resource limits |
+| 9-16 | UI, analytics, performance, validation, experiments, exports, advanced modes |
+| 17-18 | Security, operations, test strategy and acceptance cases |
+| 19-24 | Phases, dependencies, delivery gates, decisions and risks |
+| 25-26 | Claude implementation contract, terminology and primary references |
+
+This document defines target behavior and proposed interfaces. Example IDs, records, and commands are illustrative contracts, not claims that the features or benchmarks already exist.
+
+=== PAGE BREAK ===
+
+# 2. Product scope and capability map
+
+## Users and workflows
+
+The initial user is a developer working locally on short video clips. The primary workflows are: inspect a track; answer a spatial question; investigate a slow or incorrect run; compare a controlled change; and export the evidence. Optimize for one person understanding and operating the entire system.
+
+| Capability | Minimum useful implementation | Phase |
+| --- | --- | --- |
+| Core tracking | Ordered file processing, persistent run-local IDs, annotated video, records and measured report | P0 |
+| Run shelf and presets | Reopen published runs; reuse an explicit saved configuration | P1 |
+| Inspection and small gadgets | Exact-frame still view, ID selector, crops, contact sheet, spotlight, trails, filters, evidence PNG | P1 |
+| Profiling and comparison | Stage timings, repeatable comparisons, supported telemetry, provenance | P2 |
+| Doctor and debug bundle | Read-only environment checks; input-quality hints; sanitized reproducibility ZIP | P2 |
+| Spatial analytics | Rectangles, finite tripwires, occupancy, dwell estimates, motion arrows, event feed and CSV | P3 |
+| Heatmaps and bookmarks | Static time-weighted image-space map; event and activity bookmarks | P3 |
+| Review and golden clips | Separate human annotations, reviewed evaluation subset, regression results | P4 |
+| Disagreement analysis | Spatially matched output differences between compatible runs | P4 |
+| Robustness lab | Versioned photometric/occlusion/sampling experiments and paired results | P5 |
+| Workload and media exports | Serial queue, cancellation, retry; auto-follow, highlights and assisted redaction | P6 |
+| Optional advanced modes | Segmentation; one webcam and paced file replay; independently selectable | P7 |
+| Optional accelerated backend | Compatible, trusted TensorRT engine with performance and quality checks | P8 |
+
+## Product invariants
+
+- A completed result is reproducible enough to identify the source, configuration, software, model, and hardware that produced it. Bit-identical GPU results are not promised.
+- A successful run never hides missing frames, an encoder failure, or incomplete publication.
+- An analysis result identifies its parent evidence and the exact rules used to compute it.
+- Numeric track IDs are scoped to one run, not to a person across cameras or executions.
+- Detection confidence, track gaps, and model disagreement are diagnostic evidence, not measured accuracy.
+- The CPU path remains usable. Unsupported CUDA, masks, telemetry, or camera capabilities are explicit.
+
+## Out of scope for these releases
+
+Do not build identity recognition, cross-camera person re-identification, model training, multi-tenant access, remote surveillance management, distributed GPU scheduling, an annotation platform, or a general agent/chat interface. Arbitrary RTSP sources, calibrated physical speed, full variable-frame-rate support, and synchronized custom video players need separate design decisions.
+
+Hardware-validation practices are relevant to the interview, but MotionMan is not presented as a validated silicon-testing product. Claims about FPS, stream capacity, latency improvement, or tracking quality require the corresponding measurements.
+
+=== PAGE BREAK ===
+
+# 3. System architecture and ownership
+
+The application has two entry points and one domain implementation. The CLI is the reproducible execution path; Streamlit is the inspection and control surface. Both call application services rather than maintaining separate tracking implementations.
+
+~~~mermaid
+flowchart TD
+    CLI["CLI"] --> APP["Application services"]
+    UI["Streamlit UI"] --> APP
+    APP --> EXEC["Ordered execution"]
+    EXEC --> RAW["Immutable run artifacts"]
+    RAW --> INS["Inspect and analytics"]
+    RAW --> VAL["Validation and experiments"]
+    RAW --> EXP["Media and evidence exports"]
+    INS --> DER["Versioned derived artifacts"]
+    VAL --> DER
+    EXP --> DER
+~~~
+
+| Boundary | Owns | Must not own |
+| --- | --- | --- |
+| Domain records and configuration | Types, units, validation, identities, pure rules | UI widgets, GPU objects |
+| Pipeline and backend | Ordered frames; one model/tracker lifetime; raw observations | Cross-run mutable identity |
+| Artifact store | Safe paths, hashes, schemas, indexes, publication | Scientific interpretation |
+| Analysis and evaluation | Derived summaries, events, matching, metrics | Mutation of predictions |
+| Export renderer | Evidence images and derived videos | Hidden model execution |
+| UI and CLI adapters | User intent, presentation, error explanation | Tracker internals |
+
+Start with the existing modules and extract boundaries only as needed. Suitable eventual packages are domain/, pipeline/, storage/, analysis/, evaluation/, experiments/, exports/, jobs/, and ui/. These names are organizational suggestions, not an instruction to create empty packages or rewrite working files.
+
+## Proposed application contracts
+
+~~~text
+execute_run(RunSpec, cancellation, progress) -> RunRef
+read_frames(RunRef, start_frame, stop_frame) -> FrameRecords
+materialize_analysis(RunRef, AnalysisSpec) -> AnalysisRef
+evaluate(RunRefs, DatasetRevision, EvaluationSpec) -> EvaluationRef
+render_export(RunRef, ExportSpec) -> ExportRef
+submit(JobSpec, submission_id) -> JobRef       # introduced in P6
+cancel(job_id) -> CancelAcknowledgement       # introduced in P6
+~~~
+
+Services accept validated values and return references to persisted results. No Streamlit imports belong in the domain, pipeline, or analysis packages. A thin TrackingBackend facade may wrap the existing combined detector/tracker call; do not split it into speculative interfaces before a second implementation needs them.
+
+=== PAGE BREAK ===
+
+# 4. Identity, storage and compatibility
+
+## Separate identity from caching
+
+| Identity | Meaning |
+| --- | --- |
+| input_id | SHA-256 of the managed source bytes; filename is only a display label |
+| submission_id | One user intent; repeated delivery must not start duplicate work |
+| run_id | One execution attempt, including an intentional benchmark repeat |
+| analysis_id | Content identity of a derived analysis over specific raw evidence |
+| dataset_revision | Immutable version of reviewed labels and evaluation eligibility |
+| experiment_id | A group linking a baseline, variants, repeated runs and results |
+| export_id | One rendering recipe over an identified run/analysis |
+
+Idempotency is not inference caching. A benchmark requesting three repeats must perform three executions even if all input settings match. The UI can offer reuse of an existing run, but this must be an explicit choice.
+
+## Local data layout
+
+| Path below the configured data root | Contract |
+| --- | --- |
+| inputs/<input_id>/ | Managed source and metadata; staged, hashed and published once |
+| staging/<run_id>/ | In-progress outputs; never listed as a successful result |
+| runs/<run_id>/ | Published raw run: manifest, records, timings, report and video |
+| derived/<analysis_id>/ | Indexes, track summaries, events, heatmaps or evaluation |
+| annotations/<dataset>/<revision>/ | Separate reviewed labels and membership |
+| experiments/<experiment_id>/ | Transform specification and references to constituent runs |
+| exports/<export_id>/ | Rendered media/evidence and export manifest |
+| jobs/ | Submission, control and lifecycle records; introduced in P6 |
+
+Use JSON and line-delimited JSON as the source of truth. Keep the frame log uncompressed while byte-offset indexing is used. Build a sparse index every 128 records and bind it to the raw file's hash. Track summaries and compact thumbnails are disposable derived artifacts.
+
+An analysis key hashes canonical JSON containing raw-record hash, analysis configuration, schema version, and analysis implementation version. Evaluation additionally includes dataset revision; exports include rendering configuration. Canonical JSON sorts keys, uses fixed separators, rejects NaN/Infinity, and records units explicitly. Do not use a filename, display model name, or modification time as a cache identity.
+
+Raw completed runs are immutable. New zones, filters that affect analysis, corrected labels, and export settings create new derived versions. Legacy MVP files remain readable through explicit adapters; do not fabricate missing hashes or overwrite old evidence. Unknown schema versions fail clearly. A migration produces a new artifact with provenance back to its source.
+
+No database is required initially. Reconsider an embedded catalog only if measured run discovery or query latency becomes unacceptable at the supported collection size; adding one must not make the raw artifacts unreadable without it.
+
+Preserve the existing meaning of --output-dir for the MVP command; do not silently redefine it as a data root. A compatibility import/adapter exposes verified legacy outputs in the run shelf without overwriting them. New canonical execution uses a separately configured data root and generated run IDs.
+
+=== PAGE BREAK ===
+
+# 5. Run and manifest contracts
+
+## RunSpec
+
+The run request records source identity, processing range, backend/model, tracker configuration, inference settings, output policy, and resource budgets. Validate the complete request before expensive work. Resolve defaults once and persist the resolved form; a report must not depend on a later library default.
+
+| Group | Required resolved values |
+| --- | --- |
+| Input | input_id, relative managed path, dimensions, timebase, frame range |
+| Model | task, weights identifier and hash, class-map hash |
+| Tracking | tracker type, full resolved configuration and configuration hash |
+| Inference | device request and actual device, image size, confidence/IoU settings, class filter, precision |
+| Sampling | every-frame or explicitly versioned experimental sampling policy |
+| Rendering | enabled flag, output size/FPS, codec, trail policy, audio policy |
+| Reproducibility | code revision or source snapshot hash, dependency lock hash, environment summary |
+| Limits | upload/duration/frame/object/disk limits and relevant timeouts |
+
+The initial backend remains YOLO11n with explicit ByteTrack. Reuse the currently working dependency set; do not upgrade to the newest advertised model while implementing an unrelated feature. Official YOLO11 and tracking documentation establish available model variants and stateful tracking behavior, not MotionMan's performance. [R1, R2]
+
+## Terminal manifest example
+
+~~~json
+{
+  "schema_version": "1.0",
+  "run_id": "r_example",
+  "status": "SUCCEEDED",
+  "input_id": "sha256:<source-bytes>",
+  "config_sha256": "<resolved-config>",
+  "records_sha256": "<frames-jsonl>",
+  "started_at_utc": "<ISO-8601>",
+  "finished_at_utc": "<ISO-8601>",
+  "counts": {
+    "decoded_frames": 900,
+    "inferred_frames": 900,
+    "written_frames": 900
+  },
+  "artifacts": [
+    {"path": "frames.jsonl", "bytes": 12345, "sha256": "<hash>"},
+    {"path": "annotated.mp4", "bytes": 23456, "sha256": "<hash>"}
+  ],
+  "validation": {"records": "PASS", "video_decode": "PASS"},
+  "capabilities": {"masks": false, "gpu_telemetry": false}
+}
+~~~
+
+The example counts and sizes illustrate the schema only. Actual manifests enumerate every required artifact and its real size/hash. Reopen and validate outputs before publication. A model-only run can omit video only when its declared output policy says so; it is not interchangeable with a full-output benchmark.
+
+Expected frame counts refer to the declared source window. An intentional maximum-frame limit is recorded in that window; it is not confused with premature decode failure.
+
+Keep public summaries small. Logs and error records carry stable error codes, stage, elapsed time, and a human explanation. Unsupported telemetry is null with a reason; empty output, missing measurements, and zero are distinct states.
+
+=== PAGE BREAK ===
+
+# 6. Frame, observation and derived schemas
+
+Use original decoded-image coordinates and source-video time throughout the system. Frame indices are zero-based. Stored boxes use [x1, y1, x2, y2) with finite coordinates, positive extent, and bounds within the source image. Clip only small numerical overrun under a documented adapter policy; reject malformed boxes.
+
+~~~json
+{
+  "schema_version": "1.0",
+  "run_id": "r_example",
+  "source_frame_index": 120,
+  "source_t_us": 4000000,
+  "sample_index": 120,
+  "frame_status": "INFERRED",
+  "source_width": 1920,
+  "source_height": 1080,
+  "objects": [{
+    "observation_id": "120:0",
+    "track_id": 17,
+    "class_id": 0,
+    "class_name": "person",
+    "confidence": 0.91,
+    "bbox_xyxy": [320.0, 160.0, 410.0, 360.0],
+    "mask_ref": null
+  }]
+}
+~~~
+
+This is an illustrative record, not a real detection. observation_id is unique within a run; track_id may be null. Objects without assigned IDs can be drawn and reviewed but do not participate in ID-based dwell or crossing rules. One frame can legitimately contain no objects.
+
+| Condition | Representation |
+| --- | --- |
+| Model ran and found nothing | INFERRED with objects=[] |
+| Frame decoded but sampling excluded inference | NOT_INFERRED, sample_index=null, explicit reason |
+| Decode failed | Structured run error; never manufacture an empty frame |
+| Live capture discarded an ingested frame | Explicit drop counter/range with ingest identity; P7 |
+| Capability not provided | null or absent optional field under the versioned schema |
+
+File mode writes a record for every decoded source frame. The initial every-frame path makes decoded, inferred, and written counts equal. Sampling experiments preserve source indices and timestamps and do not disguise skipped inference as missing objects. Their preview must visibly mark non-inferred frames or document an interpolation policy.
+
+## Derived records
+
+TrackSummary identifies run_id + track_id, class history, first/last observed source time, observation count, observed intervals, confidence summaries, gaps, and representative crops. First-to-last span is not continuous presence.
+
+Event identifies analysis_id, deterministic event_id, rule/region ID, type, class, run-local track ID, confirming frame/time, and an evidence interval. An estimated crossing time is labeled estimated.
+
+Annotation identifies dataset revision, input hash, source frame, reviewed classes, annotation ID, geometry, review status, and optional ground-truth identity. Ground-truth IDs are separate from predictions. Fields and indexes added in later versions must preserve these distinctions.
+
+=== PAGE BREAK ===
+
+# 7. Lifecycle, publication and execution ownership
+
+Retain the synchronous pipeline through P5. A single controller guards active execution; a UI rerun must not create a second run. Session state stores references and selections, not the sole copy of durable results. Browser refresh can lose session state; completed runs remain discoverable from disk. [R3]
+
+Every direct execution acquires the same exclusive execution lease for its configured data root. In P6, the runner owns that lease; UI and CLI submit through it or fail clearly rather than bypass it. This limits MotionMan execution within that root, not other applications using the GPU.
+
+The target lifecycle below is shared by the direct path and the P6 queue. Direct execution begins at RUNNING; QUEUED is added with batch scheduling.
+
+~~~mermaid
+flowchart TD
+    Q["QUEUED"] --> R["RUNNING"]
+    R --> F["FINALIZING"]
+    F --> S["SUCCEEDED"]
+    Q --> C["CANCELED"]
+    R --> C
+    F --> C
+    R --> X["FAILED or INTERRUPTED"]
+    F --> X
+~~~
+
+## Publication protocol
+
+1. Create an application-owned staging directory with a new run_id. Never reuse a completed output path.
+2. Stream records, timings, logs, and video there. Publish small progress snapshots using temporary-file replacement.
+3. Close writers and flush output. Validate record ordering, expected counts, schemas, and decoded output video.
+4. Compute artifact sizes/hashes and write the terminal success manifest.
+5. The controller serializes cancellation against commit, then atomically renames staging into runs/ on the same filesystem. Readers list only validated published runs.
+
+Use explicit flushing and platform-appropriate synchronization when crash durability is required. Atomic visibility is not a guarantee against every storage-device failure. A truncated JSONL tail or unfinalized MP4 remains incomplete evidence and cannot pass the success gate.
+
+## P6 background execution
+
+One local runner holds an exclusive data-root lock, owns job state, and launches at most one worker subprocess. The worker owns its model, tracker, and staging outputs. The UI submits validated job requests and polls bounded summaries; it never owns GPU state. No network job broker is introduced.
+
+Cooperative cancellation is checked between frames/stages. The worker validates/closes artifacts and reports READY_TO_COMMIT; the controller checks recorded cancellation and owns publication. A cancel acknowledgment means the request was recorded, not that CANCELED is guaranteed. After commit, return ALREADY_COMPLETED. A timeout may escalate only through an owned process handle, never an old persisted PID. Retry creates a new attempt; mid-video resume is unsupported.
+
+After an unexpected worker exit, mark the attempt INTERRUPTED and retain diagnostics. Startup recovery reconciles published success first, then handles verified orphan attempts; it never marks a process dead merely because a heartbeat is delayed. No canceled, crashed, or encoder-failed attempt is advertised as complete.
+
+=== PAGE BREAK ===
+
+# 8. Media, temporal semantics and resource limits
+
+## Supported media envelope
+
+Release A supports short, validated constant-frame-rate MP4 files with positive FPS and even dimensions. A positive OpenCV FPS value alone is not proof that footage is constant-frame-rate. Preflight must validate timing from media metadata/frame timestamps or restrict execution to explicitly verified fixtures. Unknown or variable timing is rejected with an actionable explanation; do not silently invent timestamps.
+
+For validated CFR input, source_t_us = round(source_frame_index * 1,000,000 / source_fps). Performance uses a monotonic clock. UTC timestamps identify executions but never drive dwell calculations. Later VFR support requires real presentation timestamps and an explicit frame mapping, not a replacement FPS constant.
+
+Use a stable source identity after import. If a CLI input remains external rather than managed, verify that its bytes did not change during execution. Source modification invalidates the run. Normalization or transcoding produces a new input with provenance; it does not overwrite the original.
+
+Original coordinates are authoritative. UI region coordinates are normalized to [0,1], tied to input hash/dimensions, and converted once. Undo display resizing and letterboxing before mapping a pointer into source space. Do not mix inference letterbox coordinates with saved source boxes.
+
+## Output and playback
+
+Preserve source dimensions/FPS for the basic annotated export. Audio is absent unless a later explicit audio policy is implemented. Verify writer initialization and output decoding; encoder availability varies by environment. Browser previews use a tested compatible H.264 path, with conversion time reported separately when conversion follows the tracking pipeline. [R4, R5]
+
+If a read fails before the validated endpoint, fail the run. When the decoder cannot reliably distinguish a damaged stream from normal EOF, record that uncertainty rather than asserting a clean, complete decode.
+
+## Initial product limits, subject to P0 measurement
+
+| Resource | Proposed default | Required behavior |
+| --- | --- | --- |
+| Upload | 512 MiB | Reject before accepting unbounded input |
+| File workload | 10 minutes, 1920x1080, 36,000 frames maximum | Explicit opt-in configuration to raise limits |
+| Execution | One active heavy job | No accidental competing GPU workloads |
+| Optional decode queue | Two frames | Blocking, no-drop backpressure in file mode |
+| Inspector frame cache | Eight decoded frames | LRU eviction; no full-video RAM cache |
+| Trail history | 30 points per active track; bounded stale retention | Expire inactive state |
+| Output budget | 2 GiB per run, configurable | Enforce with headroom; handle write/ENOSPC failure without success |
+| Telemetry / UI progress | Approximately 1 Hz / at most 2 Hz | Sample independently of frame count |
+
+These are guardrails, not measured capacity claims. Record effective limits in each run. Large summaries, review queues, and masks must be streamed or paginated. Reaching a limit produces a visible partial/failed result, not silently truncated evidence.
+
+=== PAGE BREAK ===
+
+# 9. UI architecture and guided workflow
+
+Keep the green direction: canvas #040506, panels #07080A, inputs #111214, text #F5F5F5, secondary text #A1A1AA, accent #A3E635, and dark text on lime buttons. Use 8px control corner radii, 16px panels, fine borders and visible focus. The video, not a wall of metrics, is the focal point.
+
+## Start simple; reveal depth when needed
+
+The main journey is Choose video -> Run tracking -> Inspect -> Export. Offer a demo, display supported-input limits beside the chooser, and validate before execution. Keep working defaults; place model, device and inference thresholds under Advanced settings. Use one primary action per stage. No frontend-framework migration is required.
+
+Keep source name, run status and saved-run selection visible. Opening a completed run never starts inference. Restore frame, object and view selections per run; discard incompatible selections when changing sources. Release A exposes Inspect and Performance; later sections appear only when supported.
+
+| User-facing view | Purpose | Contextual controls |
+| --- | --- | --- |
+| Inspect | Video playback and exact-frame evidence | Frame slider, object selector, view options, export |
+| Events & zones | Analytics: counts, events and heatmaps | Regions, rule settings, time/class scope |
+| Performance | Measured pipeline behavior and comparisons | Benchmark settings, environment details |
+| Quality lab | Validation: review and controlled challenges | Reviewed labels, comparison and transform recipes |
+
+## Inspect without losing context
+
+Distinguish playback from the inspected source frame. Native video start-time control rounds to whole seconds; use a separately labeled exact-frame slider and annotated still, with verified decode positioning. Do not imply synchronized players. [R4]
+
+Use a native object selector/list first. Show class, frame/time and observed intervals before technical statistics. Expand confidence distributions, gaps, trajectories and contact sheets on demand. Clicking an overlaid box is optional, not a prerequisite requiring a custom player. Frame caches remain bounded.
+
+View options update immediately without inference. Analysis-rule edits show Unsaved rules and require Recompute analysis. Tracking-setting edits show Results use previous settings and require a new run. Lowering a display threshold cannot recover discarded detections. Place Export beside the current result and name its source, range, format and audio policy.
+
+## Honest states and accessible recovery
+
+- Empty/ready: Choose video or Try demo; then one Run tracking action.
+- Running: actual stage, frame count and elapsed time; percentage only with a reliable total. No invented ETA or duplicate submission.
+- Complete: current results, Inspect and Export; never measurements from a previous attempt.
+- Failed: plain explanation plus Choose another video or an explicit new CPU retry; preserve prior successful runs.
+- Unavailable: explain missing capability. Show cancellation only after its P6 execution contract exists.
+
+Use readable labels, visible keyboard focus, text alongside status colors and adequately sized touch targets. Stack controls and object details below the video on narrow screens. Keep missing metrics unavailable, not zero. Apply the companion Green UI Reference's usability tests; a first-time user should run the demo, inspect an object and choose an export without opening advanced controls.
+
+=== PAGE BREAK ===
+
+# 10. Spatial analytics and temporal rules
+
+Implement geometry and temporal state as pure functions over saved FrameRecords. Begin with axis-aligned rectangles and oriented finite line segments. Arbitrary polygons require positive area, unique vertices, and rejection of self-intersections before they are enabled.
+
+All initial rules use the bounding-box center. A foot-point or mask-centroid policy is a later, explicit analysis setting; it must not silently change existing counts. Regions are bound to the source input identity and coordinate space.
+
+## Occupancy and state transitions
+
+Observed tracked occupancy is the number of distinct, non-null track IDs currently observed inside a region after the analysis class filter. Report unassigned detections separately. Initial observations inside a region contribute to occupancy but do not prove that an entry boundary was crossed.
+
+Occupancy uses current observed centers; entry/exit events use confirmed transitions. A center exactly on a region boundary counts as inside for occupancy. The deadband still prevents that boundary sample alone from confirming an event.
+
+Region state is UNKNOWN, OUTSIDE, or INSIDE, with a pending transition. A configurable spatial deadband and confirmation duration reduce boundary jitter. Starting policy: 3 source pixels and 100 ms requiring at least two observations. These defaults need clip-based validation and are persisted in AnalysisSpec.
+
+An inferred frame missing a track clears pending transitions and the prior crossing reference. Disappearance is not an exit event. The first reacquired observation establishes state without a crossing; a long source-time gap also resets state to UNKNOWN.
+
+## Directional tripwire algorithm
+
+1. Calculate the signed side of each eligible center relative to the oriented segment.
+2. Keep the last stable side outside the deadband.
+3. Preserve the first observation pair whose motion segment intersects the finite tripwire, with direction and evidence interval; then wait for confirmation on the opposite side.
+4. Emit one directional event with its evidence interval and confirming frame.
+5. Rearm only after stable movement outside the deadband; a genuine return crossing may then emit another event.
+
+Touching the line, moving beyond its endpoint, or jittering around the boundary is not a crossing. Do not use a permanent counted-ID set that suppresses legitimate return crossings.
+
+Clear a pending crossing on continuity loss, return to the original stable side, or invalid geometry. Do not recompute intersection only from the later confirming pair: by then both samples may already be on the new side.
+
+## Dwell and gaps
+
+Estimate observed dwell from adjacent eligible observation intervals whose endpoints are inside the region. Do not bridge a frame that was inferred and lacked that ID, or a source-time gap longer than the configured maximum; 500 ms is an initial policy. Sampling experiments may span non-inferred frames only under an explicit interpolation policy, and the result must be labeled estimated with its coverage.
+
+Emit a dwell-threshold event once per confirmed visit. Reset after an observed exit or continuity loss according to the recorded rule. Occupancy thresholds similarly fire on an upward transition, not on every frame above the limit.
+
+Analysis windows are [start_us, end_us). Clip every dwell/heatmap interval to that window. Include events by confirming_t_us, not an inconsistent mixture of estimated and confirming times.
+
+Motion arrows use source-time differences and report pixels/second. No mph, km/h, real-world distance, or site-flow claim is allowed without calibrated geometry and a separate measurement design.
+
+=== PAGE BREAK ===
+
+# 11. Events, heatmaps and fast analysis
+
+## AnalysisSpec and event identity
+
+AnalysisSpec records input/run identities, region definitions, reference-point policy, class membership, source-time window, boundary confirmation, maximum gap, interpolation rule, and implementation version. Canonical configuration plus raw-record hash determines analysis_id.
+
+~~~json
+{
+  "analysis_id": "a_example",
+  "event_id": "<hash-of-analysis-rule-track-ordinal>",
+  "type": "LINE_CROSSING",
+  "rule_id": "entrance",
+  "track_id": 17,
+  "class_id": 0,
+  "direction": "NEGATIVE_TO_POSITIVE",
+  "confirming_frame": 126,
+  "confirming_t_us": 4200000,
+  "evidence_interval_us": [4000000, 4200000],
+  "estimated_crossing_t_us": null
+}
+~~~
+
+Event IDs are deterministic for the same analysis and observation order. Recomputing an identical analysis must not duplicate events. Source-time estimates and confirming time remain separate. The event feed supports filters by rule, class, ID, type and interval; selecting an event opens its inspected source frame. CSV and JSON exports retain IDs and units.
+
+Presentation-only event filters do not change persisted totals. Editing a rule creates a new analysis result. Preserve prior results so a user can explain why a count changed.
+
+## Static occupancy heatmap
+
+Stream observations into a bounded grid, initially 256 by 144 cells. Use the same center-point and eligible-interval policies as other analytics. For each eligible interval, add its duration to the prior observed center's cell under a documented sample-and-hold approximation.
+
+Store raw values in object-seconds per cell. Keep color normalization and smoothing separate from the data. Class/time-window selection and grid shape are analysis parameters; opacity and palette are display parameters. A zero-valued map has a defined empty-state rendering, not division by zero.
+
+Camera movement changes what a pixel represents. Label this as image-space observed occupancy; do not present it as fixed-site foot traffic for a moving camera. Side-by-side heatmap comparison requires the same coordinate mapping, grid, time window and color scale.
+
+## Efficient access and small gadgets
+
+Build track summaries, event indexes and representative-frame references in one streaming analysis pass. Query by a source-frame index instead of scanning the complete log on each widget change. Paginate lists and cap thumbnail generation.
+
+Ghost trails, spotlight, contact sheets, evidence PNGs and activity bookmarks reuse saved observations. A contact sheet samples observed intervals rather than fabricating visibility during gaps. Bookmarks identify their selection criterion, such as maximum occupancy or first crossing; they are not an automatic judgment of importance.
+
+Every derived artifact includes parent hashes, configuration, implementation version and validation status. Failed derivation does not invalidate a previously completed raw run.
+
+=== PAGE BREAK ===
+
+# 12. Measurement, profiling and benchmark comparison
+
+Performance measurement is a product feature, not an ornamental dashboard. Establish a CPU baseline first, then add optional hardware paths. Never prepopulate the UI with invented performance values.
+
+| Metric | Definition and boundary |
+| --- | --- |
+| setup_s | Source/model preparation before the first pipeline decode |
+| processing_wall_s | Before first decode through final writer release/flush |
+| end_to_end_fps | Inferred frames / processing_wall_s in every-frame baseline mode |
+| detect_track_ms | Wall time around the combined backend call, including its wrapper work |
+| decode/render/write_ms | Separately instrumented stage wall times |
+| finalize_s | Post-run conversion, reopening, validation, hashing and publication |
+| job_wall_s | User-visible full execution duration, including setup and finalization |
+| live frame age | P7 ingest-to-preview-publication age by default; never inferred from FPS |
+
+For sampling experiments, report both decoded_frames/processing_wall_s and inferred_frames/processing_wall_s with explicit labels. A rendering-disabled run is not directly equivalent to a full-output run. Stage sums may differ from wall time when overlap is later introduced; expose that instead of forcing the numbers to match.
+
+Keep per-frame timing rows. Exclude the first ten inferred frames from steady-state call percentiles by default, while keeping them in outputs and throughput. Persist the warmup policy and sample count. With insufficient post-warmup samples, publish null and a reason rather than a misleading percentile.
+
+CUDA is asynchronous. The diagnostic wall-time mode synchronizes before starting and after completing the timed GPU call, or uses validated device events for GPU-only timing. Device-event time and full wrapper wall time are distinct. Synchronization can affect overlap; comparisons must use the same instrumentation mode. [R6]
+
+## Comparison protocol
+
+Run at least three independent attempts per configuration on the same clip/window. Disable result reuse. Record each attempt's throughput and latency distribution; show median trial throughput and the range, not a pooled number hiding variability. Failed trials remain visible.
+
+Comparison validation checks input hash, frame/window/sampling policy, output policy, warmup, task, class mapping, precision, model, software, and hardware. Declare the factors intentionally changed. Mark uncontrolled differences as confounders. Do not call changes in box count or confidence an accuracy improvement.
+
+## Telemetry and doctor
+
+Sample process RAM and supported device telemetry at approximately 1 Hz. NVIDIA NVML exposes relevant device queries on supported hardware; availability and semantics vary. Distinguish device-wide GPU memory/utilization from process-specific measurements. Do not assume a Tegra/Jetson or a non-NVIDIA host supports the same counters. [R7]
+
+Doctor checks model loading, selected device, source decode, output encoding, writable storage, capacity and timing support. It diagnoses; it does not automatically install drivers, change GPU clocks, elevate privileges, or enable remote services.
+
+Optional input-quality indicators flag unusual darkness, blur or repeated frames using documented heuristics. Label them hints such as possible stale input; a static scene or repeated image is not proof of camera failure.
+
+=== PAGE BREAK ===
+
+# 13. Review, ground truth and disagreement analysis
+
+## Review is an annotation layer
+
+The review queue proposes candidates from low confidence, gaps, abrupt box changes or model disagreements. These are heuristics, not confirmed errors. A reviewer may mark a false positive, add a missed object, correct class/box geometry, attach an explanation, or mark a frame excluded.
+
+Raw predictions never change. Commit reviewed labels as a new dataset revision containing input hashes, source frames, class scope, ignored regions, annotation IDs and review state. Ground-truth track identity is distinct from predicted track_id. Keep draft edits separate from a frozen evaluation revision.
+
+Start with annotation import plus a compact review form; a full drawing/labeling application is not required. A small set of fully reviewed frames is more useful than many partially labeled frames accidentally treated as ground truth.
+
+## Evaluation policy
+
+| Evaluation | Minimum evidence | Initial output |
+| --- | --- | --- |
+| Detection | Fully reviewed frames and declared classes; explicit negative frames | Precision/recall at recorded confidence and IoU thresholds |
+| Localization | Matched boxes under the documented evaluator | IoU distribution and examples |
+| Tracking | Reviewed temporal identities and visibility/ignore policy | Optional reference tracking metrics |
+| Unlabeled comparison | Predictions only | Output differences and review candidates, never accuracy |
+
+Initial detection matching is deterministic and class-aware: sort predictions by confidence, then match each to the highest-IoU unmatched eligible ground-truth object above the recorded threshold. Define tie-breaking and ignored-region handling. Test exact matches, duplicates, empty positives and empty negatives. Do not label this fixed-threshold metric COCO mAP.
+
+Undefined precision/recall denominators produce null plus a reason, not a fabricated zero.
+
+When temporal labels justify tracking evaluation, integrate a pinned reference implementation rather than inventing HOTA or IDF1. TrackEval provides established tracking metric implementations. A few reviewed clips still do not establish general performance across environments. [R8]
+
+Freeze an evaluation subset separate from clips used to tune settings. Store dataset revision and evaluator version in every result. A deliberate synthetic regression must be detected before the evaluator is trusted.
+
+## Model-disagreement viewer
+
+Require matching source frames and compatible coordinate/class mappings. Use deterministic one-to-one, class-agnostic spatial matching above a configured IoU threshold so matched boxes can expose class disagreement. A descending-IoU greedy matcher is acceptable initially if documented; ambiguous crowded cases remain review candidates.
+
+Show unmatched boxes, class disagreements and localization differences separately. Never equate numeric IDs from separate runs or automatically declare a winning model. The review action links directly to both predictions and the original frame.
+
+=== PAGE BREAK ===
+
+# 14. Robustness experiment laboratory
+
+The lab creates controlled changes to an input and compares their effects. It is not a training pipeline. Begin with one transform at a time so results remain interpretable; composition is supported only with explicit ordering and provenance.
+
+| Transform | Parameters to persist | Ground-truth treatment |
+| --- | --- | --- |
+| Brightness | Gain/offset, clipping rule | Geometry preserved; scoring policy recorded |
+| Blur | Kernel type/size or sigma | Geometry preserved |
+| Noise | Distribution, magnitude, seed | Geometry preserved |
+| Compression | Encoder, arguments, build/version and output hash | Verify timing/frame alignment |
+| Synthetic occlusion | Shape, location, interval, seed | Apply explicit visibility/ignore policy; review affected labels |
+| Inference sampling | Source-frame selection and effective cadence | Preserve original indices/time; disclose coverage |
+
+## ExperimentSpec
+
+Record experiment_id, parent input hash, baseline configuration, ordered transforms, parameter sweep, seed, expected frame mapping, output budget, and evaluation dataset revision when applicable. Each variant receives its own input identity or preprocessing identity and each repeat its own run_id.
+
+Never overwrite the original. Reproducibility means the recipe and observed output bytes are recorded; GPU execution or codec builds may not reproduce bit-identical results across environments. Store the realized variant hash instead of assuming the same seed guarantees identical media.
+
+Synthetic obstruction changes visibility. Box coordinates alone do not tell whether an object remains visually detectable. Default affected annotations to an explicitly reviewed/ignored policy for scoring; do not punish the model for a fully hidden object without declaring that benchmark convention.
+
+Sampling retains source-frame indices and timestamps. Mark frames that were decoded but not inferred. A held box in a preview is a rendering estimate, not a new observation. Record how the tracker handles changed update cadence; if it cannot model elapsed source time, describe the result as a sampling-behavior experiment rather than a calibrated motion measurement.
+
+## Execution and results
+
+1. Validate recipe and budgets; estimate the number of executions.
+2. Materialize or deterministically preprocess variants and verify alignment.
+3. Run the baseline and variants serially with fresh tracker state.
+4. Produce paired timing, output-difference, and eligible labeled-quality reports.
+5. Link review candidates and export the experiment recipe/evidence.
+
+A sweep must show its expected workload before execution. Start with at most five variants and three repeats when benchmarking. P5 executes serially through the synchronous execute_run controller; persistent background scheduling is a P6 capability.
+
+Acceptance requires an identity transform to preserve alignment, seeded transforms to repeat under the same environment, labeled exclusions to be respected, and a changed parameter to invalidate the analysis cache.
+
+=== PAGE BREAK ===
+
+# 15. Workload control and derived media exports
+
+## P6 serial job queue
+
+A local runner accepts immutable validated JobSpecs, holds one active execution slot, and records state changes. Jobs may be inference, analysis, evaluation, experiment, or export. Use one worker at a time initially, including GPU work; prioritize correct lifecycle ownership over parallel throughput.
+
+Submission IDs prevent reruns/double delivery from creating duplicates. A deliberate benchmark repeat has a different run attempt identity. Queue state is separate from immutable evidence. Recover interrupted attempts explicitly; no automatic infinite retries or silent mid-video resume.
+
+An experiment is an orchestration record: expand its child work into the serial queue, or run children sequentially within the same worker. It must not hold the only slot while waiting for queued children that need that slot.
+
+The UI shows queued/running/finalizing/terminal state, stage, elapsed time and cancellation status. Cancellation is cooperative until the documented escalation point. A canceled experiment records which constituent runs completed. Publication already committed is not rolled back by a late cancellation.
+
+## ExportSpec
+
+Every export identifies its source run/input, optional analysis, frame/time range, rendering policy, output dimensions/FPS, codec, audio policy, and implementation version. Render into staging, validate playback/mapping, then publish a new export. Never modify the original input or annotated baseline.
+
+| Export | Required behavior |
+| --- | --- |
+| Evidence image / contact sheet | Show source frame/time and selected IDs; use actual observations |
+| Auto-follow crop | Track-ID selection, time-aware smoothing, fixed aspect ratio, bounded crop, explicit loss behavior |
+| Highlight reel | Expand selected event intervals by configured context, clamp to source, merge overlaps |
+| Assisted redaction | Class/ID selection, padded boxes or available masks, review requirement and coverage warning |
+| Alternate overlays | Change trails, labels, opacity or spotlight without rerunning inference |
+
+Auto-follow uses a source-time-aware smoother and clamps the crop to valid image bounds. On target loss, hold only for a configured interval, then return to a wide view or stop the segment. Never silently join a new ID and claim it is the same object.
+
+Highlight exports retain an edit-decision list mapping output intervals to source intervals. Frame-accurate cuts use decoded-frame boundaries and re-encoding where needed; do not assume arbitrary codec seeks are exact.
+
+Redaction includes selected-class detections even when track_id is null. Missing detections and ID fragmentation can expose content. Call the feature assisted redaction, require review for sensitive sharing, and never claim guaranteed anonymization. A general person detector is not a verified face or license-plate detector.
+
+Audio is omitted in initial derived exports and clearly disclosed. Preserving audio later requires synchronization and a separate privacy decision. Export encoding and wall time are reported separately from inference benchmarks.
+
+=== PAGE BREAK ===
+
+# 16. Elective capabilities and extension boundaries
+
+## P7A: segmentation
+
+Select a compatible pretrained segmentation variant and a backend that actually returns masks. A detection-only result cannot acquire a true mask through a display setting. Ultralytics segmentation models produce masks/contours in addition to class and confidence information. [R9]
+
+Persist masks in compressed sidecars, referenced from compact observation records with dimensions, encoding, and coordinate mapping. Avoid huge arrays in every JSONL record. Validate resized/letterboxed mask alignment and empty-mask cases. Existing box-based analytics remain unchanged unless an explicit mask-reference-point analysis is selected.
+
+## P7B: one webcam and recorded replay
+
+Live mode is a separate source policy. File mode preserves every decoded frame; live mode may use a bounded latest-frame queue to control latency. Record ingest IDs, inference selections, discarded-frame counts and queue age. Keep tracker updates ordered and reset identity at stream restarts or discontinuities.
+
+Distinguish device capture time, host ingest time and actual presentation. Without browser presentation acknowledgment and clock alignment, report ingest-to-preview-publication age, not display latency. Label preview publication rate separately from measured presentation rate.
+
+Use a streaming preview adapter; the completed-file video widget is not a live transport. Start with one local camera, explicit permission, stop/disconnect handling and bounded recording. Remote camera services, RTSP management and synchronized multi-camera identity remain out of scope.
+
+Paced recorded replay tests the live input path using a repeatable source and simulated arrival clock. Label it replay. It does not establish real camera latency or real-world capture reliability.
+
+## P8: optional TensorRT backend
+
+Put acceleration behind the same validated backend contract. Start with fixed task/input settings and trusted engine creation on a supported machine. Retain PyTorch/CPU fallback as an explicitly selected alternative, not a silent substitution in an accelerated benchmark.
+
+Record weights and engine hashes, build/runtime versions, GPU identity, shapes, precision, preprocessing, postprocessing and tracker configuration. Compare compatible outputs and eligible labeled quality as well as timing. A faster backend with changed suppression or resize behavior is not a controlled comparison.
+
+NVIDIA's guidance emphasizes reproducible measurement, bounded resources, compatibility, and the trust boundary around engine loading. Do not accept arbitrary uploaded engines or checkpoints as harmless data. Engine portability and support must be verified for the actual environment. [R10]
+
+These branches are independent elective milestones. Neither segmentation nor live capture is a prerequisite for a useful analysis/validation release. TensorRT does not require rewriting the whole application in C++.
+
+=== PAGE BREAK ===
+
+# 17. Security, reliability and operations
+
+## Trust boundaries
+
+Bind the local UI to loopback by default. There is no remote multi-user security model in this plan. Exposing the application publicly requires a new authentication, authorization, transport, storage and abuse review.
+
+Treat filenames, media, configuration, archives and model artifacts as untrusted input. Generate managed paths from validated IDs; filenames are display metadata. Enforce data-root containment and reject path traversal or symlink escape. Use validated JSON and allowlisted configuration fields. Never construct shell commands by concatenating user text.
+
+Media tools run with argument arrays, bounded output capture and timeouts where supported. The environment doctor uses temporary application-owned files and removes only its own probes. It never changes device settings or installs packages automatically.
+
+## Failure policy
+
+| Failure | Required outcome |
+| --- | --- |
+| Invalid media/timebase | Reject before inference; explain supported input requirements |
+| GPU unavailable / OOM | Clear failed attempt; offer a separately recorded CPU or smaller-input retry |
+| Disk limit or encoder finalization failure | No successful publication; preserve diagnostic metadata |
+| Worker or UI interruption | Reconcile actual state; do not invent success or resume tracker state |
+| Missing model / unsupported version | Actionable setup error; no hidden network activity during ordinary tests |
+| Corrupt artifact or stale index | Refuse affected read; rebuild disposable index only from verified evidence |
+| Missing telemetry | Mark unavailable; tracking can continue when telemetry is optional |
+
+## Reproduction bundle
+
+Create ZIPs from an explicit artifact allowlist: resolved configuration, hashes, dependency/environment summaries, sanitized logs, timing rows, selected evidence, and reproduction instructions. Source footage and full paths are opt-in; review their inclusion. Never include credentials, unrestricted environment dumps, home-directory listings or unrelated files.
+
+A bundle includes a manifest of contents and hashes. Importing one does not automatically extract arbitrary paths, load a model, or execute a reproduction command. Any future importer requires archive-size limits and path validation.
+
+## Retention and diagnostics
+
+Do not automatically delete successful runs. Offer explicit deletion of selected application-owned artifacts with a dependency warning for analyses and experiments. Preview or trash-first cleanup is preferable; source videos outside the data root are never cleanup targets.
+
+Structured logs carry run/job/analysis identity, stage, severity and stable error code. Avoid frame-by-frame console spam. Keep diagnostic detail separate from user-facing explanations. The application must remain usable when optional telemetry or a nonessential export fails.
+
+Maintain a reproducible lockfile, documented model setup, sample-media attribution, and dependency/model license review before redistribution. No commercial licensing assumption is made by this architecture.
+
+=== PAGE BREAK ===
+
+# 18. Verification strategy and release evidence
+
+Tests must distinguish pipeline correctness, analytic correctness, model quality, and performance. One category does not substitute for another. Use small deterministic fixtures and fake backend observations for most tests; real-model and hardware tests are separate suites.
+
+| Test family | Representative acceptance cases | Execution |
+| --- | --- | --- |
+| Records and storage | Invalid boxes, null IDs, empty detections, schema mismatch, stale hash/index, truncated JSONL | Every change |
+| Pipeline | Known-frame synthetic video, output count, writer-open/finalization errors, cleanup | Every change |
+| Analysis | Entry/exit, endpoint touch, boundary jitter, true recrossing, missing observation, long gap | Every change |
+| Time and geometry | Resizing/letterbox reversal, source-time invariance, skipped inference, unsupported VFR | Every change |
+| Evaluation | Duplicate boxes, negatives, ignored classes/regions, partial labels excluded, planted regression | P4 onward |
+| Lifecycle | Duplicate submission, UI rerun, cancel, worker exit, publication race, runner restart | P6 onward |
+| UI | Empty/ready/running/complete/error, current-run data, focus, missing capabilities | Each phase |
+| Real backend | Known clip, visual review, artifact reopening, measured CPU baseline | Each release |
+| Optional hardware | CUDA timing, NVML availability, webcam disconnect, TensorRT agreement | When hardware exists |
+
+## Exact fixtures worth writing first
+
+1. An object moves from one stable side of a finite line to the other: one event.
+2. It touches or jitters within the deadband: no event.
+3. It returns after rearming: a second directional event.
+4. A missing inferred observation or long gap occurs: no fabricated crossing or continuous dwell.
+5. The same records are analyzed at a different processing speed: identical source-time results.
+6. A display filter changes: persisted analytic totals remain unchanged.
+7. Two runs swap numeric track IDs but preserve boxes: disagreement matching remains spatially correct.
+8. Identical analysis input/configuration: identical analysis and event identities.
+9. An output video cannot finalize: no SUCCEEDED manifest is published.
+10. A reviewed correction is committed: raw prediction hashes remain unchanged.
+
+## CI and performance evidence
+
+Offline CI runs unit tests, schemas, a fake-backend video integration test and formatting/static checks. It must not download weights or require a GPU. Optional suites report SKIPPED with a reason when their prerequisites are absent; a skip is not a pass.
+
+Every release records exact commands, dependency/model versions, sample hashes, test outcomes and unresolved limitations. Performance regressions use repeated local measurements with declared tolerance and hardware context; do not create a universal FPS gate across unrelated machines.
+
+Default target: zero false-success publications and zero silent frame loss within the supported file-mode envelope. Responsiveness and memory targets are measured during P0/P1 and then recorded as release-specific budgets. No unmeasured latency or capacity promise is built into the UI.
+
+=== PAGE BREAK ===
+
+# 19. Delivery roadmap and dependency gates
+
+Implementation proceeds by usable releases, not by creating every module at once. Each phase ends with a runnable demo, tests, a recorded acceptance decision, and a short list of known limitations. Feature flags or capability checks hide unfinished branches.
+
+| Phase | Dependency | Focus | Focused days |
+| --- | --- | --- | --- |
+| P0 | Current repository | Verify baseline, preserve behavior, formalize contracts | 0.5-1 |
+| P1 | P0 | Run shelf, indexed inspection and evidence gadgets | 1-2 |
+| P2 | P0-P1 | Measurement, doctor, comparisons and debug bundles | 1.5-3 |
+| P3 | P1 | Regions, temporal events, heatmaps and bookmarks | 2-3 |
+| P4 | P1-P2 | Human review, frozen evaluation and disagreement | 2-4 |
+| P5 | P2; P4 for quality claims | Robustness recipes, variants and paired reports | 2-3 |
+| P6 | P1-P2; P3 for event reels | Serial background jobs, cancellation and media exports | 3-5 |
+| P7A / P7B | Stable contracts; P6 for background live control | Masks / one camera plus replay | 4-7 combined |
+| P8 | P2, P4 and supported hardware | Optional TensorRT backend | 2-5 |
+
+P3 and P4 can be developed independently after their dependencies, but a solo developer should finish one vertical slice at a time. P5 can display unlabeled output differences without P4, but cannot claim measured quality. P7A and P7B are independent branches; P8 does not require either.
+
+## Release acceptance
+
+| Release | Stop when | Do not include by default |
+| --- | --- | --- |
+| A: inspect and measure | P0-P2 gates pass; real clip, inspector and benchmark evidence can be demonstrated | Zones, new models, custom player, background queue |
+| B: analyze and validate | P3-P5 gates pass; a reviewed regression and repeatable challenge are demonstrated | Multi-camera systems or compulsory acceleration |
+| Elective extensions | A selected branch independently passes its hardware/media gates | Every remaining feature merely for completeness |
+
+The total ranges are additional effort from today's reported near-complete MVP. They include basic tests and documentation, not an unbounded UI redesign. Missing baseline functionality, unavailable hardware, and difficult codecs add work. Reserve 25% contingency; do not spend that reserve by silently adding features.
+
+## Definition of phase completion
+
+- Deliverables work through the documented UI/CLI path, not only isolated scripts.
+- Negative cases have been exercised and reported.
+- New artifacts declare versions and remain compatible with earlier successful runs.
+- Tests and real-world checks are distinguished; hardware skips are visible.
+- The user can demonstrate the phase and explain its implementation.
+
+Freeze scope at each release boundary. Preserve a known-good baseline and show its evidence before starting an elective branch.
+
+=== PAGE BREAK ===
+
+# 20. Phase detail: baseline and inspection
+
+## P0 - Verify and stabilize the current implementation
+
+Outcome: a trustworthy starting point, not a rewrite. Effort: 0.5-1 day, plus explicitly identified missing MVP work.
+
+Implementation sequence:
+1. Inspect repository instructions, architecture, dependencies, tests, current UI and real artifacts. Preserve unrelated changes.
+2. Produce a capability inventory: verified, present-but-unverified, missing, or deliberately deferred.
+3. Run the documented CPU command on a short permitted clip and record the actual result.
+4. Define RunSpec and record/manifest boundaries around the existing implementation. Add a compatibility reader for existing output names rather than renaming everything immediately.
+5. Test source validation, empty detections, writer failures, interruption and cleanup. Freeze dependency/model provenance and a baseline report.
+
+Gate: one real clip produces playable output, aligned valid records, and measured results; offline tests pass. The baseline's limitations are documented. If these fail, expansion pauses until the cause is addressed.
+
+Do not add a new tracker, an engine export, concurrency, or a UI framework during this phase. The first architectural deliverable is a correct inventory.
+
+## P1 - Make completed work inspectable
+
+Outcome: opening and exploring an old run is useful without invoking the model. Effort: 1-2 days.
+
+Implementation sequence:
+1. Add guided upload/demo setup, collapsed advanced settings, validated run discovery and stable selection.
+2. Build sparse frame-record indexes and streamed track summaries.
+3. Add the source-frame slider plus annotated still inspector and ID dropdown; preserve per-run context and label playback separately.
+4. Add observed intervals, confidence summaries, trajectories, selected-frame crops and a bounded contact sheet.
+5. Add spotlight, trail length/opacity controls, display filters and evidence PNG export.
+6. Save/load explicit presets; separate rendering settings from inference and analytic settings.
+
+Gate: a fake backend that raises if called proves inspection and display changes perform no inference. Selected source frame, record and evidence image agree. Missing sources, incomplete outputs and unsupported schemas fail clearly. Cache limits hold. A new user can run a demo, inspect and select an export without advanced settings; keyboard and narrow-screen paths remain usable.
+
+Demonstration: load a previous run, select a track, inspect a gap, adjust its displayed trail, and export evidence. Changing presentation must leave the raw-record hash unchanged.
+
+Cut order if behind: defer contact-sheet styling, smooth interactive drawing and additional preset types. Preserve exact-frame access, identity semantics, and no-hidden-inference behavior.
+
+=== PAGE BREAK ===
+
+# 21. Phase detail: engineering tools and analytics
+
+## P2 - Ship the inspection and measurement release
+
+Outcome: Release A. Effort: 1.5-3 days.
+
+Implementation sequence:
+1. Instrument decode, combined detect/track, render and write with explicit timing boundaries.
+2. Preserve raw measurements, warmup policy, sample counts, setup and finalization durations.
+3. Add a comparison validator and three-repeat benchmark orchestration. Show confounders instead of unquestioned speedup labels.
+4. Add the read-only environment doctor, actionable setup failures and labeled input-quality hints.
+5. Add supported, optional telemetry at a bounded sampling rate.
+6. Export a sanitized reproduction bundle with content hashes and instructions.
+
+Gate: repeated CLI runs use identified inputs/settings and do not reuse inference results. Unsupported metrics show unavailable. CUDA timing is separately checked if hardware exists. Bundles reopen correctly, exclude footage unless selected, and contain no unrestricted environment dump.
+
+Demonstration: explain a measured bottleneck, compare one controlled setting, inspect a failing preflight check, and export the evidence. This is the first recommended expanded interview-ready release.
+
+## P3 - Add spatial questions and events
+
+Outcome: the user can identify when and where a defined event occurred. Effort: 2-3 days; depends on P1.
+
+Implementation sequence:
+1. Introduce versioned rectangle/line definitions in normalized source coordinates.
+2. Implement pure occupancy, side-of-line, finite intersection, confirmation and gap rules.
+3. Emit deterministic events and observed-dwell estimates with evidence intervals.
+4. Build event filters, selected-event frame access, CSV/JSON export and activity bookmarks.
+5. Build the bounded static occupancy heatmap, motion arrows in pixels/second, units and explicit normalization.
+
+Gate: fixtures prove no duplicate event from boundary jitter, a genuine return crossing is counted, and an observation gap is not an invented exit or crossing. Processing speed does not change analytics. Changing regions reruns analysis only; changing display opacity rerenders only.
+
+Demonstration: define a line, inspect a crossing, check its source frame, and explain why instantaneous occupancy differs from cumulative crossings.
+
+Cut order if behind: use coordinate controls instead of freehand polygons; keep the heatmap static; defer animated charts. Boundary, time and identity correctness are not optional.
+
+=== PAGE BREAK ===
+
+# 22. Phase detail: evaluation and robustness
+
+## P4 - Create an evidence-based quality loop
+
+Outcome: some quality statements become measurable on an explicitly reviewed subset. Effort: 2-4 days; depends on P1-P2.
+
+Implementation sequence:
+1. Define annotation and dataset-revision schemas, including reviewed class coverage and ignored regions.
+2. Add a compact review queue and annotation import; keep predictions immutable.
+3. Assemble a small, permitted, fully reviewed dataset with an evaluation split frozen separately from tuning material.
+4. Implement and test fixed-threshold detection evaluation. Add tracking metrics only when temporal identity ground truth exists.
+5. Compare compatible runs with deterministic spatial matching and expose disagreement candidates.
+
+Gate: partially labeled frames are excluded unless their scored class scope is complete. An intentionally introduced false positive or missed object changes the expected metric. Same-number track IDs across runs do not imply a match. Every reported score names dataset revision, threshold and evaluator version.
+
+Demonstration: review a disagreement, commit a label revision, evaluate against the frozen subset, and trace the result to source evidence.
+
+## P5 - Ship repeatable robustness experiments
+
+Outcome: Release B. Effort: 2-3 days; depends on P2, plus P4 for quality scoring.
+
+Implementation sequence:
+1. Add ExperimentSpec, baseline/variant references, ordered transforms and seed handling.
+2. Implement identity, brightness, blur and noise first; verify frame/time alignment.
+3. Add compression and synthetic obstruction with recorded recipes and visibility policy.
+4. Add controlled sampling experiments with preserved source identity/time and explicit non-inferred records.
+5. Run bounded serial sweeps and create paired reports, review links and experiment bundles.
+
+Gate: identity transformation preserves alignment; seed and environment reproduce applicable transformations; edited recipes invalidate derived results. Occlusion-affected labels follow the declared scoring policy. Unlabeled experiments show output differences, not accuracy. Sweep size and expected workload are visible before execution.
+
+Demonstration: challenge one clip, reproduce the same recipe, inspect a changed output, and explain whether the evidence supports a quality conclusion or merely a difference.
+
+Cut order if behind: defer multiple-transform composition, animated challenge previews and broad parameter searches. Keep immutable variants, reproducibility, and scoring eligibility.
+
+=== PAGE BREAK ===
+
+# 23. Phase detail: workload and optional branches
+
+## P6 - Background workload control and useful exports
+
+Effort: 3-5 days. Depends on P1-P2, and P3 for event-driven highlight reels.
+
+Build one local runner with exclusive ownership, one worker, durable submission identity and bounded progress. Test duplicate submissions, cancellation, late-cancel publication, worker crash, runner restart and retry from the beginning. Add a queue UI only after lifecycle tests pass.
+
+Then implement exports independently: auto-follow with bounded/time-aware crops; highlights with merged source intervals and an edit-decision list; assisted redaction with padding, review and coverage warnings. Validate every output by reopening it. Export failures leave the raw run untouched.
+
+Gate: no two active heavy jobs, no false-success publication, clean resource release, and no silent tracker-state resume. Export tests cover missing targets, crop edges, overlapping intervals and audio disclosure.
+
+## P7A / P7B - Advanced representation or input
+
+P7A effort: 2-3 days. P7B effort: 2-4 days. Combined if both are selected: 4-7 days. Each is optional.
+
+P7A adds one compatible segmentation model, a mask sidecar schema and mask rendering. Keep detection-only compatibility and validate source-space mask alignment. Gate: mask/box overlays agree and missing-mask capability is explicit.
+
+P7B adds one local camera, permission/start/stop/disconnect handling, bounded buffering and recorded live metrics. Add paced file replay as a separate labeled mode. Gate: stop releases the camera; drops and frame age are accounted for; capture timestamps are not invented; live results do not masquerade as complete no-drop file runs.
+
+Choose one branch at a time. A custom browser streaming component is justified only for this milestone, not as a prerequisite for the earlier file workbench.
+
+## P8 - Optional TensorRT acceleration
+
+Effort: 2-5 days after compatible hardware and dependencies are available. Depends on P2 and P4; does not require P7.
+
+Add a backend adapter and trusted engine workflow. Verify preprocessing, shape, precision, suppression, coordinate mapping and tracker integration against the reference path. Record the actual engine build/runtime environment.
+
+Gate: unsupported environments fail clearly; CPU/PyTorch still works; accelerated results pass agreed output/evaluation checks; timing comparisons use controlled settings and documented instrumentation. No speedup claim is accepted without the saved measurements.
+
+Cut order: retain one model, one fixed input shape and one GPU before generalizing. Do not add INT8 calibration, C++ rewrites, dynamic batching or multi-stream serving simply because the backend supports them.
+
+=== PAGE BREAK ===
+
+# 24. Decisions, risks and change triggers
+
+## Architecture decision register
+
+| Decision | Reason | Revisit only when |
+| --- | --- | --- |
+| Local modular monolith | One developer, shared artifacts, minimal operational overhead | A real remote/multi-user requirement appears |
+| Preserve working backend | Isolate feature work from model/platform churn | Measured quality or capability needs justify replacement |
+| File-backed evidence first | Inspectable, portable, easy to reproduce | Measured catalog/query scale requires an embedded index |
+| Synchronous before P6 | Avoid premature process orchestration | Queue/cancel/background behavior becomes a product requirement |
+| One active worker | Predictable state ownership and GPU memory | Profiling proves safe concurrency has meaningful value |
+| Derived analysis over raw logs | Fast iteration and auditable evidence | A genuinely online decision requires in-loop processing |
+| Streamlit plus exact-frame stills | Python-first delivery, adequate early interaction | Validated UX needs require a custom player/canvas |
+| Reviewed evaluation only | Avoid confusing confidence with correctness | More labeled coverage supports broader claims |
+
+## Risk register
+
+| Risk | Mitigation / owner boundary |
+| --- | --- |
+| Existing MVP differs from the plan | P0 inventory; adapt interfaces; do not rewrite unseen code |
+| IDs fragment or switch | Explicit run-local semantics; review temporal labels before quality claims |
+| Wrong time or coordinates | Verified timebase, source-space schema, geometry fixtures |
+| Dependency defaults change | Lock working versions and persist resolved configurations |
+| UI reruns launch work | Explicit submission identity and execution ownership |
+| Disk/media failures appear successful | Staging, output validation and atomic publication |
+| A pretty chart implies unsupported science | Units, provenance, eligibility and N/A states |
+| Feature scope becomes another infrastructure platform | Release boundaries; elective branches require a user decision |
+
+## Questions resolved during P0, not guessed
+
+What package/module structure actually exists? Which behaviors have tests? Which UI framework/version is in use? What machine and GPU, if any, are available? Which clips may be redistributed? Are the source files CFR? Which codec path plays in the target browser? Which existing resume claims have corresponding evidence?
+
+## Triggers for a new design review
+
+Remote hosting, multiple users, cross-camera identity, long-running streams, input beyond the declared resource envelope, physical-world measurements, automatic sensitive decisions, arbitrary uploaded model execution, and distributed scheduling all cross current boundaries. Do not implement them as incidental additions to a UI request.
+
+The architect's default action is to preserve a useful release, measure the constraint, and change the smallest boundary that addresses it.
+
+=== PAGE BREAK ===
+
+# 25. Claude execution contract and first work package
+
+## Copy-ready implementation instructions
+
+Implement the selected MotionMan phase from this specification in the existing repository. Begin with Phase 0. Inspect repository instructions and current code before editing. Preserve working functionality and unrelated user changes. Treat the user-reported near-complete MVP as something to verify, not permission to start over.
+
+First report: (1) what exists, (2) what you verified, (3) missing acceptance criteria, (4) the smallest proposed file changes, and (5) exact validation commands. Map existing output schemas to the target contracts using adapters when practical. Do not create a large empty package skeleton.
+
+Implement one runnable vertical slice at a time. Keep inference, raw evidence, analysis, evaluation, exports and UI responsibilities separate. Add tests with the behavior, then run them. Finish the selected phase's acceptance gate before moving to the next phase. Do not start elective P6-P8 work without that phase being selected.
+
+After the selected phase's gate, stop with acceptance evidence and obtain the next phase selection. This roadmap is not authorization to implement every phase automatically.
+
+Never fabricate IDs, timing measurements, model quality, hardware support or passing tests. Do not invent ground truth, silently change the tracker, or replace unsupported GPU work with a CPU result labeled CUDA. Verify APIs against the installed versions and pin the working environment.
+
+At every handoff provide changed files, rationale, commands executed, test results, real-clip results, hardware tests skipped, known limitations, and the next smallest step. If a required capability or permission is missing, report the blocker and complete unaffected work; do not improvise privileged changes or unrelated services.
+
+## First work package
+
+| Ticket | Deliverable | Completion evidence |
+| --- | --- | --- |
+| P0.1 Inventory | Current module and capability map | Verified/unverified/missing list |
+| P0.2 Baseline | One real CPU clip plus saved outputs | Actual commands and reopened artifacts |
+| P0.3 Contracts | Resolved RunSpec, versioned record/manifest adapter | Schema and compatibility tests |
+| P0.4 Failure handling | Invalid input, empty detections, writer failure, interruption | Passing deterministic tests |
+| P0.5 Decision | Baseline gate and revised estimate | Explicit pass/fail and remaining gaps |
+
+## Proposed command surface
+
+Preserve the existing run command. New commands below are target interfaces, not claims about the current repository; add each only in its owning phase.
+
+~~~text
+python -m motionman --source demo.mp4 --output-dir runs/demo --device cpu
+python -m motionman doctor
+python -m motionman analyze --run <run_id> --config analysis.json
+python -m motionman benchmark --suite benchmark.json
+python -m motionman evaluate --dataset <revision> --run <run_id>
+python -m motionman experiment --spec experiment.json
+python -m motionman export --run <run_id> --spec export.json
+pytest -m "not real_model and not gpu and not camera"
+~~~
+
+Use small reviewable changes. If multiple coding agents are used, one owns shared schemas/contracts, another implements a bounded feature against them, and a reviewer validates invariants and tests. Parallelism must not become competing rewrites of the same pipeline.
+
+=== PAGE BREAK ===
+
+# 26. Terminology, references and final release check
+
+## Terms that must stay distinct
+
+| Term | Meaning |
+| --- | --- |
+| Detection / observation | A model output at an identified source frame |
+| Track | A run-local association across observations, not a verified person |
+| Occupancy / crossings | Current observed count / cumulative boundary events |
+| Span / dwell estimate | First-to-last time / eligible observed inside intervals |
+| Confidence / accuracy | Model score / evaluated correctness against reviewed labels |
+| Playback FPS / processing FPS | Source timebase / measured work completed per wall second |
+| Output difference / regression | Disagreement / deterioration under a defined acceptance rule |
+| Replay / live | Paced recorded input / actual camera input |
+
+## Primary implementation references
+
+These sources support library behavior and implementation checks. They do not establish MotionMan's results. Check the installed versions during P0 and retain version-specific links in the repository.
+
+- [R1] Ultralytics YOLO11 models: https://docs.ultralytics.com/models/yolo11/
+- [R2] Stateful tracking and tracker configuration: https://docs.ultralytics.com/modes/track/
+- [R3] Streamlit session state: https://docs.streamlit.io/develop/api-reference/caching-and-state/st.session_state
+- [R4] Streamlit video behavior and codec note: https://docs.streamlit.io/develop/api-reference/media/st.video
+- [R5] OpenCV VideoWriter lifecycle: https://docs.opencv.org/4.x/dd/d9e/classcv_1_1VideoWriter.html
+- [R6] PyTorch CUDA execution and timing: https://docs.pytorch.org/docs/stable/notes/cuda.html
+- [R7] NVIDIA NVML device queries: https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html
+- [R8] TrackEval reference implementation: https://github.com/JonathonLuiten/TrackEval
+- [R9] Ultralytics instance segmentation: https://docs.ultralytics.com/tasks/segment/
+- [R10] NVIDIA TensorRT performance and trust guidance: https://docs.nvidia.com/deeplearning/tensorrt/latest/performance/best-practices.html
+
+## Final release review
+
+The chosen phase gates pass. Raw evidence remains unchanged by analysis or review. Every visible number has a definition and provenance. Time, coordinates, identity, skipped observations and failure states are handled consistently. UI inspection does not trigger model execution. Resource limits and unsupported capabilities are visible. Output media reopens correctly. A real run and a meaningful failure can both be demonstrated.
+
+The final README states what is implemented, what was tested, what remains optional, and which results were actually measured. The product can stop at Release A or Release B without becoming an incomplete version of every elective feature.

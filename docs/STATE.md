@@ -4,21 +4,19 @@
 Updated: 2026-11-01
 
 ## Now
-- Active plan: none. Both MVP plans are done and on `main`: CLI (#1, `docs/plans/done/cli-mvp.md`), UI (#4,
-  `docs/plans/done/ui.md`), CI (#3). PR #2 merged into the old `feat/cli-mvp` by mistake; #4 re-landed it.
-- Merged branches deleted locally and on GitHub; only `main` (+ this docs branch) remain.
-- Handoff docs: `docs/interview.md` (5-minute walkthrough + the brief's five questions), `docs/demo-script.md`.
-  Silent demo video: `demo-video/motionman-demo.mp4` (local, gitignored, built from real runs).
-- Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/` local and gitignored (README has the commands)
+- MVP done on `main` (CLI #1, UI #4, CI #3, handoff docs #5). Owner chose **Release A** (P0–P2) from the
+  master design (`docs/reference/master-design.txt`, condensed in `docs/spec-a.md`).
+- Active plan: `docs/plans/p0-contracts.md` (Draft; decisions D1–D8 await owner). Branch `feat/p0-contracts`
+  (local, not pushed).
+- Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/` local and gitignored; future data root `./data` gitignored.
 
 ## Next step (exact)
-1. Owner records the narrated demo with `docs/demo-script.md` (on mains power).
-2. Optional, from spec: decoder prefetch thread (§7, `Queue(maxsize=2)`, blocking puts, stop event);
-   CUDA smoke test on a machine with an NVIDIA GPU (hold model, imgsz, FP32 and output constant).
+1. Owner confirms P0 decisions D1–D8, then `build` P0 step 1 (`motionman/records.py`, v1.0 records + legacy reader).
+2. After the P0 gate: write `docs/plans/p1-inspect.md` (A§8), then P2 (A§9). Stop at each gate.
 
 ## Blocked / needs owner
-- Nothing blocking. CUDA work needs an NVIDIA machine.
+- P0 decisions D1–D8.
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 132 passed; CI green on #3 and #4.
+- `scripts/check.sh`: ruff ok, 132 passed; CI green on main.
 - Benchmarks (CLI, crosswalk, M5 Pro CPU): median 44.29 fps on mains, 32.14 on battery (README tables).
