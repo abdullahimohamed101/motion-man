@@ -131,7 +131,7 @@ def test_a_tracking_preset_fills_the_next_runs_settings(world):
 
 def test_opening_a_run_shows_inspect_and_performance(world):
     at = open_run(render(), world["a"])
-    assert [t.label for t in at.tabs] == ["Inspect", "Performance"]
+    assert [t.label for t in at.tabs] == ["Inspect", "Events & zones", "Performance"]
     assert "Complete" in badge(at) and any(b.label == "New video" for b in at.button)
     assert any(c.startswith("Run ID · `") and world["a"] in c for c in captions(at))  # the ⋯ details menu
     # The ID is never in the headline: not in the title, not in the facts line under it.
@@ -213,7 +213,7 @@ def test_evidence_png_export_writes_a_file(world):
 def test_a_finished_run_opens_its_result(world):
     world["fake"].state = JobState(status="complete", report={"run_id": world["b"]}, run_dir=None)
     at = render()
-    assert [t.label for t in at.tabs] == ["Inspect", "Performance"]
+    assert [t.label for t in at.tabs] == ["Inspect", "Events & zones", "Performance"]
     assert any(c.startswith("Run ID · `") and world["b"] in c for c in captions(at))  # run B, not the newest A
 
 

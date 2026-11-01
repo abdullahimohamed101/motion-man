@@ -13,9 +13,9 @@ from pathlib import Path
 
 import streamlit as st
 
-from motionman import inspection, presets, records, runs, store
+from motionman import inspection, presets, records, render, runs, store
 from motionman.presets import Preset, PresetError
-from motionman.ui import style, view, workspace
+from motionman.ui import style, view, workspace, zones
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
 from motionman.video_io import VideoError
 
@@ -277,7 +277,7 @@ def result_page(summary: runs.RunSummary) -> None:
     with actions:
         export_slot = st.container(key="export")  # filled once the inspected frame and view options are known
         details_menu(run, summary)
-    inspect_tab, perf_tab = st.tabs(["Inspect", "Performance"])
+    inspect_tab, zones_tab, perf_tab = st.tabs(["Inspect", "Events & zones", "Performance"])
 
     with inspect_tab:
         left, right = st.columns([3, 1], gap="medium")
@@ -317,6 +317,10 @@ def result_page(summary: runs.RunSummary) -> None:
                 vd["classes"] = st.multiselect("Classes", classes, key=bind(f"classes-{rid}", vd["classes"] or []),
                                                placeholder="All classes") or None  # fmt: skip
                 spotlight = st.toggle("Spotlight the selected object", key=bind(f"spot-{rid}", ctx.spotlight))
+                arrows = st.toggle("Motion arrows (px/s)", key=bind(f"arrows-{rid}", False),
+                                   help="Image-space velocity over up to 5 consecutive observed frames, "
+                                        "from source time. Pixels per second, not a real-world speed; under "
+                                        "10 px/s is not drawn.")  # fmt: skip
                 st.caption("View updated. Saved results are unchanged.")
                 view_presets(vd, rid)
             options = workspace.view_options(vd, spotlight=track if spotlight else None)
@@ -326,6 +330,8 @@ def result_page(summary: runs.RunSummary) -> None:
             else:
                 try:
                     still, _ = inspection.render_still(frames, derived.index, frame, options)
+                    if arrows:
+                        still = render.draw_motion(still, inspection.motion_at(derived.index, frame))
                     st.image(still, channels="BGR", width="stretch",
                              caption=workspace.frame_caption(frame, record["source_t_us"], count))  # fmt: skip
                 except inspection.InspectError as e:
@@ -335,6 +341,9 @@ def result_page(summary: runs.RunSummary) -> None:
             unassigned = sum(1 for o in record["objects"] if o["track_id"] is None)
             st.caption(f"Unassigned detections in this frame: {unassigned}")
         contexts[rid] = workspace.RunContext(frame, track, dict(vd), spotlight)
+
+    with zones_tab:
+        zones.zones_tab(run, derived, frames, root)
 
     with perf_tab:
         perf_panel(run, summary)
@@ -458,6 +467,7 @@ def export_menu(run, derived, frames, frame, options, record) -> None:
                                    key=f"dl-{run.run_id}-{name}")  # fmt: skip
             else:
                 st.caption(f"{label}: not available for this run.")
+        zones.export_items(run, root)
         st.divider()
         st.caption(f"Evidence image: source frame {frame:,} ({workspace.format_t(record['source_t_us'])}) "
                    "with the current view options.")  # fmt: skip

@@ -140,3 +140,82 @@ def annotate_still(
             prefix = "#?" if t.track_id is None else f"#{t.track_id}"
             _label(out, f"{prefix} {t.class_name} {t.confidence:.2f}", (x1, y1), color, scale, thickness)
     return out
+
+
+REGION_COLOR = (224, 214, 208)  # mist: saved regions
+PENDING_COLOR = (34, 242, 228)  # acid lime, as a signal stroke: the region being edited
+
+
+def draw_regions(image: np.ndarray, regions: Sequence, pending=None) -> np.ndarray:
+    """Draw region outlines on a copy of a source frame (plan P3 D12). Lines get an arrowhead at B and a "+" on
+    their positive side (left when facing A→B on screen); ``pending`` is drawn in the signal colour."""
+    img = image.copy()
+    h, w = img.shape[:2]
+    scale = max(1, round(w / 960))
+    for region, color in [*((r, REGION_COLOR) for r in regions), *(((pending, PENDING_COLOR),) if pending else ())]:
+        c = [round(v) for v in region.to_px(w, h)]
+        if region.kind == "line":
+            ax, ay, bx, by = c
+            length = max(1.0, ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5)
+            tip = min(0.3, 24 * scale / length)  # arrowhead about 24 px, whatever the line's length
+            cv2.arrowedLine(img, (ax, ay), (bx, by), color, 2 * scale, cv2.LINE_AA, tipLength=tip)
+            nx, ny = (by - ay) / length, -(bx - ax) / length  # left normal on screen (image y points down)
+            mx, my = (ax + bx) / 2, (ay + by) / 2
+            plus = (round(mx + nx * 18 * scale), round(my + ny * 18 * scale))
+            cv2.putText(img, "+", (plus[0] - 6 * scale, plus[1] + 6 * scale), _FONT, 0.7 * scale, color,
+                        2 * scale, cv2.LINE_AA)  # fmt: skip
+            anchor = (min(ax, bx), min(ay, by))
+        else:
+            x1, y1, x2, y2 = c
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2 * scale, cv2.LINE_AA)
+            anchor = (x1, y1)
+        _label(img, region.name, anchor, color, 0.5 * scale, scale)
+    return img
+
+
+ARROW_HORIZON_S = 0.5  # an arrow shows where the centre would be after this long at its current velocity
+MIN_ARROW_PX_S = 10.0  # slower than this is drawn as no arrow: box jitter on parked objects is not motion
+
+
+def draw_motion(image: np.ndarray, motions: Mapping) -> np.ndarray:
+    """Velocity arrows on a copy of an inspected still, labelled in px/s (image space, no real-world units)."""
+    img = image.copy()
+    scale = max(1, round(img.shape[1] / 960))
+    for m in motions.values():
+        start = (round(m.x), round(m.y))
+        end = (round(m.x + m.vx * ARROW_HORIZON_S), round(m.y + m.vy * ARROW_HORIZON_S))
+        if m.speed < MIN_ARROW_PX_S or start == end:
+            continue
+        cv2.arrowedLine(img, start, end, PENDING_COLOR, 2 * scale, cv2.LINE_AA, tipLength=0.25)
+        cv2.putText(img, f"{m.speed:.0f} px/s", (end[0] + 4 * scale, end[1]), _FONT, 0.45 * scale, PENDING_COLOR,
+                    scale, cv2.LINE_AA)  # fmt: skip
+    return img
+
+
+HEAT_BLUR_CELLS = 2.0  # display smoothing (Gaussian sigma, in grid cells); the saved cells are never smoothed
+HEAT_SCALE_PERCENTILE = 95  # the colour scale saturates here, so a few static hotspots can't hide everything else
+
+
+def heatmap_overlay(image: np.ndarray, heat: dict, opacity: float) -> np.ndarray:
+    """Blend an analysis heatmap over a copy of a frame. Display only: cells are lightly smoothed, the colour scale
+    is a square root that saturates at the 95th percentile of the occupied area, and transparency follows
+    intensity, so quiet areas fade out instead of darkening the frame. The saved object-µs are never changed; an
+    all-zero map returns the frame unchanged."""
+    img = image.copy()
+    cols, rows = heat["grid"]
+    if not heat["cells"] or opacity <= 0:
+        return img
+    grid = np.zeros((rows, cols), np.float64)
+    for c, r, v in heat["cells"]:
+        grid[r, c] = v
+    smooth = cv2.GaussianBlur(grid, (0, 0), HEAT_BLUR_CELLS)
+    # Scale to a high percentile of the occupied area, not its maximum: a parked car or a traffic light can sit in
+    # one cell for the whole clip and would otherwise wash out every path people actually walked.
+    occupied = smooth[smooth > smooth.max() * 1e-3]
+    top = float(np.percentile(occupied, HEAT_SCALE_PERCENTILE)) or float(smooth.max())
+    level = np.sqrt(np.clip(smooth / top, 0, 1))
+    h, w = img.shape[:2]
+    big = cv2.resize(level, (w, h), interpolation=cv2.INTER_LINEAR).clip(0, 1)
+    colours = cv2.applyColorMap((big * 255).astype(np.uint8), cv2.COLORMAP_INFERNO).astype(np.float64)
+    alpha = (opacity * big)[..., None]
+    return (img * (1 - alpha) + colours * alpha).round().astype(np.uint8)

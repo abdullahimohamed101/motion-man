@@ -20,8 +20,8 @@ Rewrite `docs/STATE.md` in place (do not append history; git keeps history).
 - Known issues are GitHub issues (`gh issue list -l bug`), not a markdown file.
 
 ## Scope
-MVP done (`docs/spec.md`). Now Release A, P0–P2 (`docs/spec-a.md`). Anything outside those is out of
-scope: say so, don't build it. Stop at each phase gate for the owner's go-ahead.
+MVP and Release A done (`docs/spec.md`, `docs/spec-a.md`). Now Release B part 1, P3–P4 (`docs/spec-b.md`).
+Anything outside those is out of scope: say so, don't build it. Stop at each phase gate for the owner's go-ahead.
 
 ## Invariants (never break without an ADR)
 - INV-1 One model instance owns tracker state per run; frames fed in order; no parallel track calls.
@@ -48,6 +48,8 @@ Branch `feat/<slug>` off `main`. Commit per step. Push / PR / merge only when as
 - `ARCHITECTURE.md`: modules and dependency direction (≤150 lines)
 - `docs/spec.md`: product spec; grep for the `§N` you need, never read whole
 - `docs/spec-a.md`: Release A contracts (`A§N`); same rule
+- `docs/spec-b.md`: Release B P3–P4 contracts (`B§N`); same rule
+- `docs/design/ui.md`: UI navigation, header and action-colour rules; read before changing UI layout
 - `docs/reference/`: original briefs and master design; open only to settle a spec ambiguity
 - `docs/decisions/INDEX.md`: one line per ADR; open an ADR only for the area you touch
 - `docs/plans/`: active plans; `docs/plans/done/` is archive, ignore unless asked

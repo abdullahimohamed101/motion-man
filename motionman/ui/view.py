@@ -209,3 +209,59 @@ def run_row(display_name: str | None, started_at: str | None, frames: int | None
 
 def _num(value: float | None, fmt: str) -> str:
     return NOT_AVAILABLE if value is None else fmt.format(value)
+
+
+# --- Events & zones (plan P3 D12): labels and display-only filters over saved events -----------------------
+
+EVENT_LABELS = {"LINE_CROSSING": "Line crossing", "ZONE_ENTRY": "Entered", "ZONE_EXIT": "Left",
+                "DWELL_THRESHOLD": "Dwell alert", "OCCUPANCY_THRESHOLD": "Occupancy alert"}  # fmt: skip
+DIRECTION_LABELS = {"NEGATIVE_TO_POSITIVE": "towards +", "POSITIVE_TO_NEGATIVE": "away from +"}
+OCCUPANCY_NOTE = ("Occupancy counts who is inside at one moment; crossings and entries add up over the whole clip, "
+                  "so the numbers differ. Track IDs can fragment, so counts are of tracks, not people, and an "
+                  "observed stay ends whenever the tracker misses someone for a frame.")  # fmt: skip
+
+
+@dataclass(frozen=True)
+class EventFilter:
+    """What the event table shows. Display only: it never changes the saved analysis or its totals."""
+
+    rules: tuple[str, ...] = ()  # empty = all
+    types: tuple[str, ...] = ()
+    classes: tuple[str, ...] = ()
+    track: int | None = None
+    window_s: tuple[float, float] | None = None  # inclusive, on confirming time
+
+    def keeps(self, e: dict) -> bool:
+        t = e["confirming_t_us"] / 1e6
+        return ((not self.rules or e["rule_id"] in self.rules) and (not self.types or e["type"] in self.types)
+                and (not self.classes or e["class_name"] in self.classes)
+                and (self.track is None or e["track_id"] == self.track)
+                and (self.window_s is None or self.window_s[0] <= t <= self.window_s[1]))  # fmt: skip
+
+
+def event_row(e: dict, rule_names: dict[str, str]) -> dict:
+    """One table row in plain words; IDs stay available for selection."""
+    detail = DIRECTION_LABELS.get(e["direction"] or "", "")
+    if e["type"] == "DWELL_THRESHOLD" and e["value"] is not None:
+        detail = f"{e['value'] / 1e6:.1f} s inside"
+    elif e["type"] == "OCCUPANCY_THRESHOLD" and e["value"] is not None:
+        detail = f"{e['value']} inside at once"
+    return {"Time (s)": round(e["confirming_t_us"] / 1e6, 2), "Event": EVENT_LABELS.get(e["type"], e["type"]),
+            "Region": rule_names.get(e["rule_id"], e["rule_id"]),
+            "Track": "—" if e["track_id"] is None else f"#{e['track_id']}", "Class": e["class_name"] or "—",
+            "Detail": detail, "Frame": e["confirming_frame"]}  # fmt: skip
+
+
+def region_card(r: dict) -> tuple[str, str, str]:
+    """(label, value, caption) for one region's summary card."""
+    if r["kind"] == "line":
+        c = r["crossings"]
+        return (r["name"], f"{r['crossings_total']:,} crossings",
+                f"{c['NEGATIVE_TO_POSITIVE']:,} towards + · {c['POSITIVE_TO_NEGATIVE']:,} away from +")  # fmt: skip
+    mean = r["occupancy_us"] / r["covered_us"] if r["covered_us"] else None
+    # "Observed": a stay ends whenever the tracker misses the object for a frame, so short flickers count separately.
+    dwell = (f"median observed stay {r['dwell_median_us'] / 1e6:.1f} s over {r['visits']:,}"
+             if r["dwell_median_us"] is not None else "no observed stays")  # fmt: skip
+    parts = [f"{r['exits']:,} left", f"peak {r['peak_occupancy']} at once",
+             f"mean {mean:.2f}" if mean is not None else "mean —", dwell]  # fmt: skip
+    return r["name"], f"{r['entries']:,} entered", " · ".join(parts)

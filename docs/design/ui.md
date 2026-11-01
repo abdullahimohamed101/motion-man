@@ -91,6 +91,9 @@ Inspect | Performance
   tab underline (2 px) and the progress bar. These are thin strokes, so lime's brightness reads as "look here"
   without shouting. It no longer fills any button, badge or selection. `primaryColor` in the theme is bone so
   sliders, checkboxes and selected options follow the calm primary.
+- **Events & zones tab**: **Analyze** is the tab's primary only while the drawn regions have no up-to-date
+  analysis for this run; once they do it turns into a disabled secondary "Up to date", so the header's Export
+  is again the only filled button. Region outlines use mist; the shape being edited uses lime as a thin signal.
 - **Status pills** keep Streamlit's semantic colours (green Complete, red Error, grey otherwise) with the label
   always written out; colour never carries the meaning alone.
 - Disabled primary: obsidian fill, ash text, as before.

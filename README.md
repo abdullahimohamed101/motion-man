@@ -111,8 +111,9 @@ Opens a Streamlit workbench at http://localhost:8501, listening on localhost onl
 Device, detection threshold and saved tracking presets sit under **Advanced settings**, closed by default.
 While it runs you see frames, percentage and elapsed time. When it finishes the result opens:
 
-- **Saved runs** at the top reopens any verified run in the data folder. Older pre-manifest folders under
-  `runs/` appear only with **Show legacy runs** and are read-only and unverified.
+- **Library** in the top bar reopens any verified run in the data folder. Older pre-manifest folders under
+  `runs/` appear only with **Show legacy runs** (at the bottom of the Library) and are read-only and unverified.
+- **Events & zones**: draw lines and rectangles and analyze them (see Events & zones below).
 - **Inspect**: the Tracked or Original video (native playback, not synchronized with the frame below), and an
   inspected frame. The **Source frame** slider shows that exact frame from the source video with its own
   saved detections; arrow keys step one frame. **View options** change labels, trail length and opacity, the
@@ -177,13 +178,81 @@ not proof of who made the bundle. A real bundle
 of the crosswalk run with telemetry is 610 KiB with 8 entries plus the manifest, and contains no home folder
 path or username.
 
+## Events & zones
+
+Draw lines and rectangles on a saved run and ask when and where things happened. Analysis reads the run's saved
+records only: the model never runs again, the run's own files never change, and the same run, regions and settings
+always give the same events, byte for byte, however fast the clip was processed.
+
+In the UI, open a run and choose **Events & zones**: add regions with coordinates in percent of the frame (a live
+overlay shows them), save them as a set for this video, and press **Analyze**. Results show a card per region, an
+event table with filters (display only), bookmarks, the selected event's exact frame with **Show in Inspect**, and a
+heatmap. Events CSV and the full analysis JSON appear in **Export**. From the command line:
+
+```bash
+.venv/bin/python -m motionman analyze --run <run_id> --regions regions.json --csv events.csv
+```
+
+A region set (`regions.json`) names the video it belongs to and its regions; coordinates are fractions of the frame:
+
+```json
+{"schema_version": "1.0", "input_id": "sha256:…", "name": "Crosswalk demo", "regions": [
+  {"id": "road-crossing", "name": "Road crossing", "kind": "line", "points": [[0.05, 0.6], [0.95, 0.6]],
+   "classes": ["person"]},
+  {"id": "far-kerb", "name": "Far kerb", "kind": "rect", "box": [0.0, 0.46, 0.6, 0.58], "classes": ["person"],
+   "dwell_threshold_s": 3, "occupancy_threshold": 8}]}
+```
+
+A line has a direction, A → B. Its positive side is on your left when you face from A to B on screen:
+
+```text
+          + (positive side)
+  A ───────────────────────▶ B        crossing downwards  = POSITIVE_TO_NEGATIVE ("away from +")
+          − (negative side)           crossing upwards    = NEGATIVE_TO_POSITIVE ("towards +")
+```
+
+**Rules** (MD§10; all persisted in each analysis): every rule uses the bounding-box centre. A centre counts as on one
+side only when it is at least 3 source px from the boundary, and a change counts once it has held for 100 ms and 2
+observations. A crossing needs the motion between two consecutive observations to cross the finite line; touching
+it, going round an end or jittering inside the deadband is not a crossing, and a genuine return crossing counts again
+(a box that changes shape can still move its centre across: see Limitations). A track missing from even one frame loses
+its state: reappearing is not an entry, disappearing is not an exit, sightings either side of a gap are never a
+crossing, and observed dwell never spans a gap. Detections without a track ID are counted, never used in rules. A dwell alert needs a confirmed (or established) visit; a zone must be
+at least twice the deadband wide and tall. Gaps are never interpolated.
+
+**Outputs** in `data/analyses/<run_id>/<analysis_id>/`: `analysis_spec.json` (every input and setting; its hash is the
+analysis ID), `events.jsonl` (stable event IDs, confirming frame and time, evidence interval), `summary.json`
+(crossings by direction; entries, exits, peak and time-weighted occupancy, observed stays; bookmarks that name their
+criterion), `heatmap.json` (object-µs per cell on a 256×144 grid) and `manifest.json`. All times are integer µs.
+Editing a region makes a new analysis and keeps the old one.
+
+**Measured on the crosswalk clip** (run `r_20261101T194556Z_ed3f02`, the region set above): 1,356 frames analyzed in
+0.37–0.46 s; 22 crossings (15 towards the camera, 7 away) by 21 tracks; far kerb 7 entries, 4 exits, peak 9 people at
+once, 5 occupancy alerts, 2 dwell alerts. Checked against the video frame by frame: of 6 sampled crossings, 4 are
+clearly genuine and 2 happen at the frame's right edge, where the person is partly cut off; the 2 sampled entries
+look right. One track crosses twice 0.33 s apart: the person stands still while their box's bottom grows and then
+shrinks (legs detected, then hidden), moving the centre across the line. That is the box-centre limitation below.
+
+| Deadband | Crossings | Tracks crossing more than once | Zone entries |
+|---|---|---|---|
+| 3 px (default) | 22 | 1 (the box-shape case) | 7 |
+| 6 px | 13 | 0 | 4 |
+| 10 px | 6 | 0 | 2 |
+
+A larger deadband removes the box-shape pair but also drops crossings that were checked as genuine (distant people
+move few pixels near the far kerb), so the default stays at 3 px. A size-relative deadband or a foot-point reference
+would fix both; that is a later, explicit setting, not a silent change to existing counts.
+
+**Motion arrows** (Inspect → View options): image-space velocity in px/s over up to 5 consecutive observed frames,
+from source time; under 10 px/s is not drawn. Never a real-world speed.
+
 ## Test
 
 ```bash
 scripts/check.sh
 ```
 
-This runs ruff and the pytest suite (200 tests, about five seconds). The tests use synthetic clips and a fake
+This runs ruff and the pytest suite (462 tests, about 35 seconds). The tests use synthetic clips and a fake
 tracker; the UI page is tested with Streamlit's AppTest. They block network access and fail if torch or
 Ultralytics gets imported, so they never need a GPU, the network, or the model weights.
 
@@ -204,6 +273,10 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 | `ui/runner.py` | Background canonical runs: one job per process plus the data-root lock, progress, errors mapped to a next step |
 | `ui/view.py` | What the page shows for a given state ("Pending", "N/A", badges, progress text) |
 | `ui/style.py` | The few style rules the Streamlit theme config can't express |
+| `regions.py` | Region sets: lines and rectangles in normalized coordinates per video; validation; content-addressed storage |
+| `analytics.py` | Pure rules over observations: crossings, zone states, occupancy, dwell, thresholds, heatmap |
+| `analysis.py` | One pass over a verified run's records; deterministic, atomically published results; CSV/JSON export |
+| `ui/zones.py` | The Events & zones tab: region editor and overlay, Analyze, results, heatmap |
 
 ## Benchmark
 
@@ -332,6 +405,12 @@ a smaller input size, a lighter model or a GPU would. A short run is still domin
   the demo clip, 701 distinct IDs appear and the median ID lasts 11 frames, while static objects (traffic lights)
   keep one ID for the whole clip. ByteTrack's ID counter also skips numbers, so labels reach the thousands.
 - **No accuracy claims.** The output was inspected visually; there is no labelled evaluation.
+- **Events use the box centre.** When a box changes shape (legs detected or hidden, a person cut off at the frame
+  edge) its centre moves even if the person doesn't, which can produce a crossing; one such pair appears in the
+  crosswalk demo. Observed stays split at every frame the tracker misses (333 short stays for 7 entries on the far
+  kerb), so "median observed stay" describes detection continuity as much as waiting time.
+- **Heatmaps count every tracked class.** Traffic lights and parked cars light up; a person-only heatmap would need
+  a class setting in the analysis. It is image-space occupancy: a moving camera changes what a pixel means.
 - **Crowded scenes are visually busy.** Labels overlap when many objects are close together.
 - **CUDA is unverified.** The code path (explicit device check, CUDA synchronisation around timings) exists
   but has not been run: the development machine has no NVIDIA GPU. Apple's MPS backend is not supported.
