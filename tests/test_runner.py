@@ -88,7 +88,7 @@ def test_demo_source_run_completes_with_three_artifacts(clip, tmp_path):
 def test_upload_is_imported_by_hash_and_the_temporary_copy_removed(clip, tmp_path):
     s = run_to_end(make_runner(tmp_path), upload=("My Clip.MP4", clip.read_bytes()))
     assert s.status == "complete" and s.source_name == "My Clip.MP4"
-    managed = tmp_path / "data" / "inputs" / s.report["input_id"].removeprefix("sha256:") / "source.mp4"
+    managed = tmp_path / "data" / "inputs" / s.report["input_id"].removeprefix("sha256:") / "source"
     assert managed.read_bytes() == clip.read_bytes()
     assert list((tmp_path / "data" / ".uploads").iterdir()) == []
 

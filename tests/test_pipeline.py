@@ -163,7 +163,9 @@ def test_interrupt_mid_run_reports_interrupted(clip, tmp_path):
 
 
 def test_no_decodable_frames_is_an_error(clip, tmp_path, monkeypatch):
-    monkeypatch.setattr(video_io, "read_frames", lambda cap, fps, max_frames=None, frame_limit=None: iter(()))
+    monkeypatch.setattr(
+        video_io, "read_frames", lambda cap, fps, max_frames=None, frame_limit=None, max_duration_s=None: iter(())
+    )
     out = tmp_path / "run"
     with pytest.raises(VideoError, match="no decodable frames"):
         run(RunConfig(clip, out))

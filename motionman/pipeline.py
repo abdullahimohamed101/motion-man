@@ -119,14 +119,14 @@ def _run(
     decoded: int | None = None
     input_id = runspec = records_sha = None
     out: Path | None = None
-    validation = {"records": "NOT_RUN", "video_decode": "NOT_RUN"}
+    validation = {"source_complete": "NOT_RUN", "records": "NOT_RUN", "video_decode": "NOT_RUN"}
     writer = jsonl = None
     try:
         device_used = resolve(config.device)
         if root is not None:
             root.ensure()
             cap.release()
-            input_id, source = store.import_input(config.source, root)
+            input_id, source = store.import_input(config.source, root, config.source_name)
             cap, info = video_io.open_reader(source, config.limits)  # process the managed copy
             target = root.staging / run_id
             final_dir = root.runs / run_id
@@ -160,10 +160,15 @@ def _run(
         m.start()
         started = last_report = perf_counter()
         reported = -1
-        for frame in video_io.read_frames(cap, info.fps, config.max_frames, config.limits.max_frames):
+        frames = video_io.read_frames(
+            cap, info.fps, config.max_frames, config.limits.max_frames, config.limits.max_duration_s
+        )
+        for frame in frames:
+            m.decoded_frames += 1
             t = perf_counter()
             tracks = tracker.update(frame.image)
             m.detect_track_ms.append((perf_counter() - t) * 1000)
+            m.inferred_frames += 1
             record = records.frame_record(run_id, frame.index, info.fps, info.width, info.height, tracks)
             trails.update(frame.index, tracks)
             writer.write(render.annotate(frame.image, tracks, trails))
@@ -184,6 +189,18 @@ def _run(
         # Validate before claiming success (A§5): counts, records, decoded video, unchanged source, budget.
         if m.processed_frames == 0:
             raise video_io.VideoError(f"no decodable frames in {config.source}")
+        # A decoder that stops early looks like end of file; a known container count tells them apart (A§4).
+        expected = _known_total(info.frame_count, config.max_frames)
+        if info.frame_count is None:
+            validation["source_complete"] = "UNVERIFIED"  # container gives no count; not claimed complete
+        elif m.decoded_frames < expected:
+            validation["source_complete"] = "FAIL"
+            raise video_io.VideoError(
+                f"decoding stopped at frame {m.decoded_frames} of the {expected} the container reports; "
+                "the file may be truncated or damaged"
+            )
+        else:
+            validation["source_complete"] = "PASS"
         decoded = video_io.count_frames(out / ANNOTATED)  # outside the timed region
         validation["video_decode"] = "PASS" if decoded == m.processed_frames else "FAIL"
         if decoded != m.processed_frames:
@@ -191,13 +208,13 @@ def _run(
                 f"output check failed: wrote {m.processed_frames} frames but {ANNOTATED} decodes to {decoded}"
             )
         try:
-            records_sha = store.validate_records_file(out / TRACKS, m.processed_frames)
+            records_sha = store.validate_records_file(out / TRACKS, m.jsonl_records, run_id, info.width, info.height)
         except (store.StoreError, records.RecordError) as e:
             validation["records"] = "FAIL"
             raise OutputCheckError(f"record check failed: {e}") from e
         validation["records"] = "PASS"
         if store.sha256_file(source) != input_id:
-            raise store.StoreError(f"{source} changed during the run; its results cannot be trusted")
+            raise store.SourceChangedError(f"{source} changed during the run; its results cannot be trusted")
         status = "success"
     except KeyboardInterrupt:
         status, error = "interrupted", "interrupted by user"
@@ -246,7 +263,7 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
         )
         report.update(
             run_id=run_id,
-            run_dir=str(final_dir),
+            run_dir=str(final_dir if status == "success" else out),  # only a published run lives in runs/
             mode="canonical" if root is not None else "legacy",
             input_id=input_id,
             config_sha256=runspec["config_sha256"] if runspec else None,
@@ -257,7 +274,7 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
         if status == "success" and sum(a["bytes"] for a in artifacts) > config.limits.output_budget_bytes:
             status, error = "error", "OutputBudgetError: outputs exceed the configured budget"
             budget_breach = True
-            report.update(status=status, error=error)
+            report.update(status=status, error=error, run_dir=str(out))
             metrics.write_report(out / REPORT, report)
             artifacts = store.artifact_entries(out, names)
         manifest = store.build_manifest(
@@ -269,21 +286,28 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
             records_sha256=records_sha if status == "success" else None,
             started_at=started_at,
             finished_at=datetime.now(UTC),
-            counts={"decoded_frames": m.processed_frames, "inferred_frames": m.processed_frames,
+            counts={"source_frames_reported": info.frame_count, "decoded_frames": m.decoded_frames,
+                    "inferred_frames": m.inferred_frames, "records": m.jsonl_records,
                     "written_frames": decoded},
             artifacts=artifacts,
             validation=validation,
         )  # fmt: skip
         store.write_json_atomic(out / store.MANIFEST, manifest)
-        if status != "success":
-            if root is not None:
-                log.warning("run %s did not succeed; diagnostics kept in %s (not published)", run_id, out)
-        elif root is not None:
-            store.publish(out, root, run_id)
+        if status != "success" and root is not None:
+            log.warning("run %s did not succeed; diagnostics kept in %s (not published)", run_id, out)
     except Exception:
         log.exception("could not finish run %s in %s", run_id, out)
         if status == "success":
             raise
     if budget_breach:  # the run itself raised nothing, so the caller must hear about this failure here
         raise OutputCheckError(error)
+    if status == "success" and root is not None:
+        try:
+            store.publish(out, root, run_id)
+        except Exception as e:
+            # Never leave a SUCCEEDED manifest behind in staging for an attempt that did not publish.
+            store.write_json_atomic(
+                out / store.MANIFEST, {**manifest, "status": "FAILED", "error": f"PublishError: {e}"}
+            )
+            raise
     return report, status, error

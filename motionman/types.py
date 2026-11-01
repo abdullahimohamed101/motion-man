@@ -66,3 +66,4 @@ class RunConfig:
     iou: float = 0.7
     limits: Limits = DEFAULT_LIMITS
     data_root: Path | None = None  # canonical mode only; None = MOTIONMAN_DATA_ROOT or ./data
+    source_name: str | None = None  # display name for an imported input (e.g. an upload's original filename)

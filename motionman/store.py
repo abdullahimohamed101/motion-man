@@ -156,6 +156,7 @@ def resolve_runspec(
 # --- Data root, lease, staging and publication (spec A§2, A§5) ------------------------------------------
 
 MANIFEST = "manifest.json"
+MANAGED_SOURCE = "source"  # no extension: the bytes, not the name, identify the input
 RUNSPEC = "runspec.json"
 MANIFEST_SCHEMA = "1.0"
 DEFAULT_DATA_ROOT = Path("data")
@@ -167,6 +168,10 @@ class StoreError(MotionManError):
 
 class LeaseError(StoreError):
     exit_code = 75  # EX_TEMPFAIL: another run is active; try again later
+
+
+class SourceChangedError(StoreError):
+    """The source bytes changed during import or the run; its results cannot be trusted."""
 
 
 @dataclass(frozen=True)
@@ -213,23 +218,27 @@ def execution_lease(root: DataRoot) -> Iterator[None]:
         os.close(fd)  # closing the descriptor releases the lock
 
 
-def import_input(source: Path, root: DataRoot) -> tuple[str, Path]:
-    """Copy a source into ``inputs/<hex>/`` once, deduplicated by content hash (D5). Returns (input_id, path).
-    The filename is display metadata only; the managed path comes from the hash, never from user text."""
+def import_input(source: Path, root: DataRoot, display_name: str | None = None) -> tuple[str, Path]:
+    """Copy a source into ``inputs/<hex>/source`` once, keyed by content hash only (D5). Returns (input_id, path).
+
+    The filename is display metadata; the managed path comes from the hash, never from user text. An existing
+    copy is re-hashed before reuse, and replaced if it no longer matches; ``meta.json`` is written whenever it
+    is missing, so a crash between copy and metadata heals on the next import."""
     input_id = sha256_file(source)
     folder = root.inputs / input_id.removeprefix("sha256:")
-    managed = folder / f"source{_safe_suffix(source)}"
-    if not managed.is_file():
-        folder.mkdir(parents=True, exist_ok=True)
-        tmp = folder / f".{managed.name}.tmp"
+    managed = folder / MANAGED_SOURCE
+    folder.mkdir(parents=True, exist_ok=True)
+    if not (managed.is_file() and sha256_file(managed) == input_id):
+        tmp = folder / f".{MANAGED_SOURCE}.tmp"
         shutil.copyfile(source, tmp)
         if sha256_file(tmp) != input_id:
             tmp.unlink(missing_ok=True)
-            raise StoreError(f"{source} changed while it was being imported")
+            raise SourceChangedError(f"{source} changed while it was being imported")
         os.replace(tmp, managed)
+    if not (folder / "meta.json").is_file():
         write_json_atomic(
             folder / "meta.json",
-            {"input_id": input_id, "display_name": source.name, "bytes": managed.stat().st_size,
+            {"input_id": input_id, "display_name": display_name or source.name, "bytes": managed.stat().st_size,
              "imported_at_utc": datetime.now(UTC).isoformat(timespec="seconds")},
         )  # fmt: skip
     return input_id, managed
@@ -242,10 +251,15 @@ def write_json_atomic(path: Path, obj: Any) -> None:
     os.replace(tmp, path)
 
 
-def validate_records_file(path: Path, expected: int) -> str:
-    """Check order, count and schema of a run's frame records (A§5 step 3); return their hash."""
+def validate_records_file(path: Path, expected: int, run_id: str, width: int, height: int) -> str:
+    """Check a run's frame records before publication (A§5 step 3): native v1.0 lines (no legacy adaptation),
+    this run's ID and source size, contiguous order, and the expected count. Returns the file's hash."""
     n = -1
     for n, rec in enumerate(records.read_records(path)):
+        if rec.get("legacy"):
+            raise StoreError(f"{path.name}: line {n + 1} is a pre-v1.0 record")
+        if rec["run_id"] != run_id or (rec["source_width"], rec["source_height"]) != (width, height):
+            raise StoreError(f"{path.name}: record {n} belongs to another run or source")
         if rec["source_frame_index"] != n:
             raise StoreError(f"{path.name}: record {n} has source_frame_index {rec['source_frame_index']}")
     if n + 1 != expected:
@@ -298,6 +312,7 @@ def publish(staging: Path, root: DataRoot, run_id: str) -> Path:
     return target
 
 
-def _safe_suffix(path: Path) -> str:
-    suffix = path.suffix.lower()
+def safe_suffix(name: str) -> str:
+    """A known video extension from a user-supplied name, else .mp4; never a path component."""
+    suffix = Path(name).suffix.lower()
     return suffix if suffix in {".mp4", ".m4v", ".mov"} else ".mp4"

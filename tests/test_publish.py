@@ -31,8 +31,10 @@ def test_success_is_published_with_a_verifiable_manifest(clip, tmp_path):
     assert list((root / "staging").iterdir()) == []  # nothing left in staging
     m = manifest(run_dir)
     assert m["status"] == "SUCCEEDED" and m["run_id"] == report["run_id"] and m["error"] is None
-    assert m["validation"] == {"records": "PASS", "video_decode": "PASS"}
-    assert m["counts"] == {"decoded_frames": 20, "inferred_frames": 20, "written_frames": 20}
+    assert m["validation"] == {"source_complete": "PASS", "records": "PASS", "video_decode": "PASS"}
+    assert m["counts"] == {
+        "source_frames_reported": 20, "decoded_frames": 20, "inferred_frames": 20, "records": 20, "written_frames": 20
+    }  # fmt: skip
     assert {a["path"] for a in m["artifacts"]} == {"annotated.mp4", "tracks.jsonl", "report.json", "runspec.json"}
     for a in m["artifacts"]:  # every hash and size matches the bytes on disk
         assert (
@@ -51,7 +53,7 @@ def test_input_is_imported_once_and_runs_get_distinct_ids(clip, tmp_path):
     assert a["run_id"] != b["run_id"] and a["input_id"] == b["input_id"]
     inputs = list((root / "inputs").iterdir())
     assert len(inputs) == 1 and inputs[0].name == a["input_id"].removeprefix("sha256:")
-    assert (inputs[0] / "source.mp4").read_bytes() == clip.read_bytes()
+    assert (inputs[0] / "source").read_bytes() == clip.read_bytes()
     assert json.loads((inputs[0] / "meta.json").read_text())["display_name"] == "clip.mp4"
     assert sorted(p.name for p in (root / "runs").iterdir()) == sorted([a["run_id"], b["run_id"]])
 
@@ -72,7 +74,7 @@ def test_mid_run_failure_is_not_published_and_keeps_diagnostics(clip, tmp_path):
     (staged,) = list((root / "staging").iterdir())
     m = manifest(staged)
     assert m["status"] == "FAILED" and "boom" in m["error"] and m["records_sha256"] is None
-    assert m["counts"]["decoded_frames"] == 6
+    assert (m["counts"]["decoded_frames"], m["counts"]["inferred_frames"], m["counts"]["records"]) == (7, 6, 6)
 
 
 def test_interrupt_is_recorded_and_not_published(clip, tmp_path):
@@ -119,7 +121,7 @@ def test_source_changed_during_a_legacy_run_fails(tmp_path):
 
 
 def test_invalid_records_fail_validation_and_are_not_published(clip, tmp_path, monkeypatch):
-    def broken(path, expected):
+    def broken(path, expected, *args):
         raise store.StoreError("tracks.jsonl: 19 records, expected 20")
 
     monkeypatch.setattr(store, "validate_records_file", broken)
@@ -166,4 +168,4 @@ def test_managed_path_comes_from_the_hash_not_the_filename(tmp_path):
     src = tmp_path / "evil name.MOV"
     src.write_bytes(b"video bytes")
     input_id, managed = store.import_input(src, store.data_root(tmp_path / "data").ensure())
-    assert managed.name == "source.mov" and managed.parent.name == input_id.removeprefix("sha256:")
+    assert managed.name == "source" and managed.parent.name == input_id.removeprefix("sha256:")

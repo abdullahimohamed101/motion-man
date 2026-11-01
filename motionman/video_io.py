@@ -68,10 +68,15 @@ def open_reader(path: Path, limits: Limits = DEFAULT_LIMITS) -> tuple[cv2.VideoC
 
 
 def read_frames(
-    cap: cv2.VideoCapture, fps: float, max_frames: int | None = None, frame_limit: int | None = None
+    cap: cv2.VideoCapture,
+    fps: float,
+    max_frames: int | None = None,
+    frame_limit: int | None = None,
+    max_duration_s: float | None = None,
 ) -> Iterator[Frame]:
     """Yield frames in order, checking every timestamp against constant FPS. ``max_frames`` is the user's
-    requested stop; ``frame_limit`` is a guardrail whose breach is an error, never a silent truncation."""
+    requested stop; ``frame_limit`` and ``max_duration_s`` are guardrails whose breach is an error, never a
+    silent truncation (they matter when the container reports no frame count)."""
     index = 0
     while max_frames is None or index < max_frames:
         ok, image = cap.read()
@@ -79,6 +84,8 @@ def read_frames(
             return
         if frame_limit is not None and index >= frame_limit:
             raise VideoError(f"video exceeds the {frame_limit}-frame limit; nothing past it was processed")
+        if max_duration_s is not None and index / fps >= max_duration_s:
+            raise VideoError(f"video exceeds the {max_duration_s / 60:g}-minute limit; nothing past it was processed")
         _check_frame_time(index, cap.get(cv2.CAP_PROP_POS_MSEC), fps)
         yield Frame(index, index / fps, image)
         index += 1

@@ -100,13 +100,18 @@ class Runner:
                 name, data = upload
                 (self.root.path / ".uploads").mkdir(parents=True, exist_ok=True)
                 upload_dir = Path(tempfile.mkdtemp(prefix="upload-", dir=self.root.path / ".uploads"))
-                source = upload_dir / f"upload{_safe_suffix(name)}"
+                source = upload_dir / f"upload{store.safe_suffix(name)}"
                 source.write_bytes(data)
                 source_name = name
             else:
                 source_name = source.name
             config = RunConfig(
-                source=source, output_dir=None, device=settings.device, conf=settings.conf, data_root=self.root.path
+                source=source,
+                output_dir=None,
+                device=settings.device,
+                conf=settings.conf,
+                data_root=self.root.path,
+                source_name=source_name,
             )
             # A new run replaces everything: no stale Complete badge or old measurements (spec §9).
             self._set(
@@ -211,6 +216,8 @@ def describe_error(e: BaseException) -> tuple[str, str]:
             "Another run is using the data folder, possibly from the command line.",
             "Wait for it to finish, then run again.",
         )
+    if isinstance(e, store.SourceChangedError):
+        return text, "Choose the video again; it changed while it was being processed."
     if isinstance(e, store.StoreError):
         return text, "Check free disk space and write access to the data folder, then run again."
     if isinstance(e, VideoError):
@@ -231,11 +238,6 @@ def _existing_artifacts(run_dir: Path) -> dict[str, Path]:
 def _remove(folder: Path | None) -> None:
     if folder is not None:
         shutil.rmtree(folder, ignore_errors=True)
-
-
-def _safe_suffix(name: str) -> str:
-    suffix = Path(name).suffix.lower()
-    return suffix if suffix in {".mp4", ".m4v", ".mov"} else ".mp4"
 
 
 @dataclass(frozen=True)
@@ -259,7 +261,7 @@ def probe(path: Path, name: str | None = None) -> SourceInfo:
 def probe_upload(name: str, data: bytes) -> SourceInfo:
     """Probe uploaded bytes through a temporary file, deleted afterwards (runs copy the upload themselves)."""
     with tempfile.TemporaryDirectory(prefix="motionman-probe-") as tmp:
-        path = Path(tmp) / f"upload{Path(name).suffix.lower() or '.mp4'}"
+        path = Path(tmp) / f"upload{store.safe_suffix(name)}"
         path.write_bytes(data)
         try:
             return probe(path, name)

@@ -57,7 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(argv: list[str] | None = None) -> RunConfig:
-    a = build_parser().parse_args(argv)
+    parser = build_parser()
+    a = parser.parse_args(argv)
+    if a.output_dir is not None and a.data_root is not None:
+        parser.error("--data-root applies to canonical runs; leave it out when using --output-dir")
     return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames, data_root=a.data_root)
 
 

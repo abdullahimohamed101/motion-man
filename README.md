@@ -72,20 +72,26 @@ Detection thresholds are fixed and recorded in the report: confidence 0.25, IoU 
 
 Exit codes: `0` success, `1` tool failure (unexpected error, or output validation failed), `2` invalid
 arguments, input, output directory, device or model, `75` another run holds the data folder's lock (try again
-later), `130` interrupted. Input problems are caught before any output folder exists.
+later), `130` interrupted. Most input problems are caught before any output folder exists; the few that only
+show up while decoding (see Input limits) fail the run inside `staging/`, where it is never published.
 
-A run only succeeds if the written video decodes back to exactly the processed frames, the records are
-complete and in order, and the source didn't change during the run. The manifest says `SUCCEEDED`, `FAILED`
+A run only succeeds if decoding reached every frame the container reports, the written video decodes back to
+exactly the processed frames, the records are this run's, complete and in order, and the source didn't change
+during the run. If the container reports no frame count, completeness is recorded as `UNVERIFIED`, not passed. The manifest says `SUCCEEDED`, `FAILED`
 or `INTERRUPTED`; `report.json` keeps the MVP words (`success`, `error`, `interrupted`) and, for a partial run,
 `processed_frames`, `jsonl_records` and `output_frames_decoded` show what each file holds.
 
 ### Input limits
 
-Checked before inference; exceeding one is a clear error, never a silent truncation:
+Exceeding a limit is a clear error, never a silent truncation:
 
 - Constant frame rate, verified from frame timestamps. A clip whose timestamps drift more than half a frame
-  from `index / fps` is rejected ("unsupported timebase"), even if it reports a plausible FPS.
-- At most 512 MiB, 10 minutes, 1920×1080 and 36,000 frames; at least 2 GiB free for outputs.
+  from `index / fps` is rejected ("unsupported timebase"), even if it reports a plausible FPS. The first 240
+  frames are checked before inference; later frames are checked as they decode.
+- At most 512 MiB, 10 minutes, 1920×1080 and 36,000 frames, checked from the container before inference and
+  again while decoding when the container reports no count; at least 2 GiB free for outputs, checked before
+  writing, and the output size checked after.
+- A decoder that stops before the container's frame count (a truncated or damaged file) fails the run.
 
 ## Local UI
 
