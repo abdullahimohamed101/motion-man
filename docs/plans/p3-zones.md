@@ -1,5 +1,5 @@
 # P3 Zones and events: regions, temporal rules, events, heatmap
-Status: Draft · Branch: `feat/p3-zones` · Spec: B§2–B§6 (MD§10, MD§11, MD§18 fixtures, MD§21)
+Status: Active · Branch: `feat/p3-zones` · Spec: B§2–B§6 (MD§10, MD§11, MD§18 fixtures, MD§21)
 
 ## Outcome
 A user draws lines and rectangles on a saved run, presses Analyze, and sees when and where things happened:
@@ -14,7 +14,7 @@ give the same events, no matter how fast the clip was processed, and the model n
 - Event reels or any derived video (P6). Background analysis jobs (P6): analysis runs inline.
 - Review, ground truth, evaluation (P4).
 
-## Decisions (proposed; confirm with the plan)
+## Decisions (confirmed 2026-11-01)
 - D1 Storage: `<data root>/regions/<input_id>/<region_set_id>.json` and
   `<data root>/analyses/<run_id>/<analysis_id>/{analysis_spec,summary,heatmap,manifest}.json + events.jsonl`.
   Built in a temp folder and renamed in atomically; an existing folder that verifies is reused, a damaged one
@@ -59,7 +59,7 @@ give the same events, no matter how fast the clip was processed, and the model n
   [--data-root]`; prints a summary and the analysis folder; exit 0, 2 on bad input or a refused run.
 
 ## Steps
-1. [ ] `regions.py`: schema, validation (zero length/area, range, ids, duplicate ids), px conversion, save
+1. [x] `regions.py`: schema, validation (zero length/area, range, ids, duplicate ids), px conversion, save
    (content-addressed) / load / list per input. Tests: valid and each refusal; same content gives same id.
 2. [ ] `analytics.py` rules, pure functions over observation streams: side and stability, segment intersection,
    line state machine, rect state machine, occupancy, dwell, thresholds. Tests on synthetic tracks: MD fixtures
@@ -104,3 +104,4 @@ give the same events, no matter how fast the clip was processed, and the model n
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-01 step 1: regions.py: RegionSet/Region (line A→B or rect, normalized coords rounded to 6 decimals so float noise keeps ids stable, optional class filter, rect-only dwell/occupancy thresholds); parse refuses unknown fields, bad schema/input_id, 0 or >32 regions, duplicate or malformed ids, zero-length lines, non-positive-area boxes, out-of-range/NaN/bool coords, bad thresholds and class lists; content-addressed save under regions/<input hex>/rs_<16 hex>.json (identical content → same file), load by id refuses hand-edited files, list per video skips unreadable ones. 31 tests, 393 total.
