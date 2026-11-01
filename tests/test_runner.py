@@ -6,7 +6,7 @@ from motionman import pipeline
 from motionman.pipeline import OutputCheckError
 from motionman.tracking import DeviceError, ModelError
 from motionman.ui import runner as runner_module
-from motionman.ui.runner import Runner, RunSettings, describe_error
+from motionman.ui.runner import Runner, RunSettings, describe_error, probe, probe_upload
 from motionman.video_io import VideoError
 
 from .test_pipeline import FakeTracker
@@ -208,3 +208,21 @@ def test_live_elapsed_moves_before_first_progress_report(clip, tmp_path):
         runner.join(30)
     done = runner.snapshot()
     assert done.live_elapsed_s(now=done.started_at + 999) == done.elapsed_s  # frozen once finished
+
+
+def test_probe_reports_playback_metadata(clip):
+    info = probe(clip)
+    assert (info.name, info.width, info.height, info.fps, info.frame_count) == ("clip.mp4", 64, 48, 30.0, 20)
+    assert info.duration_s == pytest.approx(20 / 30)
+
+
+def test_probe_upload_uses_original_name_and_leaves_no_file(clip, tmp_path, monkeypatch):
+    monkeypatch.setattr(runner_module.tempfile, "tempdir", str(tmp_path))
+    info = probe_upload("Street.MP4", clip.read_bytes())
+    assert info.name == "Street.MP4" and info.frame_count == 20
+    assert not any(p.name.startswith("motionman-probe-") for p in tmp_path.iterdir())
+
+
+def test_probe_upload_rejects_non_video():
+    with pytest.raises(VideoError, match="cannot open video"):
+        probe_upload("notes.mp4", b"not a video")

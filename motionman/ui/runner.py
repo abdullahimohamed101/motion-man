@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from pathlib import Path
 from time import monotonic, perf_counter
 from typing import Literal
 
-from motionman import pipeline
+from motionman import pipeline, video_io
 from motionman.pipeline import OutputCheckError
 from motionman.tracking import DeviceError, ModelError, resolve_device
 from motionman.types import MotionManError, RunConfig
@@ -212,3 +213,29 @@ def _read_report(out_dir: Path) -> dict | None:
         return json.loads((out_dir / pipeline.REPORT).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+@dataclass(frozen=True)
+class SourceInfo:
+    name: str
+    width: int
+    height: int
+    fps: float  # source playback rate, shown apart from processing FPS (spec §9)
+    frame_count: int | None
+    duration_s: float | None
+
+
+def probe(path: Path, name: str | None = None) -> SourceInfo:
+    """Read and validate a video's metadata for the sidebar; raises VideoError like a real run would."""
+    cap, info = video_io.open_reader(path)
+    cap.release()
+    duration = info.frame_count / info.fps if info.frame_count else None
+    return SourceInfo(name or path.name, info.width, info.height, info.fps, info.frame_count, duration)
+
+
+def probe_upload(name: str, data: bytes) -> SourceInfo:
+    """Probe uploaded bytes through a temporary file, deleted afterwards (runs copy the upload themselves)."""
+    with tempfile.TemporaryDirectory(prefix="motionman-probe-") as tmp:
+        path = Path(tmp) / f"upload{Path(name).suffix.lower() or '.mp4'}"
+        path.write_bytes(data)
+        return probe(path, name)
