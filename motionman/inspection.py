@@ -292,6 +292,48 @@ def observed(record: dict, track_id: int) -> bool:
     return any(o["track_id"] == track_id for o in record["objects"])
 
 
+MOTION_SPAN = 5  # frames back over which a velocity is averaged, never across a break in observation
+
+
+@dataclass(frozen=True)
+class Motion:
+    x: float  # box centre now, source px
+    y: float
+    vx: float  # px/s in image space, from source-time differences (MD§10); no real-world units
+    vy: float
+    span: int  # frames the velocity was measured over
+
+    @property
+    def speed(self) -> float:
+        return (self.vx**2 + self.vy**2) ** 0.5
+
+
+def motion_at(index: RecordIndex, frame: int, span: int = MOTION_SPAN) -> dict[int, Motion]:
+    """Velocity of each track observed at ``frame``, averaged back over up to ``span`` consecutive frames in which
+    it was observed in every frame (plan P3 D11). A track seen for the first time after a gap has no motion yet."""
+    if frame < 1:
+        return {}
+    recs = list(index.records(max(0, frame - span), frame + 1))
+    centres = [{o["track_id"]: _centre(o["bbox_xyxy"]) for o in r["objects"] if o["track_id"] is not None}
+               for r in recs]  # fmt: skip
+    now, out = centres[-1], {}
+    for tid, (x, y) in now.items():
+        k = 0
+        while k + 1 < len(recs) and tid in centres[-2 - k]:
+            k += 1  # extend back while every frame in between observed it
+        if k == 0:
+            continue
+        (x0, y0), dt = centres[-1 - k][tid], (recs[-1]["source_t_us"] - recs[-1 - k]["source_t_us"]) / 1e6
+        if dt > 0:
+            out[tid] = Motion(x, y, (x - x0) / dt, (y - y0) / dt, k)
+    return out
+
+
+def _centre(box) -> tuple[float, float]:
+    x1, y1, x2, y2 = box
+    return (x1 + x2) / 2, (y1 + y2) / 2
+
+
 def trails_for(index: RecordIndex, frame: int, length: int) -> dict[int, list[tuple[int, int]]]:
     """Observed box centres per track ID over the ``length`` frames ending at ``frame``, oldest first."""
     if length <= 0:

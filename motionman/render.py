@@ -171,3 +171,51 @@ def draw_regions(image: np.ndarray, regions: Sequence, pending=None) -> np.ndarr
             anchor = (x1, y1)
         _label(img, region.name, anchor, color, 0.5 * scale, scale)
     return img
+
+
+ARROW_HORIZON_S = 0.5  # an arrow shows where the centre would be after this long at its current velocity
+MIN_ARROW_PX_S = 10.0  # slower than this is drawn as no arrow: box jitter on parked objects is not motion
+
+
+def draw_motion(image: np.ndarray, motions: Mapping) -> np.ndarray:
+    """Velocity arrows on a copy of an inspected still, labelled in px/s (image space, no real-world units)."""
+    img = image.copy()
+    scale = max(1, round(img.shape[1] / 960))
+    for m in motions.values():
+        start = (round(m.x), round(m.y))
+        end = (round(m.x + m.vx * ARROW_HORIZON_S), round(m.y + m.vy * ARROW_HORIZON_S))
+        if m.speed < MIN_ARROW_PX_S or start == end:
+            continue
+        cv2.arrowedLine(img, start, end, PENDING_COLOR, 2 * scale, cv2.LINE_AA, tipLength=0.25)
+        cv2.putText(img, f"{m.speed:.0f} px/s", (end[0] + 4 * scale, end[1]), _FONT, 0.45 * scale, PENDING_COLOR,
+                    scale, cv2.LINE_AA)  # fmt: skip
+    return img
+
+
+HEAT_BLUR_CELLS = 2.0  # display smoothing (Gaussian sigma, in grid cells); the saved cells are never smoothed
+HEAT_SCALE_PERCENTILE = 95  # the colour scale saturates here, so a few static hotspots can't hide everything else
+
+
+def heatmap_overlay(image: np.ndarray, heat: dict, opacity: float) -> np.ndarray:
+    """Blend an analysis heatmap over a copy of a frame. Display only: cells are lightly smoothed, the colour scale
+    is a square root that saturates at the 95th percentile of the occupied area, and transparency follows
+    intensity, so quiet areas fade out instead of darkening the frame. The saved object-µs are never changed; an
+    all-zero map returns the frame unchanged."""
+    img = image.copy()
+    cols, rows = heat["grid"]
+    if not heat["cells"] or opacity <= 0:
+        return img
+    grid = np.zeros((rows, cols), np.float64)
+    for c, r, v in heat["cells"]:
+        grid[r, c] = v
+    smooth = cv2.GaussianBlur(grid, (0, 0), HEAT_BLUR_CELLS)
+    # Scale to a high percentile of the occupied area, not its maximum: a parked car or a traffic light can sit in
+    # one cell for the whole clip and would otherwise wash out every path people actually walked.
+    occupied = smooth[smooth > smooth.max() * 1e-3]
+    top = float(np.percentile(occupied, HEAT_SCALE_PERCENTILE)) or float(smooth.max())
+    level = np.sqrt(np.clip(smooth / top, 0, 1))
+    h, w = img.shape[:2]
+    big = cv2.resize(level, (w, h), interpolation=cv2.INTER_LINEAR).clip(0, 1)
+    colours = cv2.applyColorMap((big * 255).astype(np.uint8), cv2.COLORMAP_INFERNO).astype(np.float64)
+    alpha = (opacity * big)[..., None]
+    return (img * (1 - alpha) + colours * alpha).round().astype(np.uint8)

@@ -233,6 +233,31 @@ def results(run, derived, frames, root, aid: str) -> None:
                    "totals above stay the same.")  # fmt: skip
     with detail.container(border=True):
         selected_event(run, derived, frames, regions_by_id)
+    with st.container(border=True):
+        heatmap_card(result, run, frames, regions_by_id)
+
+
+def heatmap_card(result, run, frames, regions_by_id: dict) -> None:
+    """The saved heatmap over the preview frame. Opacity re-renders only; the saved object-µs never change."""
+    st.markdown("#### Heatmap")
+    heat = analysis.read_heatmap(result)
+    if not heat["cells"]:
+        st.caption("Empty: no tracked object was observed in two consecutive frames in this window.")
+        return
+    opacity = st.slider("Heatmap opacity", 0.0, 1.0, 0.6, step=0.05, key=f"zheat-{result.analysis_id}")
+    frame = st.session_state.get(f"zframe-{run.run_id}", 0)
+    try:
+        image = render.heatmap_overlay(frames.frame(frame), heat, opacity)
+    except inspection.InspectError as e:
+        st.warning(f"The preview frame can't be shown: {e}.", icon=":material/warning:")
+        return
+    st.image(render.draw_regions(image, list(regions_by_id.values())), channels="BGR", width="stretch")
+    cols, rows = heat["grid"]
+    st.caption(f"Image-space observed occupancy: {heat['total_us'] / 1e6:,.1f} object-seconds of tracked objects on "
+               f"a {cols}×{rows} grid, drawn over preview frame {frame:,}. Colours saturate at the 95th percentile "
+               "of occupied areas, so static objects can't hide paths; they are display only. Every tracked class "
+               "counts, parked cars and traffic lights included. A moving camera changes what a pixel "
+               "means.")  # fmt: skip
 
 
 def event_filter(events: list[dict], names: dict[str, str], run, aid: str) -> view.EventFilter:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from motionman import inspection, presets, records, runs, store
+from motionman import inspection, presets, records, render, runs, store
 from motionman.presets import Preset, PresetError
 from motionman.ui import style, view, workspace, zones
 from motionman.ui.runner import Runner, RunSettings, SourceInfo, describe_error, probe, probe_upload
@@ -317,6 +317,10 @@ def result_page(summary: runs.RunSummary) -> None:
                 vd["classes"] = st.multiselect("Classes", classes, key=bind(f"classes-{rid}", vd["classes"] or []),
                                                placeholder="All classes") or None  # fmt: skip
                 spotlight = st.toggle("Spotlight the selected object", key=bind(f"spot-{rid}", ctx.spotlight))
+                arrows = st.toggle("Motion arrows (px/s)", key=bind(f"arrows-{rid}", False),
+                                   help="Image-space velocity over up to 5 consecutive observed frames, "
+                                        "from source time. Pixels per second, not a real-world speed; under "
+                                        "10 px/s is not drawn.")  # fmt: skip
                 st.caption("View updated. Saved results are unchanged.")
                 view_presets(vd, rid)
             options = workspace.view_options(vd, spotlight=track if spotlight else None)
@@ -326,6 +330,8 @@ def result_page(summary: runs.RunSummary) -> None:
             else:
                 try:
                     still, _ = inspection.render_still(frames, derived.index, frame, options)
+                    if arrows:
+                        still = render.draw_motion(still, inspection.motion_at(derived.index, frame))
                     st.image(still, channels="BGR", width="stretch",
                              caption=workspace.frame_caption(frame, record["source_t_us"], count))  # fmt: skip
                 except inspection.InspectError as e:

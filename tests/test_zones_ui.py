@@ -192,3 +192,28 @@ def test_events_exports_join_the_export_menu_once_analyzed(world):
     after = analyzed(world)
     assert "Events · one row per event (CSV)" in labels(after)
     assert "Events & zones analysis (JSON)" in labels(after)
+
+
+# --- step 7: heatmap and motion arrows ---
+
+
+def test_heatmap_opacity_re_renders_without_touching_saved_files(world):
+    at = analyzed(world)
+    aid = aid_of(world)
+    folder = world["root"].path / "analyses" / world["a"] / aid
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+    assert any(c.value.startswith("Image-space observed occupancy:") for c in at.caption)
+    at.slider(key=f"zheat-{aid}").set_value(0.2)
+    at = render(at)
+    at.slider(key=f"zheat-{aid}").set_value(1.0)
+    at = render(at)
+    assert {p.name: p.read_bytes() for p in folder.iterdir()} == before and world["fake"].starts == []
+
+
+def test_motion_arrows_toggle_draws_from_saved_records_only(world):
+    at = zones(None, world)
+    at.slider(key=f"frame-{world['a']}").set_value(12)
+    at = render(at)
+    at.toggle(key=f"arrows-{world['a']}").set_value(True)
+    at = render(at)
+    assert at.toggle(key=f"arrows-{world['a']}").value and world["fake"].starts == []
