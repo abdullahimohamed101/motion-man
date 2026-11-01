@@ -1,5 +1,5 @@
 # Local UI: tracking workbench
-Status: Draft · Branch: `feat/ui` (stacked on `feat/cli-mvp`, PR #1) · Spec: §9 · Budget: 2–3 h
+Status: Active · Branch: `feat/ui` (stacked on `feat/cli-mvp`, PR #1) · Spec: §9 · Budget: 2–3 h
 
 ## Outcome
 `scripts/ui.sh` opens a local Streamlit page: pick the demo clip or upload an MP4, choose device and
@@ -21,7 +21,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - `st.fragment(run_every=…)`, `st.segmented_control`, `st.download_button`, `st.html` and
   `streamlit.testing.v1.AppTest` are all available.
 
-## Decisions (confirm before build)
+## Decisions (confirmed 2026-10-31)
 - D1 Streamlit 1.66.1, pinned in `requirements.txt`.
 - D2 Inference runs in **one background worker thread** (`motionman/ui/runner.py`), one job at a time
   (INV-1). The page polls job state with `st.fragment(run_every=0.5 s)`. Reruns never touch the job.
@@ -40,7 +40,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - D9 Confidence slider 0.05–0.95, step 0.05, default 0.25. Model fixed to YOLO11n and shown as metadata.
 
 ## Steps
-1. [ ] Pin Streamlit; `.streamlit/config.toml` theme; `scripts/ui.sh`; empty page loads (health 200).
+1. [x] Pin Streamlit; `.streamlit/config.toml` theme; `scripts/ui.sh`; empty page loads (health 200).
 2. [ ] `pipeline.run`: `on_progress` callback (D4) and BaseException status (D5), with tests.
 3. [ ] `ui/runner.py`: worker thread, job states idle/processing/complete/error, run dirs, duplicate-run
    guard, and errors mapped to a short message plus next step. Tests use the fake tracker.
@@ -55,7 +55,7 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
 | U1 | Gate passes offline, UI tests included, CLI tests unchanged | `scripts/check.sh` | |
-| U2 | App starts | `scripts/ui.sh`; `curl -f localhost:8501/_stcore/health` | |
+| U2 | App starts | `scripts/ui.sh`; `curl -f localhost:8501/_stcore/health` | PASS: 200; theme applied (canvas #040506, text #F5F5F5, Inter), no exceptions |
 | U3 | Demo run reaches Complete; every metric equals this run's report.json | browser DOM vs `report.json` | |
 | U4 | Before a run: badge Idle, metrics "Pending", playback FPS labelled separately | browser DOM | |
 | U5 | During a run: "Processing", frame count and elapsed rise, Run disabled; clicking other widgets doesn't stop it | browser; report `status: success` | |
@@ -73,3 +73,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 
 ## Log
 - 2026-10-31 plan: spike in a scratch venv (Streamlit 1.66.1): primary text measured white on lime; mid-run click → StopException at step 21/60.
+- 2026-10-31 step 1: streamlit 1.66.1 pinned (no other pins moved); `.streamlit/config.toml` theme; `scripts/ui.sh` (PYTHONPATH=repo root); placeholder page. Health 200, theme verified in browser. Gate: 78 passed.
