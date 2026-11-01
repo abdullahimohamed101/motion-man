@@ -1,8 +1,9 @@
-# MotionMan UI theme (spec §9): near-black surfaces, grey type, one acid-lime accent for the primary action.
-# Tokens config can't express (cards, top bar, type scale details) live in motionman/ui/style.py.
+# MotionMan UI theme (spec §9, docs/design/ui.md): near-black surfaces, grey type, a calm bone primary action.
+# Acid lime (#E4F222) is a signal only (focus ring, active tab, progress) and lives in motionman/ui/style.py,
+# as do the tokens config can't express (cards, top bar, page header, type scale details).
 [theme]
 base = "dark"
-primaryColor = "#E4F222"            # acid lime: the one primary action per view, focus, selection, progress
+primaryColor = "#E8E9E3"            # bone: the one primary action per view, selection and slider thumbs
 backgroundColor = "#08090A"         # void: canvas
 secondaryBackgroundColor = "#161718" # obsidian: inputs and recessed controls
 textColor = "#D0D6E0"               # mist: body text; headings are forced to paper in style.py

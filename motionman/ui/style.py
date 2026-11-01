@@ -1,13 +1,13 @@
-"""The style rules theme config can't express: top bar, cards, type scale, the one lime action.
+"""The style rules theme config can't express: top bar, page header, cards, type scale, action colours.
 
-Tokens: near-black surfaces (void / carbon / obsidian / slate), grey type (paper / mist / fog / ash), one acid-lime
-accent for the single primary action per view, hairline borders instead of shadows, 6/12 px radii, a 4 px grid.
+Tokens: near-black surfaces (void / carbon / obsidian / slate), grey type (paper / mist / fog / ash), a bone fill
+for the single primary action per view, acid lime only as a thin signal (focus ring, active tab, progress),
+hairline borders instead of shadows, 6/12 px radii, a 4 px grid. Rationale: ``docs/design/ui.md``.
 Selectors are limited to Streamlit's data-testid attributes and the documented ``st-key-<key>`` classes;
 Streamlit is pinned because these names can change between versions.
 """
 
 import base64
-import html
 from pathlib import Path
 
 ASSETS = Path(__file__).parent / "assets"
@@ -28,9 +28,10 @@ CSS = """
   --mm-mist: #d0d6e0;
   --mm-fog: #8a8f98;
   --mm-ash: #62666d;
-  --mm-lime: #e4f222;
-  --mm-lime-hover: #eef66a;
-  --mm-lime-pressed: #cdd91f;
+  --mm-bone: #e8e9e3;          /* primary action fill; void text on it is 17.3:1 */
+  --mm-bone-hover: #f4f5f0;
+  --mm-bone-pressed: #d8d9d3;
+  --mm-lime: #e4f222;          /* signal only: focus ring, active tab underline, progress bar */
   --mm-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   --mm-hairline: inset 0 0 0 1px var(--mm-graphite);
 }
@@ -53,42 +54,64 @@ CSS = """
 [data-testid="stWidgetLabel"] p { font-size: 12px; line-height: 1.4; color: var(--mm-fog); }
 [data-testid="stMarkdownContainer"] a { text-decoration: none; }
 
-/* Top bar: sticky, carbon, hairline bottom border, bleeds to the gutters. Logo + wordmark left, controls right. */
+/* Top bar: sticky, carbon, hairline bottom border, bleeds to the gutters. Brand left; Library + New video right,
+   sized to their labels so nothing truncates at narrow widths. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-topbar) {
   position: sticky; top: 0; z-index: 99;  /* the wrapper, not the block: a sticky needs room inside its parent */
-  margin: 0 -24px; padding: 12px 24px;
+  padding: 10px 0;  /* no negative margin: the wrapper's width is fixed, so it only shifted the bar left */
   background: var(--mm-carbon);
   /* Full bleed: the content stays on the 1280 px grid while the fill and the hairline reach both window edges. */
   box-shadow: 0 0 0 100vmax var(--mm-carbon), 0 1px 0 100vmax var(--mm-graphite);
   clip-path: inset(0 -100vmax -1px);
 }
-@media (max-width: 1000px) {  /* the toggle keeps its help tooltip; a clipped "L…" label reads as a glitch */
-  .st-key-topbar [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] { display: none; }
-}
-.st-key-topbar [data-testid="stHorizontalBlock"] { gap: 8px; }
-.st-key-topbar button { padding-left: 10px; padding-right: 10px; }
-@media (max-width: 1150px) { .mm-brand-source, .mm-brand-sep { display: none; } }
-.mm-brand { display: flex; align-items: center; gap: 10px; height: 40px; }
+.st-key-topbar, .st-key-topbar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
+.st-key-topbar [data-testid="stHorizontalBlock"] > [data-testid="stLayoutWrapper"] { flex: 0 0 auto; width: auto; }
+.st-key-topbar button { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+.mm-brand { display: flex; align-items: center; gap: 10px; height: 36px; }
 .mm-brand img { width: 24px; height: 24px; flex: none; display: block; }
 .mm-brand-name { font-size: 16px; font-weight: 510; color: var(--mm-paper); letter-spacing: -0.011em; }
-.mm-brand-sep { width: 1px; height: 16px; background: var(--mm-smoke); margin: 0 2px; }
-.mm-brand-source {
-  font-size: 13px; color: var(--mm-fog); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* Menus (Library, ⋯ details, Export). Popover bodies render in a portal, outside their st-key container, so
+   these rules are generic. The Library is a list: one tertiary row per run, left-aligned, the whole row clickable;
+   the legacy filter sits under a rule. */
+[data-testid="stPopoverBody"] { min-width: 320px; max-width: 480px; max-height: 70vh; padding: 12px; }
+[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] { gap: 2px; }
+[data-testid="stPopoverBody"] [data-testid="stBaseButton-tertiary"] {
+  justify-content: flex-start; padding: 6px 8px; border-radius: 6px;
 }
-.st-key-topbar [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: var(--mm-obsidian); }
-.st-key-topbar [data-testid="stCheckbox"] { margin-top: 2px; }
-.st-key-topbar [data-testid="stCheckbox"] label { gap: 8px; }
-.st-key-topbar [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p { font-size: 13px; color: var(--mm-mist); }
-.st-key-topbar [data-testid="stMarkdownContainer"]:has(> p > span[class*="-badge"]) { text-align: center; }
-.st-key-topbar span[class*="-badge"] {
-  display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
-  border-radius: 9999px; font-size: 12px; background: rgba(255, 255, 255, 0.05); white-space: nowrap;
+[data-testid="stPopoverBody"] [data-testid="stBaseButton-tertiary"] p { font-size: 13px; color: var(--mm-mist); }
+[data-testid="stPopoverBody"] [data-testid="stBaseButton-tertiary"]:hover { background: var(--mm-slate); }
+[data-testid="stPopoverBody"] [data-testid="stBaseButton-tertiary"]:hover p { color: var(--mm-paper); }
+[data-testid="stPopoverBody"] [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p {
+  font-size: 13px; color: var(--mm-mist);
 }
+[data-testid="stPopoverBody"] hr { margin: 8px 0; }
+[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] p { font-size: 12px; }
+[data-testid="stPopoverBody"] [data-testid="stBaseButton-secondary"] { margin-top: 4px; }
 
-/* Page title row: title left, metadata right, below the top bar. */
-.st-key-pagehead { padding: 24px 0 4px; }
+/* Page header: title and status pill on one centre line, the item's actions right; facts underneath. */
+.st-key-pagehead { padding: 24px 0 0; }
 .st-key-pagehead h2, .st-key-pagehead h3 { padding: 0; margin: 0; }
+/* The title row never wraps; the status fragment's wrapper hugs its pill instead of stretching (it is a vertical
+   block inside a horizontal one, which Streamlit sizes to stretch by default). */
+.st-key-pagehead [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
+.st-key-pagehead [data-testid="stHorizontalBlock"] > [data-testid="stLayoutWrapper"] { flex: 0 0 auto; width: auto; }
 .st-key-pagehead [data-testid="stCaptionContainer"] { padding-top: 4px; }
+.st-key-pagehead [data-testid="stCaptionContainer"] p { font-size: 13px; color: var(--mm-fog); }
+.st-key-pagehead span[class*="-badge"] {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 10px; margin-left: 2px;
+  border-radius: 9999px; font-size: 12px; white-space: nowrap;
+}
+.st-key-pagehead [data-testid="stMarkdownContainer"]:has(> p > span[class*="-badge"]) p { margin: 0; }
+/* The overflow (⋯): a 36 px square ghost button, no label. */
+.st-key-details [data-testid="stPopoverButton"] { width: 36px; min-width: 36px; padding: 0; justify-content: center; }
+.st-key-details [data-testid="stPopoverButton"] [data-testid="stIconMaterial"] { margin: 0; }
+.st-key-details [data-testid="stPopoverButton"] div[aria-hidden="true"] { display: none; }  /* no chevron on ⋯ */
+.st-key-pagehead h3 { line-height: 1.15; }
+/* Streamlit gives a heading's markdown container a -14 px bottom margin; in a centred flex row that pushes the
+   title 7 px below the buttons. The heading box must be the heading's real height. */
+.st-key-pagehead [data-testid="stMarkdownContainer"]:has(h3) { margin-bottom: 0 !important; }
+/* Tabs follow the facts line closely so title → facts → sections read as one block. */
+.st-key-pagehead + div [data-testid="stTabs"], [data-testid="stTabs"] { margin-top: 12px; }
 
 /* Cards: carbon, 12 px radius, hairline inset border, 24 px padding, no shadow. */
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div > [data-testid="stVerticalBlock"]) {
@@ -120,26 +143,36 @@ CSS = """
 [data-testid="stTabs"] [data-baseweb="tab-highlight"] { background: var(--mm-lime); height: 2px; }
 [data-testid="stTabs"] [data-baseweb="tab-panel"] { padding-top: 24px; }
 
-/* The one lime action per view: dark text on lime, visible hover and pressed states, never bold. */
-[data-testid="stBaseButton-primary"],
-[data-testid="stBaseButton-primary"] p { color: var(--mm-void) !important; font-weight: 510; }
-[data-testid="stBaseButton-primary"]:not(:disabled):hover {
-  background: var(--mm-lime-hover); border-color: var(--mm-lime-hover);
+/* The one primary action per view (Run tracking, Export): bone fill, void text (17.3:1), never bold.
+   Popover buttons carry kind="primary" instead of the primary test id, so both forms are covered. */
+[data-testid="stBaseButton-primary"], [data-testid="stPopoverButton"][kind="primary"] {
+  background: var(--mm-bone); border-color: var(--mm-bone);
 }
-[data-testid="stBaseButton-primary"]:not(:disabled):active {
-  background: var(--mm-lime-pressed); border-color: var(--mm-lime-pressed);
+[data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primary"] p,
+[data-testid="stPopoverButton"][kind="primary"], [data-testid="stPopoverButton"][kind="primary"] p,
+[data-testid="stPopoverButton"][kind="primary"] [data-testid="stIconMaterial"] {
+  color: var(--mm-void) !important; font-weight: 510;
+}
+[data-testid="stBaseButton-primary"]:not(:disabled):hover,
+[data-testid="stPopoverButton"][kind="primary"]:not(:disabled):hover {
+  background: var(--mm-bone-hover); border-color: var(--mm-bone-hover);
+}
+[data-testid="stBaseButton-primary"]:not(:disabled):active,
+[data-testid="stPopoverButton"][kind="primary"]:not(:disabled):active {
+  background: var(--mm-bone-pressed); border-color: var(--mm-bone-pressed);
 }
 [data-testid="stBaseButton-primary"]:disabled { background: var(--mm-obsidian); border-color: var(--mm-graphite); }
 [data-testid="stBaseButton-primary"]:disabled p { color: var(--mm-ash) !important; }
 
-/* Ghost buttons: transparent, hairline, mist text; slate tint on hover. */
-[data-testid="stBaseButton-secondary"] {
+/* Ghost buttons (secondary buttons and secondary popovers): transparent, hairline, mist text; slate on hover. */
+[data-testid="stBaseButton-secondary"], [data-testid="stPopoverButton"]:not([kind="primary"]) {
   background: transparent; border: 1px solid var(--mm-graphite); color: var(--mm-mist);
 }
-[data-testid="stBaseButton-secondary"]:not(:disabled):hover {
+[data-testid="stBaseButton-secondary"]:not(:disabled):hover,
+[data-testid="stPopoverButton"]:not([kind="primary"]):not(:disabled):hover {
   background: var(--mm-slate); border-color: var(--mm-smoke); color: var(--mm-paper);
 }
-[data-testid="stBaseButton-secondary"] p { font-size: 13px; }
+[data-testid="stBaseButton-secondary"] p, [data-testid="stPopoverButton"] p { font-size: 13px; }
 .stApp button { font-weight: 400; }
 
 /* Segmented controls: hairline pills; the selected segment is paper on slate (lime is reserved for actions). */
@@ -191,11 +224,9 @@ CSS = """
 """
 
 
-def brand_html(source: str | None) -> str:
-    """The top-bar brand: glyph, wordmark and, when a run is open, its source name after a hairline separator."""
-    name = html.escape(source) if source else ""  # filenames are display data (A§10)
-    tail = f'<span class="mm-brand-sep"></span><span class="mm-brand-source">{name}</span>' if source else ""
+def brand_html() -> str:
+    """The top-bar brand: glyph and wordmark. Item names belong to the page title, never to the bar."""
     return (
         f'<div class="mm-brand"><img src="{LOGO_URI}" alt="" width="24" height="24">'
-        f'<span class="mm-brand-name">MotionMan</span>{tail}</div>'
+        f'<span class="mm-brand-name">MotionMan</span></div>'
     )
