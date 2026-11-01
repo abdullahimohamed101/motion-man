@@ -15,9 +15,10 @@ from pathlib import Path
 
 from motionman import metrics, pipeline, store
 from motionman.tracking import resolve_device
-from motionman.types import RunConfig
+from motionman.types import MotionManError, RunConfig
 
 SCHEMA_VERSION = "1.0"
+STOP_CODES = (2, 75)  # invalid input/device/model, or another run holds the lease: stop the series, keep the code
 REUSE_POLICY = "none: every trial is a fresh pipeline.run with a new tracker, run_id and records"
 BENCHMARK = "benchmark.json"
 
@@ -56,8 +57,9 @@ def run_benchmark(
 ) -> tuple[Path, dict]:
     """Run ``repeats`` trials and write ``<data root>/benchmarks/<id>/benchmark.json``. Returns (path, doc).
 
-    A trial that raises is recorded as failed and the next one still runs; Ctrl-C stops the series, and the file
-    is still written with what finished.
+    A trial that raises is recorded as failed and the next one still runs, unless the error is invalid input or a
+    busy data root (exit 2 or 75), which stops the series with that code recorded. Ctrl-C stops the series and
+    the cut-off trial is listed as interrupted; the file is still written either way.
     """
     if repeats < 1:
         raise ValueError("repeats must be at least 1")
@@ -87,15 +89,24 @@ def run_benchmark(
             trial = {"trial": i, "power": power()}
             config = RunConfig(source, None, device=device, imgsz=imgsz, max_frames=max_frames,
                                data_root=root.path, telemetry=telemetry)  # fmt: skip
+            stop = False
             try:
                 report = pipeline.run(config, make_tracker=make_tracker, resolve=resolve)
                 trial.update(_trial_result(report, root))
+            except KeyboardInterrupt:
+                doc["trials"].append({**trial, "status": "interrupted"})
+                raise
             except Exception as e:  # a failed trial stays visible; the series goes on
                 trial.update(status="failed", error=f"{type(e).__name__}: {e}")
+                code = getattr(e, "exit_code", None) if isinstance(e, MotionManError) else None
+                if code in STOP_CODES:  # bad input or a busy data root: every later trial would fail the same way
+                    trial["exit_code"], stop = code, True
             doc["trials"].append(trial)
             if on_trial is not None:
                 on_trial(trial)
-        doc["status"] = "complete"
+            if stop:
+                break
+        doc["status"] = "stopped" if stop else "complete"
     except KeyboardInterrupt:
         doc["status"] = "interrupted"
         raise
@@ -135,7 +146,8 @@ def _summary(trials: list[dict]) -> dict:
     configs = sorted({t["config_sha256"] for t in ok})
     summary: dict = {
         "succeeded": len(ok),
-        "failed": len(trials) - len(ok),
+        "failed": sum(t["status"] == "failed" for t in trials),
+        "interrupted": sum(t["status"] == "interrupted" for t in trials),
         "config_sha256": configs[0] if len(configs) == 1 else None,
         "config_consistent": len(configs) <= 1,
     }

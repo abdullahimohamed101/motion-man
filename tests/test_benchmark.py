@@ -9,6 +9,7 @@ import types
 import pytest
 
 from motionman import benchmark, cli, store
+from motionman.tracking import ModelError
 
 from .test_pipeline import FakeTracker
 
@@ -78,7 +79,23 @@ def test_ctrl_c_keeps_the_finished_trials(clip, tmp_path):
         bench(clip, tmp_path, repeats=3, make_tracker=interrupt_second)
     (path,) = (tmp_path / "data" / "benchmarks").glob("*/benchmark.json")
     doc = json.loads(path.read_text())
-    assert doc["status"] == "interrupted" and len(doc["trials"]) == 1 and doc["summary"]["succeeded"] == 1
+    assert doc["status"] == "interrupted" and [t["status"] for t in doc["trials"]] == ["succeeded", "interrupted"]
+    assert doc["summary"]["succeeded"] == 1 and doc["summary"]["failed"] == 0 and doc["summary"]["interrupted"] == 1
+
+
+@pytest.mark.parametrize("error", [ModelError("bad weights"), store.LeaseError("another run is active")])
+def test_input_and_lease_errors_stop_the_series_with_the_run_code(clip, tmp_path, monkeypatch, capsys, error):
+    def refuse(cfg):
+        raise error
+
+    _, doc = bench(clip, tmp_path, repeats=3, make_tracker=refuse)
+    assert doc["status"] == "stopped" and len(doc["trials"]) == 1
+    assert doc["trials"][0]["exit_code"] == error.exit_code and doc["summary"]["failed"] == 1
+    real = benchmark.run_benchmark
+    monkeypatch.setattr(benchmark, "run_benchmark", functools.partial(
+        real, make_tracker=refuse, resolve=lambda d: "cpu", power=lambda: AC))  # fmt: skip
+    code = cli.main(["benchmark", "--source", str(clip), "--data-root", str(tmp_path / "d")])
+    assert code == error.exit_code and "FAILED" in capsys.readouterr().err
 
 
 def test_power_state_is_reported_or_unknown_never_guessed(monkeypatch):

@@ -4,18 +4,22 @@ import json
 
 import pytest
 
-from motionman import benchmark, cli, compare
+from motionman import benchmark, cli, compare, store
 
 from .test_pipeline import FakeTracker
 
 
 @pytest.fixture
-def make(clip, tmp_path):
+def make(clip, tmp_path, monkeypatch):
     root = tmp_path / "data"
+    code = {"commit": "abc123", "dirty": False}  # the real checkout may be dirty while tests run
+    monkeypatch.setattr(store, "code_revision", lambda *a, **k: dict(code))
 
-    def bench(repeats=3, power="ac", **kw):
+    def bench(repeats=3, power="ac", percent=None, dirty=False, **kw):
+        code["dirty"] = dirty
+        state = {"source": power} if percent is None else {"source": power, "percent": percent}
         path, doc = benchmark.run_benchmark(clip, repeats=repeats, data_root=root, make_tracker=FakeTracker,
-                                            resolve=lambda d: "cpu", power=lambda: {"source": power}, **kw)  # fmt: skip
+                                            resolve=lambda d: "cpu", power=lambda: state, **kw)  # fmt: skip
         return doc["benchmark_id"]
 
     bench.root = root
@@ -55,6 +59,16 @@ def test_weak_evidence_is_noted(make):
     doc = compare.compare(a, b, ["device"], data_root=make.root)
     assert doc["unchanged_intended"] == ["device"]
     assert any("fewer than 3" in n for n in doc["notes"]) and not doc["controlled"]
+
+
+def test_dirty_code_and_a_wide_battery_gap_are_noted(make):
+    doc = compare.compare(make(dirty=True), make(dirty=True), data_root=make.root)
+    assert sum("uncommitted changes" in n for n in doc["notes"]) == 2 and not doc["controlled"]
+    a, b = make(power="battery", percent=90), make(power="battery", percent=15)
+    gap = compare.compare(a, b, data_root=make.root)
+    assert any("battery level differs widely (A 90%, B 15%)" in n for n in gap["notes"]) and not gap["controlled"]
+    close = compare.compare(a, make(power="battery", percent=80), data_root=make.root)
+    assert close["notes"] == [] and close["controlled"]
 
 
 def test_speed_is_the_only_claim(make):

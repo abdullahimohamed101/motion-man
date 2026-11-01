@@ -8,6 +8,7 @@ counts or confidence is never called an accuracy improvement.
 from __future__ import annotations
 
 import json
+import statistics
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from motionman import benchmark, store
 from motionman.types import MotionManError
 
 SCHEMA_VERSION = "1.0"
+BATTERY_GAP = 20  # percentage points between the two sides' median battery level worth a note
 SPEED_ONLY = "Speed only. Changes in boxes, IDs or confidence are not accuracy and are not compared here."
 
 
@@ -101,7 +103,7 @@ def compare(a_ref: str, b_ref: str, intended: list[str] | None = None, data_root
     confounders = [f["name"] for f in factors if f["changed"] and not f["intended"]]
     unchanged_intended = [f["name"] for f in factors if f["intended"] and not f["changed"]]
     notes = []
-    for label, d in (("A", a), ("B", b)):
+    for label, d, f in (("A", a, fa), ("B", b, fb)):
         s = d["summary"]
         if s["failed"]:
             notes.append(f"{label} has {s['failed']} failed trial(s), left out of its median")
@@ -111,6 +113,11 @@ def compare(a_ref: str, b_ref: str, intended: list[str] | None = None, data_root
             notes.append(f"{label} mixes power sources across its trials")
         if d["summary"]["fps"].get("trials", 0) < 3:
             notes.append(f"{label} has fewer than 3 succeeded trials (the protocol asks for at least 3)")
+        if (f["code"] or {}).get("dirty"):
+            notes.append(f"{label} ran with uncommitted changes; two dirty runs on one commit may differ in code")
+    pa_pct, pb_pct = _battery_percent(a), _battery_percent(b)
+    if pa_pct is not None and pb_pct is not None and abs(pa_pct - pb_pct) >= BATTERY_GAP:
+        notes.append(f"battery level differs widely (A {pa_pct}%, B {pb_pct}%); it can move CPU speed")
     speed = _speed(a, b)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -135,6 +142,13 @@ def write(doc: dict, data_root: Path | None = None) -> Path:
     path.parent.mkdir(parents=True)
     store.write_json_atomic(path, {"comparison_id": cid, **doc})
     return path
+
+
+def _battery_percent(doc: dict) -> float | None:
+    """Median battery percent over a benchmark's trials on battery; None when not on battery or not reported."""
+    pcts = [t["power"]["percent"] for t in doc["trials"]
+            if (t.get("power") or {}).get("source") == "battery" and t["power"].get("percent") is not None]  # fmt: skip
+    return statistics.median(pcts) if pcts else None
 
 
 def _side(doc: dict) -> dict:

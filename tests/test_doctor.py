@@ -20,7 +20,11 @@ def fake_loader(cfg):
 
 
 def run(tmp_path, **kw):
-    kw = {"probe_devices": lambda d: DEVICE_OK, "model_loader": fake_loader, "data_root": tmp_path / "data", **kw}
+    weights = tmp_path.parent / f"{tmp_path.name}-fake.pt"  # outside tmp_path, which some tests watch
+    if "model" not in kw and not weights.exists():
+        weights.write_bytes(b"not real weights")  # the fake loader never reads it
+    kw = {"probe_devices": lambda d: DEVICE_OK, "model_loader": fake_loader, "data_root": tmp_path / "data",
+          "model": str(weights), **kw}  # fmt: skip
     return doctor.run_doctor(**kw)
 
 
@@ -99,9 +103,13 @@ def test_package_pins_are_compared(tmp_path, monkeypatch):
     assert missing["status"] == doctor.FAIL and "not-a-real-package" in missing["detail"]
 
 
-def test_missing_weights_warn_with_a_next_step(tmp_path):
-    w = by_name(run(tmp_path, model=str(tmp_path / "nope.pt")))["weights"]
-    assert w["status"] == doctor.WARN and w["next_step"]
+def test_missing_weights_warn_and_are_never_loaded_or_downloaded(tmp_path):
+    def must_not_load(cfg):
+        raise AssertionError("loading missing weights would download them")
+
+    checks = by_name(run(tmp_path, model=str(tmp_path / "nope.pt"), model_loader=must_not_load))
+    assert checks["weights"]["status"] == doctor.WARN and checks["weights"]["next_step"]
+    assert checks["model load"]["status"] == doctor.UNAVAILABLE and "download" in checks["model load"]["detail"]
 
 
 def test_a_bad_source_fails_like_a_run_would(tmp_path):

@@ -151,6 +151,9 @@ def benchmark_main(argv: list[str]) -> int:
               f"{s['failed']} failed; power {', '.join(s['power_sources'])} → {path}")  # fmt: skip
     else:
         print(f"no trial succeeded → {path}", file=sys.stderr)
+    stopped = next((t["exit_code"] for t in doc["trials"] if t.get("exit_code") is not None), None)
+    if stopped is not None:
+        return stopped  # the run command's code for the same error (D11)
     return EXIT_OK if s["failed"] == 0 else EXIT_FAILURE
 
 

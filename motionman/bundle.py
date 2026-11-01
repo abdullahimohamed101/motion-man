@@ -12,6 +12,7 @@ import json
 import re
 import secrets
 import zipfile
+import zlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,8 @@ JSON_ENTRIES = (store.MANIFEST, store.RUNSPEC, pipeline.REPORT)
 JSONL_ENTRIES = (pipeline.TRACKS, pipeline.TIMINGS, pipeline.TELEMETRY)
 FOOTAGE_ENTRIES = (pipeline.ANNOTATED, "source.mp4", "source.m4v", "source.mov")
 ALLOWED = {*JSON_ENTRIES, *JSONL_ENTRIES, "doctor.json", README, BUNDLE_MANIFEST, *FOOTAGE_ENTRIES}
+REQUIRED = (*JSON_ENTRIES, pipeline.TRACKS, "doctor.json", README)  # timings/telemetry are absent on older runs
+INTEGRITY_ONLY = "integrity check: entries match bundle_manifest.json; not proof of who made the bundle"
 MAX_UNCOMPRESSED = 4 * 1024**3  # refuse to verify anything implausibly large (a zip bomb, or not ours)
 REDACTED = "<redacted>"
 # An absolute POSIX path token: starts with "/" (not inside a word such as "encode/decode"), two or more parts.
@@ -45,9 +48,19 @@ def redact(value, home: str = str(Path.home())):
         return [redact(v, home) for v in value]
     if not isinstance(value, str):
         return value
-    # Home first: its last part is the username, which the basename rule below would otherwise keep.
-    out = value.replace(home, REDACTED) if home and home != "/" else value
-    return _ABS_PATH.sub(lambda m: f"{REDACTED}/{Path(m.group(0)).name}", out)
+    home = home if home and home != "/" else None
+
+    def one(path: str) -> str:
+        name = Path(path).name
+        # The home folder's last part is the username: never keep it as a basename.
+        if home and (path.rstrip("/") == home or name == Path(home).name):
+            return REDACTED
+        return f"{REDACTED}/{name}" if name else REDACTED
+
+    if value.startswith("/") and "\n" not in value:
+        return one(value)  # a whole value that is a path may contain spaces ("/Volumes/My Drive/x.mp4")
+    out = _ABS_PATH.sub(lambda m: one(m.group(0)), value)
+    return out.replace(home, REDACTED) if home else out
 
 
 def make_bundle(
@@ -140,15 +153,25 @@ def verify(path: Path) -> dict:
             raise BundleError(f"{BUNDLE_MANIFEST} is unreadable: {e}") from None
         if set(listed) != set(names) - {BUNDLE_MANIFEST}:
             raise BundleError("entries and bundle_manifest.json disagree")
-        for name, entry in listed.items():
-            h, size = hashlib.sha256(), 0
-            with z.open(name) as f:  # streamed: footage entries can be hundreds of MB
-                while chunk := f.read(1 << 20):
-                    h.update(chunk)
-                    size += len(chunk)
-            if size != entry["bytes"] or f"sha256:{h.hexdigest()}" != entry["sha256"]:
-                raise BundleError(f"{name} does not match its hash in {BUNDLE_MANIFEST}")
-    return {"ok": True, "run_id": manifest.get("run_id"), "entries": len(listed), "options": manifest.get("options")}
+        missing = [n for n in REQUIRED if n not in listed]
+        if missing:
+            raise BundleError(f"required entries missing: {', '.join(missing)}")
+        try:
+            for name, entry in listed.items():
+                h, size = hashlib.sha256(), 0
+                with z.open(name) as f:  # streamed: footage entries can be hundreds of MB
+                    while chunk := f.read(1 << 20):
+                        h.update(chunk)
+                        size += len(chunk)
+                if size != entry["bytes"] or f"sha256:{h.hexdigest()}" != entry["sha256"]:
+                    raise BundleError(f"{name} does not match its hash in {BUNDLE_MANIFEST}")
+            run_id = json.loads(z.read(store.MANIFEST)).get("run_id")
+        except (zipfile.BadZipFile, zlib.error, EOFError, KeyError, TypeError, ValueError, AttributeError) as e:
+            raise BundleError(f"bundle is damaged: {type(e).__name__}: {e}") from None
+        if run_id != manifest.get("run_id"):
+            raise BundleError(f"{BUNDLE_MANIFEST} names run {manifest.get('run_id')!r} but manifest.json is {run_id!r}")
+    return {"ok": True, "run_id": run_id, "entries": len(listed), "options": manifest.get("options"),
+            "scope": INTEGRITY_ONLY}  # fmt: skip
 
 
 def _entry(name: str, data: bytes | Path) -> dict:
@@ -173,6 +196,7 @@ Contents: {", ".join(names)}, plus {BUNDLE_MANIFEST} (size and sha256 of every e
 
 Verify it:
   python -m motionman bundle --verify bundle.zip
+This is an integrity check (every entry matches {BUNDLE_MANIFEST}), not proof of who made the bundle.
 
 Reproduce it (needs the same input video and weights; check their hashes in runspec.json):
   input  {s["input"]["input_id"]}

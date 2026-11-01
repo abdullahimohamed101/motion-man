@@ -101,6 +101,53 @@ def test_tampering_is_refused(published, tmp_path, change, message):
         bundle.verify(bad)
 
 
+def relist(items):
+    """Rewrite bundle_manifest.json so it agrees with the (changed) entries: a self-consistent forgery."""
+    m = json.loads(items["bundle_manifest.json"])
+    m["entries"] = [{"name": n, "bytes": len(d), "sha256": store.sha256_bytes(d)}
+                    for n, d in sorted(items.items()) if n != "bundle_manifest.json"]  # fmt: skip
+    items["bundle_manifest.json"] = json.dumps(m).encode()
+
+
+def test_a_consistent_but_gutted_or_mislabelled_bundle_is_refused(published, tmp_path):
+    def gut(e):
+        for n in [n for n in e if n not in ("README.txt", "bundle_manifest.json")]:
+            e.pop(n)
+        relist(e)
+
+    with pytest.raises(bundle.BundleError, match="required entries missing"):
+        bundle.verify(rewrite(make(published), tmp_path / "gutted.zip", gut))
+
+    def relabel(e):
+        m = json.loads(e["manifest.json"])
+        m["run_id"] = "r_other"
+        e["manifest.json"] = json.dumps(m).encode()
+        relist(e)
+
+    with pytest.raises(bundle.BundleError, match="names run"):
+        bundle.verify(rewrite(make(published), tmp_path / "relabelled.zip", relabel))
+
+
+def test_damaged_data_or_manifest_fields_are_a_clear_error(published, tmp_path):
+    path = make(published)
+    data = bytearray(path.read_bytes())
+    with zipfile.ZipFile(path) as z:
+        info = z.getinfo("tracks.jsonl")
+    start = info.header_offset + 30 + len(info.filename) + len(info.extra)
+    data[start : start + 8] = b"\xff" * 8  # corrupt the deflate stream, not the headers
+    (tmp_path / "corrupt.zip").write_bytes(bytes(data))
+    with pytest.raises(bundle.BundleError):
+        bundle.verify(tmp_path / "corrupt.zip")
+
+    def drop_bytes(e):
+        m = json.loads(e["bundle_manifest.json"])
+        del m["entries"][0]["bytes"]
+        e["bundle_manifest.json"] = json.dumps(m).encode()
+
+    with pytest.raises(bundle.BundleError, match="damaged"):
+        bundle.verify(rewrite(path, tmp_path / "nobytes.zip", drop_bytes))
+
+
 def test_unreadable_unknown_and_damaged_inputs_are_refused(published, tmp_path):
     root, report = published
     junk = tmp_path / "junk.zip"
@@ -117,7 +164,10 @@ def test_unreadable_unknown_and_damaged_inputs_are_refused(published, tmp_path):
 
 def test_redaction_rules():
     home = "/Users/someone"
-    assert bundle.redact("/Users/someone/clips/crosswalk.mp4", home) == "<redacted>/clips/crosswalk.mp4"
+    assert bundle.redact("/Users/someone/Clients/Acme Corp/secret/x.mp4", home) == "<redacted>/x.mp4"
+    assert bundle.redact("/Volumes/My Drive/secret project/clip.mp4", home) == "<redacted>/clip.mp4"
+    assert bundle.redact("/Users/someone", home) == "<redacted>"
+    assert bundle.redact("in /Users/someone/clips/a.mp4 now", home) == "in <redacted>/a.mp4 now"
     assert bundle.redact("/opt/data/runs/r_1", home) == "<redacted>/r_1"
     assert bundle.redact("data root /var/tmp/x/data is writable", home) == "data root <redacted>/data is writable"
     assert bundle.redact({"a": ["encode/decode", "sha256:ab/cd"], "n": 3}, home) == {

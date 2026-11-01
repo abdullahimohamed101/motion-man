@@ -168,10 +168,12 @@ and 0% repeats, so it gets no hints. On this Mac, `doctor --device cuda` fails t
 Writes `data/exports/bundle-<run_id>-<hex>/bundle.zip` for a published run, after re-verifying the run's hashes. It
 is built from an allowlist: `manifest.json`, `runspec.json`, `report.json`, `tracks.jsonl`, `timings.jsonl`,
 `telemetry.jsonl` (if recorded), a fresh `doctor.json` (no model load), a `README.txt` with reproduce commands,
-and `bundle_manifest.json` with the size and SHA-256 of every entry. The home folder becomes `<redacted>` and
-other absolute paths become `<redacted>/<name>` unless you pass `--include-paths`; the source video and
+and `bundle_manifest.json` with the size and SHA-256 of every entry. Absolute paths become `<redacted>/<name>` (only
+the file or folder name is kept, never the username) unless you pass `--include-paths`; the source video and
 `annotated.mp4` are added only with `--include-footage`. Environment variables are never read into it.
-`--verify` re-hashes every entry and refuses unknown, nested, missing or changed entries (exit 1). A real bundle
+`--verify` re-hashes every entry and refuses unknown, nested, missing, damaged or changed entries, a bundle
+without the core run files, and a run ID that disagrees with `manifest.json` (exit 1). It is an integrity check,
+not proof of who made the bundle. A real bundle
 of the crosswalk run with telemetry is 610 KiB with 8 entries plus the manifest, and contains no home folder
 path or username.
 
@@ -213,7 +215,9 @@ Runs the same clip and settings `--repeats` times (default 3). Every trial is a 
 with its own tracker, run ID and records; nothing is reused between trials. It prints each trial and the median
 with its range, and writes `data/benchmarks/<id>/benchmark.json`: settings, per-trial run ID, status, fps, stage
 p50/p95, power state (AC, battery with percent, or unknown) and the environment. A failed trial stays listed and is
-left out of the median; the exit code is 1 if any trial failed. Options: `--device`, `--imgsz`, `--max-frames`,
+left out of the median; the exit code is 1 if any trial failed. Invalid input, device or model (2) or another
+active run (75) stops the series at that trial and exits with the run command's code. A trial cut off by Ctrl-C
+is listed as `interrupted` (exit 130). Options: `--device`, `--imgsz`, `--max-frames`,
 `--telemetry`, `--label`, `--data-root`. A short smoke run (3 × 240 frames, battery 93%) gave a median of
 42.42 fps with a range of 37.76–43.11, which is why the range is reported and not just one number.
 
@@ -298,7 +302,7 @@ Every run since P2 records stage timings (`report.json` → `timing`, and one ro
 | `detect_track_ms` | The whole `model.track` call (YOLO + ByteTrack) plus conversion to records |
 | `render_ms` | Trail update plus drawing boxes, labels and trails |
 | `write_ms` | Writing the annotated frame to the encoder plus the JSONL record line |
-| `unattributed` | Wall time outside the four stages (record building, timing rows, progress updates) |
+| `unattributed` | Processing wall outside the four stages: record building, timing rows, progress updates, the last `next()` that ends the loop, writer release and file closes |
 | `finalize_s` | Writer release to the report write: output decode check, records validation, hashing |
 | `job_wall_s` | Setup + processing + finalize. The final rename into `runs/` comes after the report and is excluded |
 

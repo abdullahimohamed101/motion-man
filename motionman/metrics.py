@@ -129,7 +129,8 @@ def timing_section(metrics: Metrics) -> dict:
         unattributed = {
             "total_s": round(wall - attributed, 3),
             "share_of_wall": round((wall - attributed) / wall, 4),
-            "scope": "loop work outside the four stages: record building, timing rows, progress updates",
+            "scope": "processing wall outside the four stages: record building, timing rows, progress updates, "
+            "the final next() that ends the loop, writer release and closing the JSONL and timings files",
         }
     return {
         "model_load_s": _round(metrics.model_load_s, 3),

@@ -56,11 +56,15 @@ def run_doctor(
     requirements: Path | None = store.REPO_ROOT / "requirements.txt",
 ) -> dict:
     """Run every check and return ``{"checks": [...], "hints": [...], "ok": bool}``. ``ok`` is False only on FAIL."""
-    checks = [_python(), _packages(requirements), _weights(model)]
+    weights = _weights(model)
+    checks = [_python(), _packages(requirements), weights]
     device_check = (probe_devices or _probe_devices)(device)
     checks.append(device_check)
     if not load_model:
         checks.append(Check("model load", UNAVAILABLE, "skipped (--no-model)"))
+    elif weights.status != PASS:  # loading would make Ultralytics download the weights: not read-only
+        checks.append(Check("model load", UNAVAILABLE, "skipped: no local weights file, and loading would download it",
+                            "Fix the weights check first, or pass --model with a local file."))  # fmt: skip
     elif device_check.status == FAIL:
         checks.append(Check("model load", UNAVAILABLE, "skipped: the requested device is not available",
                             "Fix the device check first, or run with --device cpu."))  # fmt: skip
