@@ -58,7 +58,12 @@ CSS = """
   position: sticky; top: 0; z-index: 99;  /* the wrapper, not the block: a sticky needs room inside its parent */
   margin: 0 -24px; padding: 12px 24px;
   background: var(--mm-carbon);
-  border-bottom: 1px solid var(--mm-graphite);
+  /* Full bleed: the content stays on the 1280 px grid while the fill and the hairline reach both window edges. */
+  box-shadow: 0 0 0 100vmax var(--mm-carbon), 0 1px 0 100vmax var(--mm-graphite);
+  clip-path: inset(0 -100vmax -1px);
+}
+@media (max-width: 1000px) {  /* the toggle keeps its help tooltip; a clipped "L…" label reads as a glitch */
+  .st-key-topbar [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] { display: none; }
 }
 .st-key-topbar [data-testid="stHorizontalBlock"] { gap: 8px; }
 .st-key-topbar button { padding-left: 10px; padding-right: 10px; }
@@ -71,9 +76,9 @@ CSS = """
   font-size: 13px; color: var(--mm-fog); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .st-key-topbar [data-testid="stSelectbox"] [data-baseweb="select"] > div { background: var(--mm-obsidian); }
-.st-key-topbar [data-testid="stToggle"] { margin-top: 2px; }
-.st-key-topbar [data-testid="stToggle"] label { gap: 8px; }
-.st-key-topbar [data-testid="stToggle"] [data-testid="stWidgetLabel"] p { font-size: 13px; color: var(--mm-mist); }
+.st-key-topbar [data-testid="stCheckbox"] { margin-top: 2px; }
+.st-key-topbar [data-testid="stCheckbox"] label { gap: 8px; }
+.st-key-topbar [data-testid="stCheckbox"] [data-testid="stWidgetLabel"] p { font-size: 13px; color: var(--mm-mist); }
 .st-key-topbar [data-testid="stMarkdownContainer"]:has(> p > span[class*="-badge"]) { text-align: center; }
 .st-key-topbar span[class*="-badge"] {
   display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
