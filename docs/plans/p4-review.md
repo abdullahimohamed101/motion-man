@@ -1,5 +1,5 @@
 # P4 Review and evaluation: reviewed datasets, detection metrics, run disagreement
-Status: Draft · Branch: `feat/p4-review` · Spec: B§2, B§7–B§9 (MD§13, MD§18 fixtures 7 and 10, MD§22)
+Status: Active · Branch: `feat/p4-review` · Spec: B§2, B§7–B§9 (MD§13, MD§18 fixtures 7 and 10, MD§22)
 
 ## Outcome
 Some quality statements become measurable. A person reviews a small set of crosswalk frames in a compact form
@@ -17,7 +17,7 @@ differences offered as review candidates. Predictions are never changed and the 
 - Freehand box drawing: boxes are edited with numeric fields and a live overlay (as in P3).
 - Experiments and robustness recipes (P5).
 
-## Decisions (proposed; confirm with the plan)
+## Decisions (confirmed 2026-11-01)
 - D1 Storage: `<data root>/datasets/<dataset_id>/draft.json` (editable) and `revisions/r<N>.json` (immutable,
   written once by commit, hash recorded in `revisions/index.json`); `evaluations/<run_id>/<evaluation_id>/` and
   `disagreements/<disagreement_id>/`, each with a `manifest.json`, built in a temp folder and renamed in (as P3).
@@ -64,7 +64,7 @@ differences offered as review candidates. Predictions are never changed and the 
   `disagree RUN_A RUN_B [--iou]`. Exit 0; 2 on invalid or incompatible input.
 
 ## Steps
-1. [ ] `datasets.py`: schema and validation, draft save/load, seeding from a run, commit to immutable
+1. [x] `datasets.py`: schema and validation, draft save/load, seeding from a run, commit to immutable
    revisions with an index, import/export. Tests: each refusal, revision immutability, raw records unchanged.
 2. [ ] `evaluate.py`: matching and metrics per D7, publish. Tests: exact match, duplicates, empty positives and
    negatives, ignored boxes, partial class scope excluded, null denominators with reasons, tie-breaks, an
@@ -108,3 +108,4 @@ differences offered as review candidates. Predictions are never changed and the 
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-01 step 1: datasets.py: even_frames (every 30th), new_draft from a verified run (video id, frame size, source run, selected frames; nothing labelled), set_frame (reviewed/excluded, classes complete, ignored boxes; excluding drops that frame's labels), add/accept/remove annotations (accept copies class and box and notes the source observation; records only read), commit (validates, next number skips any file already on disk, exclusive create so a revision is written once, read-only, sha256 in revisions/index.json), load_revision verifies the hash (changed or orphaned revisions refused), parse_ref `<id>@r<N>`, import of a MotionMan draft or revision as a new draft with origin imported (ground truth only after a person commits); full validation with named refusals. 18 tests (incl. raw run hashes unchanged after commit: fixture 10), 480 total.
