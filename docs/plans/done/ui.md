@@ -1,5 +1,5 @@
 # Local UI: tracking workbench
-Status: Active · Branch: `feat/ui` (stacked on `feat/cli-mvp`, PR #1) · Spec: §9 · Budget: 2–3 h
+Status: Done · Branch: `feat/ui` (stacked on `feat/cli-mvp`, PR #1) · Spec: §9 · Budget: 2–3 h
 
 ## Outcome
 `scripts/ui.sh` opens a local Streamlit page: pick the demo clip or upload an MP4, choose device and
