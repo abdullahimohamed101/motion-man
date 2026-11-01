@@ -6,7 +6,7 @@ locally at `demo-video/motionman-demo.mp4` (gitignored). Record on mains power: 
 ```bash
 ls clips/crosswalk.mp4 yolo11n.pt          # both present (README → Sample clip; first run downloads weights)
 rm -rf runs/demo                           # the CLI refuses a non-empty output folder
-scripts/check.sh                           # expect: ok ×3, 132 passed
+scripts/check.sh                           # expect: ok ×3, 200 passed
 ```
 Use a terminal with a large font, plus a browser window at about 1280×800.
 
@@ -52,7 +52,7 @@ scripts/ui.sh                              # http://localhost:8501
    report.json."*
 
 ## 5. Close (15 s)
-Say: *"132 offline tests run in CI on every PR. The limits are written down: track IDs aren't counts, there
+Say: *"200 offline tests run in CI on every PR. The limits are written down: track IDs aren't counts, there
 are no accuracy claims without labelled data, and the CUDA path is unverified here."*
 
 Then stop the UI with Ctrl-C in its terminal.

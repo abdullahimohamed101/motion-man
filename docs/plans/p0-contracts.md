@@ -65,7 +65,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 6. [x] Failure tests (MD§25 P0.4): invalid input, empty detections, writer failure, interruption, lease
    held, limit exceeded, source modified mid-run; none produce a SUCCEEDED manifest or a published run.
 7. [x] Baseline (P0.2): real CPU clip in canonical mode; reopen artifacts; verify manifest hashes from disk.
-8. [ ] Gate decision (P0.5): pass/fail per criterion, revised P1/P2 estimate, known limitations.
+8. [x] Gate decision (P0.5): pass/fail per criterion, revised P1/P2 estimate, known limitations.
 
 ## Acceptance
 | # | Criterion | Command | Result |
@@ -89,6 +89,27 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 MD says 0.5–1 focused day. Because records, identity and publication contracts are all new, expect
 1–1.5 focused days. Re-estimate P1 (1–2) and P2 (1.5–3) at the P0 gate.
 
+## Gate decision (P0.5): PASS
+All eight acceptance rows pass with real-command evidence (table above); 200 offline tests; CI unchanged.
+The baseline is `data/runs/r_20261101T060226Z_90470c` (1,356 frames, 45.19 fps on mains, manifest verified).
+
+**Known limitations carried into P1:**
+- Legacy `--output-dir` runs take no lease (no data root), so two legacy runs can overlap. Documented in D6.
+- Failed and interrupted attempts stay in `data/staging/` indefinitely; there is no cleanup command yet
+  (MD§17 wants explicit, preview-first deletion, not automatic).
+- The output budget is checked after writing, not during; an oversized run writes, then fails.
+- The constant-frame-rate check relies on OpenCV container timestamps; clips without usable timestamps are
+  rejected, not assumed constant.
+- `report.json` keeps the MVP status words (`success`/`error`/`interrupted`) while the manifest uses
+  `SUCCEEDED`/`FAILED`/`INTERRUPTED`. The manifest is authoritative for publication.
+- The lease uses `flock`, which is reliable on local disks; network filesystems are out of scope.
+- `code.dirty` ignores untracked files. Inputs are copied into `data/inputs/` once per unique file (disk use).
+- CUDA paths remain unverified on this machine (no NVIDIA GPU).
+
+**Revised estimates:** P1 1.5–2.5 focused days (MD: 1–2). It adds the run shelf over `data/runs`, a sparse
+records index, the exact-frame inspector with track summaries, and the UI2 guided-flow redesign, which
+touches most of `app.py`. P2 stays at 1.5–3 days. Each phase still stops at its gate.
+
 ## Log
 - 2026-11-01 step 1: records.py (v1.0 writer with observation_ids and integer source_t_us, box policy: clip ≤0.5 px overrun, reject the rest; validate(); read_records() adapting pre-v1.0 lines with legacy=True and unknown dims/run_id left None). 20 tests. Real legacy file runs/demo-recording/tracks.jsonl: 1,356 records contiguous, t_us = formula exactly (0 µs diff), 25,361 objects. Pipeline still writes the old format until step 4. 152 tests.
 - 2026-11-01 step 2: store.py (streamed sha256, canonical JSON rejecting NaN, run_id r_<UTC>_<6hex>, ByteTrack YAML read from package files without importing Ultralytics, git commit + dirty, resolve_runspec: config_sha256 over settings; reproducibility recorded but not hashed; missing weights null + reason). 11 tests. Real hashes match shasum (yolo11n.pt, crosswalk.mp4 81 MB in 0.03 s). 163 tests.
@@ -97,3 +118,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 - 2026-11-01 step 5: UI runner runs canonical (data root, lease via pipeline); uploads written to data/.uploads temp, imported by hash, then removed; failed attempts are not offered as results (no partial downloads; diagnostics stay in staging, UI2 copy); LeaseError/StoreError mapped to next steps; runs/ui retired. Tests adapted + lease-held test. 191 tests. Browser: P0-8.
 - 2026-11-01 step 6: audit of P0.4 + MD§18 fixture 9 per mode. Legacy already covered everything; canonical gaps filled in tests/test_failures.py (9): invalid input creates nothing in data/ (no import), all-empty run succeeds, writer failure and non-finalizing output (fixture 9: FAILED manifest, video_decode FAIL, not published), tracker box outside the image fails the run, lease released after error and interrupt. 200 tests.
 - 2026-11-01 step 7: all acceptance rows recorded with real commands (P0-1..8 PASS). Baseline: r_20261101T060226Z_90470c (1356 frames, 45.19 fps, AC). The v1.0 run and the MVP-era run of the same clip have identical observation counts (25,361).
+- 2026-11-01 step 8: gate PASS recorded with limitations and revised estimates (P1 1.5–2.5 days). README: canonical vs legacy runs, v1.0 records + adapter, runspec/manifest, exit 75, input limits, UI on the data root, 200 tests, new modules. interview.md and demo-script.md test counts and all 20 file:line references re-verified against the rewritten code.
