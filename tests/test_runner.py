@@ -147,6 +147,7 @@ def test_invalid_upload_gives_message_and_next_step(tmp_path):
     assert s.status == "error" and "cannot open video" in s.message
     assert s.next_step.startswith("Choose another video")
     assert s.report is None and s.artifacts == {}
+    assert not s.run_dir.exists()  # nothing was written, so no empty run folder is left behind
     assert runner.start(RunSettings(), upload=("again.mp4", b"x"))  # lock released after an error
     runner.join(30)
 
@@ -158,6 +159,7 @@ def test_device_error_suggests_cpu(clip, tmp_path):
     s = run_to_end(make_runner(tmp_path, resolve=no_cuda), source=clip)
     assert s.status == "error" and "CUDA is not available" in s.message
     assert s.next_step == "Choose CPU or Auto and run again."
+    assert not s.run_dir.exists()
 
 
 def test_mid_run_failure_keeps_partial_artifacts_and_report(clip, tmp_path):
@@ -168,6 +170,7 @@ def test_mid_run_failure_keeps_partial_artifacts_and_report(clip, tmp_path):
     assert s.status == "error" and s.message == "Unexpected error: RuntimeError: boom"
     assert s.report["status"] == "error" and s.report["processed_frames"] == 5  # this run's partial report
     assert set(s.artifacts) == {"annotated.mp4", "report.json", "tracks.jsonl"}
+    assert s.run_dir.exists()  # partial output is kept (spec §9: preserve useful artifacts)
 
 
 @pytest.mark.parametrize(
@@ -223,6 +226,7 @@ def test_probe_upload_uses_original_name_and_leaves_no_file(clip, tmp_path, monk
     assert not any(p.name.startswith("motionman-probe-") for p in tmp_path.iterdir())
 
 
-def test_probe_upload_rejects_non_video():
-    with pytest.raises(VideoError, match="cannot open video"):
+def test_probe_upload_rejects_non_video_and_names_the_users_file():
+    with pytest.raises(VideoError) as exc:
         probe_upload("notes.mp4", b"not a video")
+    assert str(exc.value) == "cannot open video: notes.mp4"  # not the temporary probe path

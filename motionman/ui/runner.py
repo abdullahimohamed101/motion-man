@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import shutil
 import tempfile
 import threading
 from collections.abc import Callable
@@ -137,6 +138,10 @@ class Runner:
             if not isinstance(e, MotionManError):
                 log.exception("run failed")
             message, next_step = describe_error(e)
+            if not config.output_dir.exists():
+                # Failed before writing anything (bad input, device, model): don't leave an empty run folder.
+                # It holds at most our copy of an upload; runs with output keep their partial artifacts.
+                shutil.rmtree(config.output_dir.parent, ignore_errors=True)
             self._update(
                 status="error",
                 message=message,
@@ -238,4 +243,7 @@ def probe_upload(name: str, data: bytes) -> SourceInfo:
     with tempfile.TemporaryDirectory(prefix="motionman-probe-") as tmp:
         path = Path(tmp) / f"upload{Path(name).suffix.lower() or '.mp4'}"
         path.write_bytes(data)
-        return probe(path, name)
+        try:
+            return probe(path, name)
+        except video_io.VideoError as e:  # name the user's file, not our temporary copy
+            raise video_io.VideoError(str(e).replace(str(path), name)) from e

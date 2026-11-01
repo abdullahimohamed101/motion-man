@@ -109,7 +109,8 @@ live_status()
 
 # --- Video workspace --------------------------------------------------------------------------------------
 annotated = state.artifacts.get("annotated.mp4") if state.status == "complete" else None
-picked = st.segmented_control("View", ["Original", "Tracked"], default="Original", required=True, key="view")
+st.session_state.setdefault("view", "Original")  # set here, not as a default: Run also resets it
+picked = st.segmented_control("View", ["Original", "Tracked"], required=True, key="view")
 with st.container(border=True, key="video-panel"):
     if picked == "Tracked" and annotated is not None:
         st.caption(f"Tracked · {state.source_name}")

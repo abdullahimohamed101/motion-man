@@ -25,6 +25,7 @@ secondaryBackgroundColor = "#111214"
 
 [server]
 headless = true
+address = "localhost"   # a local tool: never listen on the network
 port = 8501
 maxUploadSize = 200
 

@@ -49,21 +49,21 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 5. [x] CSS block (D3) and overlay checks: lime only on Run tracking, focus, selection and progress.
 6. [x] AppTest tests for the states (Pending/N/A, processing disables Run, error clears old metrics);
    all in `scripts/check.sh`.
-7. [ ] Browser verification (U2–U10), screenshots; README UI section; log.
+7. [x] Browser verification (U2–U10), screenshots; README UI section; log.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
 | U1 | Gate passes offline, UI tests included, CLI tests unchanged | `scripts/check.sh` | PASS: 127 passed; INV-8 guard still green with Streamlit loaded |
 | U2 | App starts | `scripts/ui.sh`; `curl -f localhost:8501/_stcore/health` | PASS: 200; theme applied (canvas #040506, text #F5F5F5, Inter), no exceptions |
-| U3 | Demo run reaches Complete; every metric equals this run's report.json | browser DOM vs `report.json` | |
-| U4 | Before a run: badge Idle, metrics "Pending", playback FPS labelled separately | browser DOM | |
-| U5 | During a run: "Processing", frame count and elapsed rise, Run disabled; clicking other widgets doesn't stop it | browser; report `status: success` | |
-| U6 | Tracked video plays in the browser | `<video>` readyState ≥ 2, duration ≈ 56.5 s | |
-| U7 | Original/Tracked switch and downloads never re-run inference | run count and report mtime unchanged | |
-| U8 | Bad upload or `CUDA` → short error plus next step; no stale Complete badge or metrics | browser DOM | |
-| U9 | The 3 downloads serve the run's files | downloaded bytes == files on disk | |
-| U10 | Run button text `#0B1105` on `#A3E635`; visible 2 px lime focus ring; unavailable latency shows N/A | computed styles, keyboard Tab | PARTIAL: 12.7:1, Tab → 2 px lime ring @2 px, hover #B5EF59; N/A in-browser pending (step 7) |
+| U3 | Demo run reaches Complete; every metric equals this run's report.json | browser DOM vs `report.json` | PASS: 23.86 / 105.0 ms / 1,356 / 56.83 s on page == report (success, 1,356 decoded) |
+| U4 | Before a run: badge Idle, metrics "Pending", playback FPS labelled separately | browser DOM | PASS: Idle badge, 4× Pending, "23.976 fps playback" in sidebar |
+| U5 | During a run: "Processing", frame count and elapsed rise, Run disabled; clicking other widgets doesn't stop it | browser; report `status: success` | PASS: 101→225 frames across device + view clicks; Run disabled; report success, device stayed cpu |
+| U6 | Tracked video plays in the browser | `<video>` readyState ≥ 2, duration ≈ 56.5 s | PASS: readyState 4, 56.6 s |
+| U7 | Original/Tracked switch and downloads never re-run inference | run count and report mtime unchanged | PASS: 4 switches + 3 downloads → 2 run dirs, mtime unchanged |
+| U8 | Bad upload or `CUDA` → short error plus next step; no stale Complete badge or metrics | browser DOM | PASS: CUDA after Complete → Error, metrics —, downloads off; bad upload → named error, Run disabled |
+| U9 | The 3 downloads serve the run's files | downloaded bytes == files on disk | PASS: SHA-256 equal for all 3 (fetched in page, no files saved) |
+| U10 | Run button text `#0B1105` on `#A3E635`; visible 2 px lime focus ring; unavailable latency shows N/A | computed styles, keyboard Tab | PASS: 12.7:1, Tab → 2 px lime ring @2 px, hover #B5EF59; 10-frame run shows N/A with reason tooltip |
 
 ## Risks
 - Streamlit's `data-testid` names can change between versions: pinned (D1), and the CSS is under 30 lines.
@@ -79,3 +79,4 @@ database, accounts, API server, React/Tailwind, marketing hero. CLI behaviour an
 - 2026-10-31 step 4: app.py (sidebar source/metadata/device/confidence/Run; header + badge + live progress in a polling fragment that triggers a full rerun on state change; Original/Tracked; metrics; lazy downloads; Run details) + view.py pure display rules (15 tests, 119 total). Browser smoke on the demo clip: Idle → Processing (31/1,356 · 2%) → Complete; owner clicks mid-run didn't stop it; metrics == report.json (20.19 fps, 112.8 ms, 1,356, 67.15 s); Tracked video readyState 4, 56.6 s. Run text still white until step 5. UI runs ~20 fps vs CLI ~32 (shared CPU with the browser).
 - 2026-10-31 step 5: style.py (~45 lines CSS, data-testid + st-key- selectors only) + heading sizes in config. Measured: Run 12.7:1, captions #A1A1AA 7.8:1 on panel, h2 24px/600, h4 16px, metric values Geist Mono tabular, cards/video panel 16px #07080A + inset highlight, Tab focus ring solid 2px lime offset 2px, hover #B5EF59. 119 tests.
 - 2026-10-31 step 6: tests/test_app.py (8 AppTest cases: idle Pending + playback FPS label + downloads disabled, missing demo clip, Run passes chosen device/conf, refused start warns, processing disables Run, complete == report + downloads enabled, N/A latency, error next step + metrics —). Seam: MOTIONMAN_DEMO_CLIP env var. 127 tests.
+- 2026-10-31 step 7: U3–U10 PASS in the browser. Found and fixed: Streamlit listened on all interfaces (External URL shown) → server.address=localhost (now 127.0.0.1 only); `view` widget default + session_state warning; early failures left empty run dirs → removed when no output exists; upload probe errors showed the temp path → user's filename. Annotated output is byte-identical across runs (deterministic on CPU). README Local UI section. 127 tests.
