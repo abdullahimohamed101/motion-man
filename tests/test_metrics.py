@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from motionman.metrics import Metrics, build_report, latency_summary, write_report
-from motionman.types import RunConfig, Track, VideoInfo, frame_record
+from motionman.types import RunConfig, VideoInfo
 
 
 def test_latency_excludes_warmup_frames():
@@ -47,30 +47,6 @@ def test_stop_is_idempotent():
     first = m.processing_wall_s
     m.stop()
     assert m.processing_wall_s == first is not None
-
-
-def test_frame_record_shape_and_rounding():
-    t = Track(3, 0, "person", 0.876543, (1.234, 2.0, 3.999, 4.5))
-    rec = frame_record(4, 4 / 30, [t])
-    assert rec == {
-        "frame_index": 4,
-        "timestamp_s": 0.133333,
-        "objects": [
-            {
-                "track_id": 3,
-                "class_id": 0,
-                "class_name": "person",
-                "confidence": 0.8765,
-                "bbox_xyxy": [1.23, 2.0, 4.0, 4.5],
-            }
-        ],
-    }
-    json.dumps(rec)  # serialisable as one JSONL line
-
-
-def test_frame_record_keeps_empty_frames_and_null_ids():
-    assert frame_record(0, 0.0, [])["objects"] == []
-    assert frame_record(0, 0.0, [Track(None, 2, "car", 0.5, (0, 0, 1, 1))])["objects"][0]["track_id"] is None
 
 
 def _report(m: Metrics, status="success", error=None):

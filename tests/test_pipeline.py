@@ -57,12 +57,15 @@ def read_report(out: Path) -> dict:
 def test_success_writes_three_agreeing_artifacts(clip, tmp_path):
     out = tmp_path / "run"
     report = run(RunConfig(clip, out))
-    assert sorted(p.name for p in out.iterdir()) == ["annotated.mp4", "report.json", "tracks.jsonl"]
+    assert sorted(p.name for p in out.iterdir()) == [
+        "annotated.mp4", "manifest.json", "report.json", "runspec.json", "tracks.jsonl"
+    ]  # fmt: skip
     records = read_jsonl(out)
     assert len(records) == 20 == report["processed_frames"] == report["output_frames_decoded"]
     assert count_frames(out / pipeline.ANNOTATED) == 20
-    assert [r["frame_index"] for r in records] == list(range(20))
-    assert records[4]["timestamp_s"] == pytest.approx(4 / FPS, abs=1e-6)
+    assert [r["source_frame_index"] for r in records] == list(range(20))
+    assert records[4]["source_t_us"] == round(4 * 1_000_000 / FPS)
+    assert {r["run_id"] for r in records} == {report["run_id"]}
     assert read_report(out) == report and report["status"] == "success" and report["error"] is None
 
 
@@ -160,7 +163,9 @@ def test_interrupt_mid_run_reports_interrupted(clip, tmp_path):
 
 
 def test_no_decodable_frames_is_an_error(clip, tmp_path, monkeypatch):
-    monkeypatch.setattr(video_io, "read_frames", lambda cap, fps, max_frames=None: iter(()))
+    monkeypatch.setattr(
+        video_io, "read_frames", lambda cap, fps, max_frames=None, frame_limit=None, max_duration_s=None: iter(())
+    )
     out = tmp_path / "run"
     with pytest.raises(VideoError, match="no decodable frames"):
         run(RunConfig(clip, out))
@@ -190,8 +195,8 @@ def test_writer_failure_reports_error_and_releases_reader(clip, tmp_path, monkey
             released.append(True)
             self._cap.release()
 
-    def tracking_reader(path):
-        cap, info = real_open_reader(path)
+    def tracking_reader(path, limits=None):
+        cap, info = real_open_reader(path, *([limits] if limits else []))
         return RecordingCapture(cap), info
 
     def broken_writer(path, info):

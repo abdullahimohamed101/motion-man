@@ -53,6 +53,7 @@ class Tracker:
             self._model = YOLO(model)
         except Exception as e:  # missing file, failed download, corrupt weights
             raise ModelError(f"cannot load model {model!r}: {e}") from e
+        self.class_names = dict(self._model.names)  # recorded as a class-map hash in the RunSpec
         self._cuda_sync = None
         if device.startswith("cuda"):
             import torch

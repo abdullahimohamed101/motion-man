@@ -28,6 +28,8 @@ class Metrics:
     def __init__(self) -> None:
         self.processed_frames = 0  # frames fully handled: tracked, drawn, written to video and JSONL
         self.jsonl_records = 0
+        self.decoded_frames = 0  # frames read from the source
+        self.inferred_frames = 0  # frames the tracker processed
         self.model_load_s: float | None = None
         self.processing_wall_s: float | None = None
         self.detect_track_ms: list[float] = []  # one sample per processed frame; fine for short demo clips

@@ -1,0 +1,205 @@
+MOTIONMAN - GREEN UI STYLE REFERENCE
+Raycast-inspired surfaces, adapted for a local video-tracking workbench
+Revision 2 | November 1, 2026 | Usability-first refinement
+
+DESIGN DIRECTION
+
+Use a nearly black canvas, quiet elevated panels, fine borders, restrained inset highlights, and a lime-green accent. The video is the focal point. The interface should feel like a compact engineering tool: clear controls, legible measurements, and visible processing state.
+
+This is a proposed MotionMan adaptation of the supplied Raycast style reference, not a description of Raycast's actual brand. Preserve the visual language without copying its logo, marketing copy, full-screen hero, or website navigation. This revision supplements MotionMan Master Design v1.1 and supersedes the earlier MVP-only layout instructions. It improves usability within the planned phases; it does not introduce a new frontend framework, backend service or feature platform.
+
+The primary accent is Motion Lime (#A3E635). Keep almost all application chrome neutral. Use green selectively for the current primary action, keyboard focus, active selection, and progress. Do not tint every panel green, use glowing green body text, or make every bounding box the same color. The design is a local workbench, not a monitoring dashboard full of permanent status cards.
+
+COLOR TOKENS
+
+Role                    Hex / value                 Usage
+Canvas                  #040506                     Application background
+Panel                   #07080A                     Sidebar and video frame
+Inset surface           #111214                     Inputs and recessed controls
+Raised surface          #1B1C1E                     Badges and subtle hover fills
+Decorative border       #363739                     Panel outlines and dividers
+Primary text            #F5F5F5                     Headings, controls, metric values
+Secondary text          #A1A1AA                     Labels, descriptions, metadata
+Muted text              #8B8C91                     Low-emphasis readable captions
+Motion Lime             #A3E635                     Primary action, focus, active state
+Lime hover              #B5EF59                     Hovered primary action
+Lime pressed            #8CC927                     Pressed primary action
+Accent tint             #17210D                     Selected row / subtle accent well
+Text on lime            #0B1105                     Primary-button text and icons
+Warning                 #FBBF24                     Warning icon plus written label
+Error                   #F87171                     Error icon plus written message
+Neutral action fill     #E6E6E6                     Optional neutral filled action
+
+The primary button uses dark text on lime, not white. Calculated text contrast is approximately 12.7:1 for #0B1105 on #A3E635. Secondary text #A1A1AA on the panel background is approximately 7.8:1. These checks cover these color pairs only, not the accessibility of the completed application. Essential text must not use the original reference's very dim #6A6B6C.
+
+Success can use a lime check icon with the word Complete. Processing uses an explicit Processing label and a progress indicator. Idle is neutral. Error and warning colors remain semantic exceptions to the green brand palette. Never communicate state through color alone.
+
+TYPOGRAPHY AND SPACING
+
+- Interface: Inter when available, otherwise a system sans-serif stack. Use weights 400, 500, and 600.
+- Technical values: Geist Mono when available, otherwise ui-monospace / Menlo / Consolas. Use for IDs, durations, filenames, and performance numbers.
+- App title: 24px / 600. Section labels: 14-16px / 500-600. Body and controls: 14px with about 1.5 line height. Metadata: 12px with at least 1.4 line height. Metric values: 24-28px.
+- Keep the 56-64px marketing headlines out of the application.
+- Base spacing: 8px, with 4px increments allowed for dense controls. Use explicit 8, 12, 16, and 24px gaps. Page padding: 24px. Panel padding: 16-24px.
+- Radii: buttons and inputs 8px; badges 6px; cards 16px. Do not introduce several near-identical radius variants.
+- Separate panels with a neutral hairline and a faint inset top highlight. Avoid large floating shadows or dramatic blur over the video.
+
+SCREEN LAYOUT
+
+Desktop: compact header, task navigation, large video/still workspace, and a contextual object panel of approximately 240-280px when space permits. Use a 24px gap and let the video take the remaining width. Remove the permanent wall of upload, model, analytics and export controls. On narrow screens, stack context below the video and wrap navigation; avoid horizontal overflow at 320px. Keep the underlying document flow rather than a fixed-height scrolling dashboard.
+
+1. App header and context
+   MotionMan wordmark, readable source name, saved-run selector, written run status, and a secondary New video action while viewing a completed result. Keep full run IDs, actual device and model versions in Run details. Do not use NVIDIA's or Raycast's logo or imply affiliation. No accounts, pricing, teams, or cloud controls.
+
+2. Guided starting screen
+   Choose video is the main input; Try demo offers an immediate example. Show supported format and configured limits next to the chooser. After preflight, show filename, duration, dimensions and source playback FPS. Keep the working model/tracker/device defaults. Advanced settings holds inference thresholds and device selection, with plain-language explanations and the exact resolved configuration available. Run tracking is the single main action. Do not require choosing a model to start.
+
+3. Result workspace
+   Open Inspect after successful publication. Preserve the video's aspect ratio. A native player provides casual playback; a separately labeled source-frame slider plus annotated still provides exact evidence. Never pretend the two are synchronized. Original / Tracked and View options are local to the media surface. Use a native object selector or list for accessibility and easy Streamlit implementation. Direct box clicking is optional enhancement, not a prerequisite.
+
+4. Contextual object details
+   Selecting an object reveals class, run-local ID, selected source frame/time and observed intervals. Put confidence distribution, gaps, trajectories and contact sheets behind disclosure. Keep the selected object visible when changing view settings. A missing observation says Not observed in this frame; it is not shown as a current detection using a stale box. Show unassigned detections separately from tracked objects.
+
+5. Relevant navigation, not every planned feature
+   Release A exposes Inspect and Performance. P3 introduces Events & zones, the friendly label for Analytics. P4/P5 introduces Quality lab, the friendly label for Validation. Hide unsupported sections from primary navigation in the shipped product. If an explicit feature-discovery surface shows a future capability, label the missing prerequisite and do not present a broken action. The clickable design preview can show planned sections if it clearly identifies them as preview-only.
+
+6. Contextual export and technical details
+   One Export action beside the current result opens available formats: annotated video, evidence image when supported, tracking data and run report. Show source/run, frame or time range, overlays, format and audio policy before export. Explain tracking data as per-frame object records and use JSONL as a secondary technical label. P6 adds crop, highlight and assisted-redaction recipes only when implemented. Advanced export controls stay collapsed. Missing artifacts get an explanation, not a download button that fails.
+
+7. Performance belongs in Performance
+   Keep the main inspector focused on content and source time. Processing FPS, stage timings, repeated comparisons and optional telemetry live in the Performance view. Every value comes from the selected report. Pending, Unavailable and N/A stay distinct from zero. Show source playback FPS separately from processing throughput. Expand hardware, library versions and raw timing rows on demand.
+
+SETTINGS AND CONTEXT CONTRACT
+
+- View options: labels, trails, spotlight and opacity update presentation immediately. They never run the model or change stored totals.
+- Analysis rules: regions, class scope and analytic thresholds create a draft. Show Unsaved rules and offer Apply rules / Recompute analysis. Keep previous results labeled with the saved analysis version until recomputation succeeds. Provide Reset draft or discard confirmation when switching context.
+- Tracking settings: model/device/inference threshold edits require a new run. Show Results use previous settings; do not relabel old evidence with the new controls. A display threshold cannot restore detections removed during inference.
+- Store selected source frame, selected track and view options per run reference. Restore them when reopening a run; validate and clear stale or incompatible selections. The sidebar cannot keep an ID from another run merely because the number is the same.
+- Use New video or New run for inference setup. Reserve analysis wording for derived analytics. No automatic inference on upload, tab change, slider movement or run selection.
+- Do not promise saved progress across refresh before durable job control exists. Completed runs remain discoverable independently of session state. Explain when an active synchronous task cannot safely be controlled from a refreshed tab.
+
+PLAIN-LANGUAGE COPY
+
+- Start: Choose a video to track objects, or try the demo.
+- Advanced detection threshold: Minimum detection score. This filters model outputs; it is not an accuracy percentage.
+- Display-only change: View updated. Saved results are unchanged.
+- Changed tracking settings: These settings apply to your next run.
+- Unsupported input: This video uses an unsupported timebase. Choose a supported clip; see details.
+- CUDA unavailable: The selected GPU is unavailable. Start a new CPU run or check the environment.
+- Missing measurement: Unavailable - this device does not expose the requested metric.
+- Partial output: This attempt did not finish. Partial files are not a completed result.
+
+Use technical detail only where it helps the current decision. Put full error codes, environment information and stack traces under Details or in a sanitized debug bundle, not as the first explanation.
+
+COMPONENT AND STATE RULES
+
+Primary action: green fill, dark label, 8px radius, visible hover and pressed changes. This intentionally overrides the supplied Raycast reference's prohibition on colored CTAs. Use one high-emphasis action per stage: Run tracking in setup, Export in a completed workspace, and the selected confirmation inside an export flow. Keep New video and other secondary controls neutral when a result is open.
+
+Inputs: recessed dark surface, visible label, restrained border, and a clear 2px lime keyboard-focus outline with 2px offset. Placeholder text does not replace the label. Focus must not be removed merely for appearance.
+
+Panels: 16px radius, neutral border, subtle inset top highlight. Do not copy the source's many near-duplicate outer-shadow stacks. A faint lime tint is appropriate on the selected control, not across the whole page.
+
+Processing: show the actual stage, processed frames, and elapsed time. Disable duplicate submissions. Only claim a percentage when a usable total is known; otherwise show a processing indicator and frame count. Do not invent an ETA. Finalizing means output validation/publication is still pending. Keep updates modest. Do not add a cancel button until the P6 controller can honor its documented contract; a local UI spinner is not a cancelable job.
+
+Errors: show a short explanation and a next step, such as choosing another video or CPU. Preserve useful completed artifacts when possible. A failed run must not retain an old Complete badge or present the previous run's measurements as new results.
+
+Accessibility: visible labels, native keyboard navigation and visible focus are mandatory. Text and icons accompany state colors. Target approximately 44px effective touch areas on coarse pointers, while keeping desktop controls compact. Do not shrink essential controls or supporting text to make a dense layout fit. Respect reduced-motion preference. Tooltips may supplement an explanation but cannot contain the only instruction. Escape closes a transient panel where supported and focus returns to its trigger; inline disclosure is preferable if reliable dialog focus management is unavailable.
+
+Track overlays: assign colors deterministically from track ID, using a small palette such as lime, cyan, amber, and violet. Match each object's trail to its box color. Draw the ID and class label with a readable backing. ID text carries identity even when palette colors repeat or are difficult to distinguish. Brand color and track visualization are separate concerns.
+
+CSS TOKEN STARTER
+
+These are framework-neutral design tokens and example classes, not a complete UI or guaranteed selectors for Streamlit internals. For the two-day Python UI, prefer supported theme settings and standard components; do not spend the deadline fighting undocumented DOM structure. Tailwind, React, and a separate API are not required.
+
+```css
+:root {
+  --mm-bg: #040506;
+  --mm-panel: #07080a;
+  --mm-inset: #111214;
+  --mm-raised: #1b1c1e;
+  --mm-border: #363739;
+  --mm-text: #f5f5f5;
+  --mm-text-secondary: #a1a1aa;
+  --mm-text-muted: #8b8c91;
+  --mm-accent: #a3e635;
+  --mm-accent-hover: #b5ef59;
+  --mm-accent-pressed: #8cc927;
+  --mm-accent-tint: #17210d;
+  --mm-on-accent: #0b1105;
+  --mm-warning: #fbbf24;
+  --mm-error: #f87171;
+  --mm-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --mm-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+  --mm-radius-control: 8px;
+  --mm-radius-badge: 6px;
+  --mm-radius-card: 16px;
+  --mm-page-padding: 24px;
+  --mm-section-gap: 24px;
+  --mm-element-gap: 12px;
+  --mm-panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.mm-panel {
+  color: var(--mm-text);
+  background: var(--mm-panel);
+  border: 1px solid var(--mm-border);
+  border-radius: var(--mm-radius-card);
+  padding: 24px;
+  box-shadow: var(--mm-panel-highlight);
+}
+
+.mm-primary {
+  color: var(--mm-on-accent);
+  background: var(--mm-accent);
+  border: 1px solid transparent;
+  border-radius: var(--mm-radius-control);
+  padding: 12px 16px;
+  font: 600 14px/1.5 var(--mm-font);
+  cursor: pointer;
+}
+.mm-primary:not(:disabled):hover { background: var(--mm-accent-hover); }
+.mm-primary:not(:disabled):active { background: var(--mm-accent-pressed); }
+.mm-primary:disabled {
+  background: var(--mm-raised);
+  color: var(--mm-text-muted);
+  cursor: not-allowed;
+}
+.mm-app :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--mm-accent);
+  outline-offset: 2px;
+}
+.mm-metric-value {
+  color: var(--mm-text);
+  font: 500 26px/1.2 var(--mm-mono);
+  font-variant-numeric: tabular-nums;
+}
+```
+
+IMPLEMENTATION HANDOFF FOR CLAUDE
+
+Apply this refinement to the existing MotionMan UI, following Master Design v1.1. Inspect the repository first; do not replace the application based on an unverified assumption. Keep the same pipeline as the CLI and use standard supported Streamlit components. Session state holds references and view selections, while completed run discovery comes from validated persistent artifacts. Keep inference logic out of UI components and use fresh tracker state per run.
+
+Implement one small usability pass before adding new gadgets: guided setup, collapsed advanced settings, persistent run context, clearer states and contextual export. Timebox the first pass to one focused day after repository verification; it is not a promise for all P1/P2 functionality. Then implement inspector details in P1, measurement surfaces in P2 and later views only with their owning backend phase. Re-estimate after the audit instead of silently expanding the original deadline.
+
+Follow the MotionMan overrides: lime accent, one green primary action per stage, compact application spacing, readable secondary text and an evidence-first workbench. Do not add a marketing hero, decorative gradients, authentication, billing, a React rewrite, or a custom streaming/video component for these usability changes. If a visual detail exceeds the timebox, keep clarity, context and working controls first.
+
+USABILITY ACCEPTANCE TESTS
+
+1. First run: a new user can select Try demo, run tracking, inspect an object and choose an available export without documentation or opening Advanced settings. Validate unsupported input before inference.
+2. Context: open run A, select a frame/track, open B and return to A. Restore valid A selections without carrying stale B IDs or metrics. No inspection or navigation action invokes the model.
+3. Settings isolation: view changes leave raw hashes unchanged; analysis changes require explicit recomputation; tracking changes require a new attempt. The current result always shows the settings that actually produced it.
+4. Honest state: test unknown frame totals, missing telemetry, invalid media, finalization failure and a refreshed UI. No fake percentage, invented zero, stale Complete badge or false-success export is allowed.
+5. Keyboard and responsiveness: complete source selection, run selection, frame inspection and export selection using only the keyboard. Check 320px, tablet and desktop widths; no clipped labels, horizontal overflow, invisible focus or hover-only essential actions.
+6. Available capability: Release A does not show working-looking controls for P3/P4/P6 features. Each exposed export corresponds to a real verified artifact or implemented renderer. A prototype labels illustrative data and does not imply actual model execution or benchmark results.
+
+This is an updated UI specification and styling starter, not a claim that the production app has been modified. The separate interactive design preview illustrates navigation and states with demo data. Use the actual repository and backend evidence when implementing or presenting measured results.
+
+REFERENCE CORRECTIONS INCLUDED
+
+- Replaced coral/ember branding with Motion Lime and a muted green tint.
+- Corrected the invalid five-digit badge color #1b1c1 to #1b1c1e.
+- Replaced descriptive CSS ranges such as 80-120px and 8-16px with actual length values.
+- Made badge radius and spacing rules consistent.
+- Replaced dim essential text with more readable grays.
+- Removed conflicting shadow recommendations and documented the colored-CTA override.
+- Removed marketing-only layout requirements from the application brief.

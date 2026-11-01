@@ -65,10 +65,11 @@ def test_success_prints_summary(monkeypatch, capsys):
         "processed_frames": 90,
         "timing": {"processing_wall_s": 4.5, "end_to_end_fps": 20.0},
         "device": {"used": "cpu"},
+        "run_dir": "data/runs/r_x",
     }
     monkeypatch.setattr(pipeline, "run", lambda config: report)
     assert cli.main(BASE) == 0
-    assert "done: 90 frames in 4.5 s (20.0 fps end to end, device cpu)" in capsys.readouterr().out
+    assert "done: 90 frames in 4.5 s (20.0 fps end to end, device cpu) → data/runs/r_x" in capsys.readouterr().out
 
 
 def test_cpu_never_checks_cuda():

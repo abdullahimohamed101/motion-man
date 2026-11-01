@@ -1,13 +1,18 @@
 # MotionMan
 
-A local Python command-line tool that reads one recorded video, detects and tracks objects with a
-pretrained YOLO11n model and ByteTrack, and writes three artifacts:
+A local Python tool that reads one recorded video, detects and tracks objects with a pretrained YOLO11n model
+and ByteTrack, and writes an identified, validated run:
 
 | File | Contents |
 |---|---|
 | `annotated.mp4` | The video with boxes, track IDs, class labels and motion trails. Same size and frame rate as the source; no audio. |
-| `tracks.jsonl` | One JSON record per processed frame: `frame_index`, `timestamp_s`, `objects` (track ID or null, class, confidence, `bbox_xyxy` in source pixels). |
+| `tracks.jsonl` | One v1.0 record per decoded frame: `run_id`, `source_frame_index`, `source_t_us` (integer microseconds), source size, and `objects` (observation ID, track ID or null, class, confidence, `bbox_xyxy` in source pixels). |
 | `report.json` | Run status, source metadata, settings, package versions, hardware, and measured timings. |
+| `runspec.json` | Every resolved setting: input hash, weights and class-map hashes, the installed ByteTrack config, device, thresholds, codec, limits, plus the git commit and dependency hash. |
+| `manifest.json` | Final status, the SHA-256 and size of every file, frame counts, and validation results. |
+
+Records written before v1.0 (`frame_index`, `timestamp_s`) are still readable through an adapter in
+`motionman/records.py`; they're never rewritten.
 
 It runs on CPU. CUDA is supported by the code but has not been verified (see Limitations). A small local web
 UI runs the same pipeline (see Local UI).
@@ -37,13 +42,27 @@ ffmpeg -i clips/raw/DiagonalCrosswalkYongeDundas.webm -map 0:v:0 -an -c:v libx26
 ## Run
 
 ```bash
+.venv/bin/python -m motionman --source clips/crosswalk.mp4 --device cpu
+```
+
+This is a **canonical run**. It takes an exclusive lock on the data folder, imports the video into
+`data/inputs/<sha256>/` (once per unique file), writes into `data/staging/<run_id>/`, then validates the
+decoded video, the records and the unchanged source. It hashes every file into `manifest.json` and only then
+renames the folder to `data/runs/<run_id>/`. A failed or interrupted attempt keeps its diagnostics in
+`staging/` and is never published.
+
+```bash
 .venv/bin/python -m motionman --source clips/crosswalk.mp4 --output-dir runs/demo --device cpu
 ```
 
+With `--output-dir` it's a **legacy run**: the MVP behaviour, writing in place into a new or empty folder,
+plus the same `manifest.json` and `runspec.json`. Legacy runs don't take the lock.
+
 | Flag | Default | Notes |
 |---|---|---|
-| `--source` | required | Constant-frame-rate video with even width and height |
-| `--output-dir` | required | Must be new or empty; existing results are never overwritten |
+| `--source` | required | Constant-frame-rate video with even width and height (see Input limits) |
+| `--output-dir` | none | Legacy mode: must be new or empty; existing results are never overwritten |
+| `--data-root` | `$MOTIONMAN_DATA_ROOT` or `./data` | Canonical mode data folder |
 | `--device` | `cpu` | `cpu`, `cuda`, or `auto` (falls back to CPU and logs it) |
 | `--model` | `yolo11n.pt` | Ultralytics weights |
 | `--imgsz` | `640` | Multiple of 32, from 32 to 4096 |
@@ -51,14 +70,28 @@ ffmpeg -i clips/raw/DiagonalCrosswalkYongeDundas.webm -map 0:v:0 -an -c:v libx26
 
 Detection thresholds are fixed and recorded in the report: confidence 0.25, IoU 0.7, FP32.
 
-Exit codes: `0` success, `1` tool failure (unexpected error, or the output check below failed), `2` invalid
-arguments, input, output directory, device or model, `130` interrupted. Those input problems are caught before
-the output directory is created, so you can fix the flag and rerun with the same `--output-dir`.
+Exit codes: `0` success, `1` tool failure (unexpected error, or output validation failed), `2` invalid
+arguments, input, output directory, device or model, `75` another run holds the data folder's lock (try again
+later), `130` interrupted. Most input problems are caught before any output folder exists; the few that only
+show up while decoding (see Input limits) fail the run inside `staging/`, where it is never published.
 
-If a run fails or is interrupted after it starts writing, the partial artifacts are kept and `report.json`
-says `error` or `interrupted`, with `processed_frames`, `jsonl_records` and `output_frames_decoded` showing what
-each file actually holds. A run only reports `success` if the written video decodes back to exactly
-`processed_frames` frames.
+A run only succeeds if decoding reached every frame the container reports, the written video decodes back to
+exactly the processed frames, the records are this run's, complete and in order, and the source didn't change
+during the run. If the container reports no frame count, completeness is recorded as `UNVERIFIED`, not passed. The manifest says `SUCCEEDED`, `FAILED`
+or `INTERRUPTED`; `report.json` keeps the MVP words (`success`, `error`, `interrupted`) and, for a partial run,
+`processed_frames`, `jsonl_records` and `output_frames_decoded` show what each file holds.
+
+### Input limits
+
+Exceeding a limit is a clear error, never a silent truncation:
+
+- Constant frame rate, verified from frame timestamps. A clip whose timestamps drift more than half a frame
+  from `index / fps` is rejected ("unsupported timebase"), even if it reports a plausible FPS. The first 240
+  frames are checked before inference; later frames are checked as they decode.
+- At most 512 MiB, 10 minutes, 1920×1080 and 36,000 frames, checked from the container before inference and
+  again while decoding when the container reports no count; at least 2 GiB free for outputs, checked before
+  writing, and the output size checked after.
+- A decoder that stops before the container's frame count (a truncated or damaged file) fails the run.
 
 ## Local UI
 
@@ -72,9 +105,11 @@ confidence threshold and press **Run tracking**. While it runs you see frames, p
 When it finishes you can switch between the Original and Tracked video, read the metrics from that run's
 `report.json`, and download the three artifacts.
 
-- Each run writes to a new `runs/ui/<UTC timestamp>/` folder, so nothing is overwritten.
+- UI runs are canonical runs under the same data folder and lock as the CLI. If a command-line run holds
+  the lock, the page says so and asks you to wait.
 - Tracking runs on a background thread, one run at a time, so clicking around the page never stops it.
   Switching views or downloading never re-runs inference.
+- A failed attempt is not offered as a result: no partial downloads. Its files stay in `data/staging/`.
 - Metrics show "Pending" until a run completes and "N/A" when a value can't be computed (for example
   latency on a run of 10 frames or fewer), never a placeholder zero. A failed run shows its error and a next
   step instead of the previous run's results.
@@ -87,7 +122,7 @@ When it finishes you can switch between the Original and Tracked video, read the
 scripts/check.sh
 ```
 
-This runs ruff and the pytest suite (127 tests, about three seconds). The tests use synthetic clips and a fake
+This runs ruff and the pytest suite (200 tests, about five seconds). The tests use synthetic clips and a fake
 tracker; the UI page is tested with Streamlit's AppTest. They block network access and fail if torch or
 Ultralytics gets imported, so they never need a GPU, the network, or the model weights.
 
@@ -96,14 +131,16 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 | Module | Responsibility |
 |---|---|
 | `cli.py` | Parse and validate flags, build `RunConfig`, map failures to exit codes |
-| `pipeline.py` | `run(config)`: the synchronous decode → track → trails → annotate → write loop, cleanup in `finally`, the report on every exit |
-| `video_io.py` | Open and validate the reader and writer (H.264, falling back to `mp4v`), yield frames, re-count output frames |
+| `pipeline.py` | `run(config)`: the synchronous decode → track → trails → annotate → write loop; canonical (staged, validated, published) and legacy modes; report and manifest on every exit |
+| `video_io.py` | Open and validate the reader (limits, constant-frame-rate timestamps) and writer (H.264, falling back to `mp4v`), yield frames, re-count output frames |
+| `records.py` | v1.0 frame records: writer, validation, and the reader that adapts pre-v1.0 output |
+| `store.py` | Content hashes, canonical JSON, run IDs, resolved RunSpec, data root, execution lock, manifest, atomic publish |
 | `tracking.py` | The only module that imports Ultralytics: one model instance per run, results converted to plain `Track` records; device resolution |
 | `render.py` | Bounded trails (≤30 points per ID, dropped after 60 unseen frames) and drawing on a frame copy |
 | `metrics.py` | Timing, latency percentiles, environment details, atomic `report.json` write |
 | `types.py` | Plain records shared by every module (`Track`, `Frame`, `VideoInfo`, `RunConfig`) |
 | `ui/app.py` | Streamlit page layout and state only; no inference code |
-| `ui/runner.py` | Background runs: one job per process, run folders, progress, errors mapped to a next step |
+| `ui/runner.py` | Background canonical runs: one job per process plus the data-root lock, progress, errors mapped to a next step |
 | `ui/view.py` | What the page shows for a given state ("Pending", "N/A", badges, progress text) |
 | `ui/style.py` | The few style rules the Streamlit theme config can't express |
 
