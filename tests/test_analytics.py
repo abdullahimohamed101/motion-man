@@ -199,3 +199,19 @@ def test_events_in_one_frame_are_ordered_by_rule_then_track():
 def test_same_input_gives_identical_events():
     path = down(400, 600) + hold((500, 600), 5) + down(600, 400) + hold((500, 400), 5)
     assert run([LINE, ZONE], path)[0] == run([LINE, ZONE], path)[0]
+
+
+def test_going_round_an_end_close_to_the_line_is_not_a_crossing():
+    """Review finding: the crossing test once reached back to a stale reference point, so a path that went round
+    B just below the line (in the deadband) and then away was joined into a crossing."""
+    short = regions.Region("l", "L", "line", (0.4, 0.5, 0.6, 0.5))  # A(400,500) → B(600,500)
+    path = hold((500, 480), 3) + [(590, 498.6), (610, 501.0), (640, 501.0), (640, 520)] + hold((640, 540), 6)
+    assert run([short], path)[0] == []
+
+
+def test_a_dwell_alert_needs_a_confirmed_visit_not_a_centre_hovering_at_the_edge():
+    """Review finding: raw edge-inclusive dwell once fired DWELL_THRESHOLD for a track that never entered."""
+    zone = regions.Region("kerb", "Kerb", "rect", ZONE.coords, dwell_threshold_s=1.0)
+    events, engine = run([zone], hold((300, 500), 3) + hold((401, 500), 57))  # 1 px inside the edge for 2.3 s
+    assert events == [] and engine.stats["kerb"].entries == 0
+    assert engine.stats["kerb"].visits_us  # it still counts as observed time inside for occupancy and stays

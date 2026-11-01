@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 import traceback
 from pathlib import Path
@@ -254,11 +255,14 @@ def bundle_main(argv: list[str]) -> int:
 
 
 def _window(text: str) -> tuple[int, int | None]:
+    start, _, end = text.partition(",")
     try:
-        start, _, end = text.partition(",")
-        return round(float(start) * 1e6), (round(float(end) * 1e6) if end.strip() else None)
+        values = [float(start)] + ([float(end)] if end.strip() else [])
     except ValueError:
-        raise argparse.ArgumentTypeError(f"expected START_S,END_S in seconds (END_S optional), got {text!r}") from None
+        values = []
+    if not values or not all(math.isfinite(v) for v in values):
+        raise argparse.ArgumentTypeError(f"expected START_S,END_S in seconds (END_S optional), got {text!r}")
+    return round(values[0] * 1e6), (round(values[1] * 1e6) if len(values) > 1 else None)
 
 
 def analyze_main(argv: list[str]) -> int:
@@ -276,6 +280,9 @@ def analyze_main(argv: list[str]) -> int:
     for out in (a.csv, a.json):
         if out is not None and out.exists():
             print(f"error: {out} already exists; choose a new file", file=sys.stderr)
+            return EXIT_USAGE
+        if out is not None and not out.parent.is_dir():  # checked before analyzing, not after publishing
+            print(f"error: folder {out.parent} doesn't exist", file=sys.stderr)
             return EXIT_USAGE
     root = store.data_root(a.data_root)
     try:

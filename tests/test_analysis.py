@@ -6,6 +6,7 @@ The fake tracker moves one object right by 1 px per frame (centre x = frame + 5,
 
 import dataclasses
 import json
+import shutil
 import time
 
 import pytest
@@ -272,3 +273,63 @@ def test_cli_analyze_refuses_bad_input_with_exit_2(run, root, tmp_path, capsys):
     assert cli.main([*args, "--run", run.run_id, "--regions", str(good), "--csv", str(taken)]) == 2
     assert taken.read_text() == "keep me"
     assert "different video" in capsys.readouterr().err
+
+
+# --- review fixes ---
+
+
+def test_records_changed_after_verification_are_refused(run, root):
+    with run.records_path.open("ab") as f:
+        f.write(b"\n")  # any change, even one the parser would skip
+    with pytest.raises(analysis.AnalysisError, match="changed after the run was verified"):
+        analysis.analyze(run, region_set(run, LINE), root)
+    assert list((root.path / "analyses" / run.run_id).iterdir()) == []
+
+
+def test_a_manifest_that_leaves_out_a_result_file_is_not_intact(run, root):
+    result = analysis.analyze(run, region_set(run, LINE), root)
+    manifest = json.loads((result.folder / "manifest.json").read_text())
+    manifest["artifacts"] = [a for a in manifest["artifacts"] if a["path"] != "heatmap.json"]
+    (result.folder / "manifest.json").write_text(json.dumps(manifest))
+    assert analysis.list_analyses(root, run.run_id) == []
+    assert not analysis.analyze(run, region_set(run, LINE), root).reused  # rebuilt, not trusted
+
+
+def test_an_identical_analysis_published_meanwhile_is_reused_not_an_error(run, root, monkeypatch, tmp_path):
+    rs = region_set(run, LINE)
+    first = analysis.analyze(run, rs, root)
+    backup = tmp_path / "backup"
+    shutil.copytree(first.folder, backup)
+    shutil.rmtree(first.folder)
+
+    def race(tmp, target):  # another tab finishes the same analysis between our check and our rename
+        shutil.copytree(backup, target)
+        raise OSError(66, "Directory not empty")
+
+    monkeypatch.setattr(analysis, "_publish", race)
+    again = analysis.analyze(run, rs, root)
+    assert again.reused and again.analysis_id == first.analysis_id
+    assert [p.name for p in again.folder.parent.iterdir()] == [first.analysis_id]  # no temp folder left
+
+
+def test_a_zone_too_thin_to_be_stably_inside_is_refused(run, root):
+    thin = {**ZONE, "box": [0.2, 0.0, 0.25, 0.1]}  # 3.2 × 4.8 px in the 64×48 test clip
+    with pytest.raises(analysis.AnalysisError, match="at least 6 px"):
+        analysis.analyze(run, region_set(run, thin), root)
+
+
+def test_the_spec_says_gaps_are_never_interpolated(run, root):
+    assert analysis.analyze(run, region_set(run, LINE), root).spec["interpolation"] == "none"
+
+
+def test_cli_refuses_a_non_finite_window_and_a_missing_export_folder(run, root, tmp_path, capsys):
+    from motionman import cli
+
+    good = write_regions(tmp_path, run, LINE)
+    args = ["analyze", "--run", run.run_id, "--regions", str(good), "--data-root", str(root.path)]
+    with pytest.raises(SystemExit) as e:
+        cli.main([*args, "--window", "inf,"])
+    assert e.value.code == 2
+    assert cli.main([*args, "--csv", str(tmp_path / "nope" / "events.csv")]) == 2
+    assert "doesn't exist" in capsys.readouterr().err
+    assert not (root.path / "analyses").exists()  # refused before anything was analyzed

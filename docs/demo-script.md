@@ -54,8 +54,8 @@ scripts/ui.sh                              # http://localhost:8501
 5. Open **Events & zones**, pick the saved set **Crosswalk demo** (a person-only line across the road and the far
    kerb). It reads **Up to date**: the analysis from the command line is reused, not rebuilt. Click the
    **First crossing** bookmark, then **Show in Inspect**. Say: *"Every event points to the frame that confirmed
-   it. Analysis reads saved records only; jitter at the line, a missed frame or someone leaving the picture never
-   becomes a crossing."*
+   it. Analysis reads saved records only; jitter inside the deadband or a missed frame never becomes a crossing,
+   and the README lists the cases that still can, like a box changing shape."*
 
 ## 5. Measurement tools (45 s)
 ```bash
@@ -68,7 +68,7 @@ Say: *"Fresh trials with median and range, power state recorded; compare names a
 the bundle is allowlisted, redacted and re-verifiable."*
 
 ## 6. Close (15 s)
-Say: *"452 offline tests run in CI on every PR. The limits are written down: track IDs aren't counts, there
+Say: *"462 offline tests run in CI on every PR. The limits are written down: track IDs aren't counts, there
 are no accuracy claims without labelled data, and the CUDA path is unverified here."*
 
 Then stop the UI with Ctrl-C in its terminal.

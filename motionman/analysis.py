@@ -10,6 +10,7 @@ same run, regions and settings always give the same id and the same bytes.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -24,7 +25,7 @@ from motionman import analytics, records, regions, runs, store
 from motionman.types import MotionManError
 
 SCHEMA_VERSION = "1.0"
-IMPL_VERSION = 1  # bump when a rule, an output field or its meaning changes
+IMPL_VERSION = 2  # bump when a rule, an output field or its meaning changes (2: pair crossing test, dwell gate)
 REFERENCE_POINT = "bbox_center"
 HEATMAP_GRID = (256, 144)
 SPEC, EVENTS, SUMMARY, MANIFEST = "analysis_spec.json", "events.jsonl", "summary.json", "manifest.json"
@@ -73,6 +74,13 @@ def build_spec(
     start, end = window_us
     if start < 0 or (end is not None and end <= start):
         raise AnalysisError(f"the analysis window must have 0 ≤ start < end, got {start}–{end} µs")
+    deadband = (params or analytics.DEFAULT_PARAMS).deadband_px
+    for r in region_set.regions:
+        if r.kind == "rect":
+            x1, y1, x2, y2 = r.to_px(run.width, run.height)
+            if min(x2 - x1, y2 - y1) < 2 * deadband:  # nothing could ever be stably inside it
+                size, need = f"{x2 - x1:.0f}×{y2 - y1:.0f} px", f"{2 * deadband:.0f} px wide and tall"
+                raise AnalysisError(f"region {r.id} is {size}; a zone needs to be at least {need} (twice the deadband)")
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": "analysis",
@@ -84,6 +92,7 @@ def build_spec(
         "region_set": region_set.to_dict(),
         "region_set_sha256": region_set.sha256,
         "reference_point": REFERENCE_POINT,
+        "interpolation": "none",  # MD§11: gaps are never filled; every interval is observed
         "window_us": [start, end],
         "params": (params or analytics.DEFAULT_PARAMS).to_dict(),
         "heatmap_grid": list(HEATMAP_GRID),
@@ -117,7 +126,12 @@ def analyze(
     tmp.mkdir()
     try:
         summary = _build(run, region_set, spec, aid, tmp)
-        _publish(tmp, target)
+        try:
+            _publish(tmp, target)
+        except OSError:
+            if _intact(target, aid):  # an identical analysis was published meanwhile (another tab or process)
+                return Result(aid, target, spec, _read_json(target / SUMMARY), reused=True)
+            raise
     finally:
         shutil.rmtree(tmp, ignore_errors=True)  # a failed or interrupted build leaves nothing behind (INV-6)
     return Result(aid, target, spec, summary, reused=False)
@@ -185,8 +199,13 @@ def _build(run: runs.OpenRun, region_set: regions.RegionSet, spec: dict, aid: st
     ordinals: dict[str, int] = {}
     counts: dict[str, int] = {}
     firsts: dict[tuple[str, str], dict] = {}  # first event of each (rule, type), for bookmarks
-    with (out / EVENTS).open("w", encoding="utf-8") as f:
-        for rec in records.read_records(run.records_path):
+    digest = hashlib.sha256()  # re-hashed while streaming: the records must still be the ones the run verified
+    with (out / EVENTS).open("w", encoding="utf-8") as f, run.records_path.open("rb") as src:
+        for line_no, line in enumerate(src, start=1):
+            digest.update(line)
+            if not line.strip():
+                continue
+            rec = records.parse_line(line, f"{run.records_path.name}:{line_no}")
             t = rec["source_t_us"]
             if t < start or (end is not None and t >= end):
                 continue
@@ -207,6 +226,8 @@ def _build(run: runs.OpenRun, region_set: regions.RegionSet, spec: dict, aid: st
             frames += 1
             first = rec["source_frame_index"] if first is None else first
             last = rec["source_frame_index"]
+    if f"sha256:{digest.hexdigest()}" != run.records_sha256:
+        raise AnalysisError(f"{run.records_path.name} changed after the run was verified; reopen the run")
     if not frames:
         raise AnalysisError("the analysis window contains no frames of this run")
     close = records.source_t_us(last + 1, run.fps)  # the last frame lasts until the next would have started
@@ -288,6 +309,8 @@ def _intact(folder: Path, aid: str) -> bool:
         manifest = _read_json(folder / MANIFEST)
         if manifest.get("analysis_id") != aid or manifest.get("status") != "SUCCEEDED":
             return False
+        if {a["path"] for a in manifest["artifacts"]} != {SPEC, EVENTS, SUMMARY, HEATMAP}:
+            return False  # every result file must be listed, so none can go missing unnoticed
         for a in manifest["artifacts"]:
             path = folder / a["path"]
             if Path(a["path"]).name != a["path"] or store.sha256_file(path) != a["sha256"]:

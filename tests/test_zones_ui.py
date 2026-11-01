@@ -217,3 +217,36 @@ def test_motion_arrows_toggle_draws_from_saved_records_only(world):
     at.toggle(key=f"arrows-{world['a']}").set_value(True)
     at = render(at)
     assert at.toggle(key=f"arrows-{world['a']}").value and world["fake"].starts == []
+
+
+# --- review fixes ---
+
+
+def load_saved(at):
+    set_key = next(s.key for s in at.selectbox if s.key and s.key.startswith("zset-"))
+    at.selectbox(key=set_key).select(next(o for o in at.selectbox(key=set_key).options if o != "New set"))
+    return render(at)
+
+
+def test_a_loaded_set_can_be_edited_and_the_edit_sticks(world):
+    at = zones(None, world)
+    at = add_region(at, "Door", coords=(18.75, 0, 18.75, 100))
+    at.button(key="zsave").click()
+    at = render(at)
+    fresh = load_saved(zones(None, world))
+    fresh = add_region(fresh, "Pen", kind="Rectangle", coords=(21.875, 0, 46.875, 62.5))
+    assert [r["id"] for r in draft(fresh)["regions"]] == ["door", "pen"]  # was reloaded back to ["door"] before
+    assert any(c.value.startswith("Edited from") for c in fresh.caption)
+    fresh.button(key="zrm-0").click()
+    fresh = render(fresh)
+    assert [r["id"] for r in draft(fresh)["regions"]] == ["pen"]
+
+
+def test_export_drops_the_events_once_the_regions_no_longer_match(world):
+    at = analyzed(world)
+    labels = lambda a: [b.label for b in a.get("download_button")]  # noqa: E731
+    assert "Events · one row per event (CSV)" in labels(at)
+    at.button(key="zrm-0").click()
+    at = render(at)
+    assert next(b for b in at.button if b.key == "zanalyze").label == "Analyze"
+    assert not any(label.startswith("Events") for label in labels(at))

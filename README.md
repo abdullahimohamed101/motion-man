@@ -212,10 +212,12 @@ A line has a direction, A → B. Its positive side is on your left when you face
 
 **Rules** (MD§10; all persisted in each analysis): every rule uses the bounding-box centre. A centre counts as on one
 side only when it is at least 3 source px from the boundary, and a change counts once it has held for 100 ms and 2
-observations. A crossing needs the motion to actually cross the finite line; touching it, passing beyond an end or
-jittering is not a crossing, and a genuine return crossing counts again. A track missing from even one frame loses
+observations. A crossing needs the motion between two consecutive observations to cross the finite line; touching
+it, going round an end or jittering inside the deadband is not a crossing, and a genuine return crossing counts again
+(a box that changes shape can still move its centre across: see Limitations). A track missing from even one frame loses
 its state: reappearing is not an entry, disappearing is not an exit, sightings either side of a gap are never a
-crossing, and observed dwell never spans a gap. Detections without a track ID are counted, never used in rules.
+crossing, and observed dwell never spans a gap. Detections without a track ID are counted, never used in rules. A dwell alert needs a confirmed (or established) visit; a zone must be
+at least twice the deadband wide and tall. Gaps are never interpolated.
 
 **Outputs** in `data/analyses/<run_id>/<analysis_id>/`: `analysis_spec.json` (every input and setting; its hash is the
 analysis ID), `events.jsonl` (stable event IDs, confirming frame and time, evidence interval), `summary.json`
@@ -224,7 +226,7 @@ criterion), `heatmap.json` (object-µs per cell on a 256×144 grid) and `manifes
 Editing a region makes a new analysis and keeps the old one.
 
 **Measured on the crosswalk clip** (run `r_20261101T194556Z_ed3f02`, the region set above): 1,356 frames analyzed in
-0.46 s; 22 crossings (15 towards the camera, 7 away) by 21 tracks; far kerb 7 entries, 4 exits, peak 9 people at
+0.37–0.46 s; 22 crossings (15 towards the camera, 7 away) by 21 tracks; far kerb 7 entries, 4 exits, peak 9 people at
 once, 5 occupancy alerts, 2 dwell alerts. Checked against the video frame by frame: of 6 sampled crossings, 4 are
 clearly genuine and 2 happen at the frame's right edge, where the person is partly cut off; the 2 sampled entries
 look right. One track crosses twice 0.33 s apart: the person stands still while their box's bottom grows and then
@@ -249,7 +251,7 @@ from source time; under 10 px/s is not drawn. Never a real-world speed.
 scripts/check.sh
 ```
 
-This runs ruff and the pytest suite (452 tests, about 30 seconds). The tests use synthetic clips and a fake
+This runs ruff and the pytest suite (462 tests, about 35 seconds). The tests use synthetic clips and a fake
 tracker; the UI page is tested with Streamlit's AppTest. They block network access and fail if torch or
 Ultralytics gets imported, so they never need a GPU, the network, or the model weights.
 

@@ -8,6 +8,7 @@ results, and an identical analysis is reused instead of rebuilt.
 from __future__ import annotations
 
 import functools
+import math
 import re
 
 import streamlit as st
@@ -97,12 +98,16 @@ def editor(run, derived, root, input_id: str, draft: dict) -> None:
     choice = st.selectbox("Region set", [NEW_SET, *saved], key=f"zset-{input_id[7:23]}",
                           format_func=lambda k: "New set" if k == NEW_SET else saved[k].name)  # fmt: skip
     name_key = f"zsetname-{input_id[7:23]}"
-    if choice != NEW_SET and draft.get("loaded") != choice:  # load a saved set into the draft once
-        draft.update(regions=[r.to_dict() for r in saved[choice].regions], name=saved[choice].name, loaded=choice)
-        st.session_state[name_key] = saved[choice].name  # the field renders below, so it can still be set
-    if choice == NEW_SET and draft.get("loaded"):
-        draft.update(regions=[], name="Regions", loaded=None)
-        st.session_state[name_key] = "Regions"
+    # Load only when the picker itself changes, so edits made after loading a set are kept (review finding).
+    if choice != draft.get("choice"):
+        if choice == NEW_SET:
+            draft.update(regions=[], name="Regions")
+        else:
+            draft.update(regions=[r.to_dict() for r in saved[choice].regions], name=saved[choice].name)
+        draft["choice"] = choice
+        st.session_state[name_key] = draft["name"]  # the field renders below, so it can still be set
+    if choice != NEW_SET and draft["regions"] != [r.to_dict() for r in saved[choice].regions]:
+        st.caption(f"Edited from “{saved[choice].name}”. Save regions to keep the changes as a set.")
     for i, r in enumerate(draft["regions"]):
         text, remove = st.columns([5, 1], vertical_alignment="center")
         classes = ", ".join(r["classes"]) if r["classes"] else "all classes"
@@ -153,19 +158,18 @@ def _add(input_id: str, draft: dict) -> None:
         st.session_state["zerror"] = str(e)
         return
     draft["regions"].append(body)
-    draft["loaded"] = None
     st.session_state.pop("zerror", None)
     st.session_state["zname"] = ""
 
 
 def _remove(draft: dict, i: int) -> None:
     draft["regions"].pop(i)
-    draft["loaded"] = None
 
 
 def analyze_bar(run, derived, frames, root, input_id: str, draft: dict) -> None:
     """Analyze is the tab's primary action only while the drawn regions have no up-to-date analysis."""
     if not draft["regions"]:
+        st.session_state.pop(f"zresult-{run.run_id}", None)
         return
     try:
         rs = as_set(input_id, draft["name"], draft["regions"])
@@ -174,6 +178,8 @@ def analyze_bar(run, derived, frames, root, input_id: str, draft: dict) -> None:
         st.error(str(e), icon=":material/error:")
         return
     done = aid in analysis.list_analyses(root, run.run_id)
+    if not done:
+        st.session_state.pop(f"zresult-{run.run_id}", None)  # Export must not offer results for other regions
     with st.container(horizontal=True):
         clicked = st.button("Up to date" if done else "Analyze", type="secondary" if done else "primary",
                             icon=":material/check:" if done else ":material/insights:", key="zanalyze",
@@ -270,7 +276,7 @@ def event_filter(events: list[dict], names: dict[str, str], run, aid: str) -> vi
                             key=f"zf-class-{aid}", placeholder="All")  # fmt: skip
     track = d.number_input("Track #", min_value=0, value=None, step=1, key=f"zf-track-{aid}",
                            placeholder="Any")  # fmt: skip
-    end = max(1.0, round(run.summary.frames / run.fps, 1)) if run.summary.frames else 1.0
+    end = max(1.0, math.ceil(run.summary.frames / run.fps * 10) / 10) if run.summary.frames else 1.0  # round up
     window = st.slider("Time (s)", 0.0, end, (0.0, end), step=0.1, key=f"zf-time-{aid}")
     return view.EventFilter(tuple(rules), tuple(types), tuple(classes), int(track) if track is not None else None,
                             None if window == (0.0, end) else window)  # fmt: skip

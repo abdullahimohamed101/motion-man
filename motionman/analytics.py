@@ -145,6 +145,7 @@ class _Track:
     stable: int | str | None = None  # line: POSITIVE/NEGATIVE; rect: INSIDE/OUTSIDE/UNKNOWN
     pending: _Pending | None = None
     ref: tuple[float, float, int] | None = None  # line: last observation strictly on the stable side (x, y, t)
+    raw: int = 0  # line: raw side (+1, -1, or 0 exactly on the line) at the last observation
     inside: bool = False  # rect: raw membership at the last observation
     last_old_t: int = 0  # rect: last time stably in the current state (an entry/exit's evidence start)
     visit_us: int = 0  # rect: observed dwell of the current visit
@@ -238,17 +239,20 @@ class Engine:
             side = raw if abs(d) >= db else None
             st = tracks.get(tid)
             if not self._continues(st, frame, t_us):
-                tracks[tid] = st = _Track(frame, t_us, o.x, o.y, stable=side)  # first sighting: state, no event
+                tracks[tid] = st = _Track(frame, t_us, o.x, o.y, stable=side, raw=raw)  # first sighting, no event
                 st.ref = (o.x, o.y, t_us) if side is not None else None
                 continue
             if st.stable is None:
                 st.stable = side
             else:
                 if st.pending is None:
-                    # From the last point strictly on the stable side, so a centre landing exactly on the line
-                    # (where neither neighbouring pair "properly" crosses) still counts. Normally ref = previous.
-                    if raw == -st.stable and st.ref is not None and g.crosses(st.ref[0], st.ref[1], o.x, o.y):
-                        st.pending = _Pending(-st.stable, st.ref[2])
+                    # The motion segment is the observation pair, previous → current. Only when the previous centre
+                    # sat exactly on the line (where neither neighbouring pair "properly" crosses) does it start at
+                    # the last point strictly on the stable side instead; a stale reference point could otherwise
+                    # join two sightings that went round an endpoint into a crossing.
+                    start = (st.x, st.y, st.t) if st.raw != 0 else st.ref
+                    if raw == -st.stable and start is not None and g.crosses(start[0], start[1], o.x, o.y):
+                        st.pending = _Pending(-st.stable, start[2])
                     elif side == -st.stable:
                         st.stable = side  # went round an endpoint: new side, no crossing
                 if st.pending is not None:
@@ -261,7 +265,7 @@ class Engine:
                         st.stable, st.pending = p.to, None  # rearmed: the next crossing starts from the new side
             if st.stable is not None and raw == st.stable:
                 st.ref = (o.x, o.y, t_us)
-            st.frame, st.t, st.x, st.y = frame, t_us, o.x, o.y
+            st.frame, st.t, st.x, st.y, st.raw = frame, t_us, o.x, o.y, raw
         return out
 
     def _zone(self, g: Geometry, frame: int, t_us: int, present: dict[int, Obs], unassigned: list[Obs]) -> list[Event]:
@@ -279,7 +283,8 @@ class Engine:
             if raw and st.inside:  # an observed interval with both ends inside counts towards dwell
                 st.visit_start = st.t if st.visit_start is None else st.visit_start
                 st.visit_us += t_us - st.t
-                if g.dwell_us is not None and not st.dwell_fired and st.visit_us >= g.dwell_us:
+                # The alert needs a confirmed (or established) visit, not a centre hovering just inside the edge.
+                if g.dwell_us is not None and not st.dwell_fired and st.stable == INSIDE and st.visit_us >= g.dwell_us:
                     st.dwell_fired = True
                     out.append(Event(DWELL_THRESHOLD, g.id, tid, o.class_name, None, frame, t_us,
                                      (st.visit_start, t_us), st.visit_us))  # fmt: skip
