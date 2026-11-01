@@ -36,8 +36,10 @@ class RunSummary:
     def label(self) -> str:
         name = self.display_name or "unknown source"
         when = (self.started_at or "")[:16].replace("T", " ")
+        # Selectboxes match choices by label, so two runs of one clip in the same minute need a distinct tail.
+        tag = self.run_id.removeprefix("legacy:") if self.kind == "legacy" else self.run_id.rsplit("_", 1)[-1]
         suffix = " · Legacy (unverified)" if self.kind == "legacy" else ""
-        return f"{name} · {when}{suffix}" if when else f"{name}{suffix}"
+        return " · ".join(x for x in (name, when, tag) if x) + suffix
 
 
 @dataclass(frozen=True)

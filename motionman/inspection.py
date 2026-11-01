@@ -88,6 +88,7 @@ class Derived:
     tracks: dict[int, TrackSummary]
     unassigned_observations: int  # detections without a track ID; never folded into a track
     folder: Path
+    records_sha256: str  # hash of the records file this was built from (also for legacy runs)
 
 
 def load_or_build(records_path: Path, root: store.DataRoot, records_sha256: str | None = None) -> Derived:
@@ -132,7 +133,7 @@ def _build(records_path: Path, records_sha: str, folder: Path) -> Derived:
         folder / "tracks.json",
         {**meta, "unassigned_observations": unassigned, "tracks": [asdict(t) for t in tracks.values()]},
     )
-    return Derived(RecordIndex(records_path, offsets, count), tracks, unassigned, folder)
+    return Derived(RecordIndex(records_path, offsets, count), tracks, unassigned, folder, records_sha)
 
 
 def _load(folder: Path, records_sha: str, records_path: Path) -> Derived | None:
@@ -156,6 +157,7 @@ def _load(folder: Path, records_sha: str, records_path: Path) -> Derived | None:
         summaries,
         tracks.get("unassigned_observations", 0),
         folder,
+        records_sha,
     )
 
 

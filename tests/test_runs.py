@@ -109,5 +109,9 @@ def test_legacy_outputs_are_listed_read_only_and_unverified(clip, root, tmp_path
 
 
 def test_labels_read_well():
-    s = runs.RunSummary("r_x", "canonical", None, "crosswalk.mp4", "2026-11-01T06:22:22+00:00", 1356)
-    assert s.label == "crosswalk.mp4 · 2026-11-01 06:22"
+    s = runs.RunSummary(
+        "r_20261101T062222Z_2ad4d6", "canonical", None, "crosswalk.mp4", "2026-11-01T06:22:22+00:00", 1356
+    )
+    assert s.label == "crosswalk.mp4 · 2026-11-01 06:22 · 2ad4d6"
+    old = runs.RunSummary("legacy:demo", "legacy", None, "demo.mp4", None, 20)
+    assert old.label == "demo.mp4 · demo · Legacy (unverified)"
