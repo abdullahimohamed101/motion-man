@@ -56,7 +56,7 @@ cancel buttons, run deletion.
    artifact, tampered source, staging never listed.
 2. [x] `motionman/inspection.py` part 1: derived index + track summaries (D3), random record access by frame.
    Tests incl. stale index rebuild, gaps/intervals on synthetic records.
-3. [ ] `FrameSource` (D1): exact frames with timestamp verification, forward steps, LRU 8. Tests with fakes;
+3. [x] `FrameSource` (D1): exact frames with timestamp verification, forward steps, LRU 8. Tests with fakes;
    real-clip script comparing seeked frames with sequential decode, plus step timings.
 4. [ ] Still rendering with view options (labels, trail length/opacity from prior records, spotlight, class
    filter) and evidence PNG export (D6). Tests: PNG equals the rendered still; overlays equal the records.
@@ -95,3 +95,4 @@ no-hidden-inference behaviour.
   verify-on-open 36 ms, index 2 ms, 701 track summaries 24 ms.
 - 2026-11-01 steps 0–1: ffmpeg added to the CI apt step (verified on the PR, P1-1). runs.py: list_runs (SUCCEEDED manifests only, newest first; legacy MVP folders read-only), open_run (re-hash every artifact + managed source, runspec hash checks; RunError on mismatch). Manifest times now ms precision (two runs in one second sorted arbitrarily — caught by test). 11 tests, 225 total. Real: 19 runs listed in 9 ms (3 canonical, 16 legacy); baseline opened + verified in 87 ms; legacy demo-recording opens with source found, unverified. UI note: hide legacy behind a toggle (16 mostly test runs).
 - 2026-11-01 step 2: motionman/inspection.py (renamed from inspect.py: it shadowed the stdlib module). One streaming pass builds the sparse index (offset per 128 records) and TrackSummary per ID (intervals, gaps, class counts, confidence p10/p50/p90); null IDs counted separately, never a track; cache in data/derived/<sha256(records_sha, impl_version)>/, reused, rebuilt when stale or corrupt; records.parse_line shared with read_records. 8 tests, 233 total. Real baseline: build 144 ms, cached load 5 ms, random access 0.13 ms/frame (matches sequential); 701 tracks, 475 seen < 1 s; #10 traffic light observed in all 1356 frames.
+- 2026-11-01 step 3: FrameSource in inspection.py (one open reader; forward moves ≤48 frames decode forward, others seek; timestamp checked on every decoded frame → FrameError and reader closed on mismatch or decode failure; LRU 8). 7 tests (fake capture incl. a seek that lands one frame late; real clip vs sequential decode). Real 1080p crosswalk via the managed source: 13 requests in mixed order all byte-exact; one-frame steps median 1.0 ms (max 8.4); cache hits ~0.5 ms; jumps 30–426 ms (keyframes every ~10 s). 240 tests. Feeds P1-3 and P1-8.

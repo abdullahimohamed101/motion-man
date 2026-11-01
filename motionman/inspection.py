@@ -8,11 +8,13 @@ file's hash and this implementation's version, so a changed records file can nev
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from motionman import records, store
@@ -186,3 +188,71 @@ def _summarize(track_id: int, rows: list[tuple[int, int, str, float]]) -> TrackS
         confidence_p50=round(float(np.percentile(conf, 50)), 4),
         confidence_p90=round(float(np.percentile(conf, 90)), 4),
     )
+
+
+# --- Exact source frames (plan P1 D1) -------------------------------------------------------------------------
+
+FORWARD_STEP_LIMIT = 48  # decode forward instead of seeking for jumps up to this many frames
+CACHE_FRAMES = 8  # LRU of decoded frames (spec A§6); no full-video cache
+
+
+class FrameError(InspectError):
+    """A requested source frame can't be shown exactly."""
+
+
+class FrameSource:
+    """Exact frames from a run's source video, for the inspector's still view.
+
+    Seeks are byte-exact but slow on sparse-keyframe clips (plan P1 findings), so one reader stays open and short
+    forward moves decode forward. Every decoded frame's timestamp is checked against ``index / fps``; if it
+    doesn't match, this raises instead of returning a frame that might be the wrong one.
+    """
+
+    def __init__(self, path: Path, fps: float, frame_count: int, *, cache_size: int = CACHE_FRAMES,
+                 open_capture=None) -> None:  # fmt: skip
+        self.path, self.fps, self.frame_count, self.cache_size = path, fps, frame_count, cache_size
+        self._open = open_capture or cv2.VideoCapture
+        self._cap = None
+        self._next = 0  # the frame the next read() will return
+        self._cache: OrderedDict[int, np.ndarray] = OrderedDict()
+        self.seeks = self.decodes = 0  # counters for tests and timing reports
+
+    def frame(self, index: int) -> np.ndarray:
+        if not 0 <= index < self.frame_count:
+            raise FrameError(f"frame {index} is outside this run's 0..{self.frame_count - 1}")
+        if index in self._cache:
+            self._cache.move_to_end(index)
+            return self._cache[index]
+        if self._cap is None:
+            self._cap = self._open(str(self.path))
+            if not self._cap.isOpened():
+                self._cap = None
+                raise FrameError(f"cannot open the source video {self.path}")
+            self._next = 0
+        if index < self._next or index - self._next > FORWARD_STEP_LIMIT:
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+            self._next = index
+            self.seeks += 1
+        image = None
+        while self._next <= index:
+            ok, decoded = self._cap.read()
+            if not ok:
+                self.close()  # position unknown now; reopen on the next request
+                raise FrameError(f"couldn't decode frame {self._next} of the source")
+            self.decodes += 1
+            pos_ms = self._cap.get(cv2.CAP_PROP_POS_MSEC)
+            if abs(pos_ms - self._next * 1000.0 / self.fps) * self.fps / 1000.0 > 0.5:
+                self.close()
+                raise FrameError(f"Couldn't position frame {index} exactly (decoder returned {pos_ms:.1f} ms)")
+            if self._next == index:
+                image = decoded
+            self._next += 1
+        self._cache[index] = image
+        while len(self._cache) > self.cache_size:
+            self._cache.popitem(last=False)
+        return image
+
+    def close(self) -> None:
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None

@@ -9,16 +9,16 @@ Updated: 2026-11-01
   resolved RunSpec, CFR + limits, data root with staging → validate → manifest → atomic publish, lease, UI on the
   data root. Merged as PR #6 (CI: 212 passed, 2 real-media tests skipped: no ffmpeg on the runner).
 - Baseline: `data/runs/r_20261101T062222Z_2ad4d6` at clean commit `8f9ec5e` (1,356 frames, 44.67 fps, mains).
-- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–2 done). Branch `feat/p1-inspect` (local).
+- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–3 done). Branch `feat/p1-inspect` (local).
 - Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored.
 
 ## Next step (exact)
-1. P1 step 3: `FrameSource` in `motionman/inspection.py`: exact frames from the managed source, timestamp check on every
-   frame, forward steps ≤ 48 frames, LRU 8; fake tests + real script vs sequential decode with step timings.
+1. P1 step 4: still rendering from records with view options (labels, trail length/opacity from prior records, spotlight,
+   class filter) + evidence PNG export with export.json (D6); tests: PNG == still, overlays == records.
 
 ## Blocked / needs owner
 - none
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 233 passed; CI green on main.
+- `scripts/check.sh`: ruff ok, 240 passed; CI green on main.
 - Benchmarks (CLI, crosswalk, M5 Pro CPU): median 44.29 fps on mains, 32.14 on battery (README tables).
