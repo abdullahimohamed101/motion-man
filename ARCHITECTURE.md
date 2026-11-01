@@ -1,5 +1,5 @@
 # Architecture
-Status: CLI complete on synthetic clips; integration tests (step 6) and real-clip demo (step 7) remain. Contracts live in `docs/spec.md` §4–§8.
+Status: CLI complete and tested on synthetic clips; real-clip demo and benchmarks (plan step 7) remain. Contracts live in `docs/spec.md` §4–§8.
 
 ## Flow (one synchronous loop, spec §4)
 ```text
@@ -26,6 +26,6 @@ OpenCV-written clip: no weights, network or GPU (INV-8).
 ## Layout
 ```text
 motionman/  __init__ __main__ cli pipeline video_io tracking render metrics types
-tests/      unit tests per module + test_pipeline (synthetic video, fake tracker)
+tests/      unit tests per module + test_pipeline (synthetic video, fake tracker); conftest enforces INV-8
 scripts/    check.sh
 ```

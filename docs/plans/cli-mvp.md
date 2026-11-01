@@ -27,14 +27,14 @@ on this Mac), anything in §2.
 4. [x] JSONL streaming + `metrics.py` + `report.json` (wall time, e2e FPS, p50/p95 after warmup, versions).
 5. [x] `cli.py` flags + validation + clear failures and exit codes; `finally` cleanup; interrupted/error status;
    post-run frame-count check.
-6. [ ] Tests: record conversion, missing IDs, empty frames, trail bounds/expiry, timing math, output frame
+6. [x] Tests: record conversion, missing IDs, empty frames, trail bounds/expiry, timing math, output frame
    count, invalid input, cleanup on failure. Synthetic clip + fake tracker. `scripts/check.sh`.
 7. [ ] Real-model demo + visual review; 3 benchmark runs; README with real numbers and hardware.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| A1 | Offline tests pass | `scripts/check.sh` | |
+| A1 | Offline tests pass | `scripts/check.sh` | PASS: ruff ok, 71 passed in 0.45 s; conftest blocks network and fails if torch/ultralytics load |
 | A2 | Demo run exits 0, 3 artifacts | `python -m motionman --source <clip> --output-dir runs/a2 --device cpu; ls runs/a2` | |
 | A3 | JSONL lines == processed_frames == decoded output frames | `wc -l runs/a2/tracks.jsonl`; report fields | |
 | A4 | Output keeps source dims + FPS | `ffprobe` source vs `annotated.mp4` | |
@@ -56,3 +56,4 @@ on this Mac), anything in §2.
 - 2026-10-31 step 3: `Trails` (≤30 pts, dropped at 60 unseen frames, none for null IDs); drawn only for objects visible this frame. tests/test_render.py 9 passed. Pan clip: 90/90 frames, trails visible in box colours.
 - 2026-10-31 step 4: JSONL streamed, metrics.py, report.json (atomic write, written on every exit once the dir is ours). `half=False` passed so FP32 is true; CUDA sync in Tracker.update (UNVERIFIED (env)). 26 tests pass, torch not imported. Pan clip: 90 = jsonl = decoded, status success. SIGINT mid-loop (360-frame clip): interrupted, 126 = jsonl = decoded, video playable. Finding for step 7: the first model.track call does ~1–2 s of lazy Ultralytics imports inside the wall time; SIGINT then leaves a 0-frame mp4.
 - 2026-10-31 step 5: MotionManError base; resolve_device (cpu never imports torch; auto→cpu logged; cuda w/o GPU → exit 2); ModelError on bad weights; --imgsz multiple of 32, --max-frames ≥1; exit codes 0/1/2/130; post-run decode check → `output_frames_decoded`. Ultralytics 8.4.196 deprecated `half` (warned per frame) → `quantize=32`. 42 tests pass. A5–A8 PASS.
+- 2026-10-31 step 6: test_video_io (13) + test_pipeline (16, synthetic clip + scripted FakeTracker: artifacts agree, empty frames, null IDs, max-frames, null latency, fresh tracker, refused dir untouched, mid-run error/interrupt cleanup, no frames, count mismatch, writer failure releases reader). scripts/check.sh. INV-8 enforced in conftest (probe: exit 1). Fixed a flaky fps assertion (ms rounding on ~4 ms runs). 71 tests total.
