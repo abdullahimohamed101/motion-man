@@ -9,16 +9,17 @@ Updated: 2026-11-01
   resolved RunSpec, CFR + limits, data root with staging → validate → manifest → atomic publish, lease, UI on the
   data root. Merged as PR #6 (CI: 212 passed, 2 real-media tests skipped: no ffmpeg on the runner).
 - Baseline: `data/runs/r_20261101T062222Z_2ad4d6` at clean commit `8f9ec5e` (1,356 frames, 44.67 fps, mains).
-- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–4 done). Branch `feat/p1-inspect` (local).
+- Active plan: `docs/plans/p1-inspect.md` (Active; D1–D10 confirmed; steps 0–5 done). Branch `feat/p1-inspect` (local).
 - Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored.
 
 ## Next step (exact)
-1. P1 step 5: `motionman/presets.py` (D7): data/presets/<name>.json with separate view and tracking sections;
-   name validation; view applies now, tracking only to the next run. Then step 6, the UI restructure.
+1. P1 step 6: UI restructure (D8, D9) over runs/inspection/presets: header + run selector (legacy behind a toggle) + New video;
+   setup screen (Advanced collapsed); Inspect tab (playback + exact still + frame slider + object panel); Performance tab;
+   Export disclosure; per-run context; AppTest incl. a tracker that raises if called.
 
 ## Blocked / needs owner
 - none
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 247 passed; CI green on main.
+- `scripts/check.sh`: ruff ok, 268 passed; CI green on main.
 - Benchmarks (CLI, crosswalk, M5 Pro CPU): median 44.29 fps on mains, 32.14 on battery (README tables).
