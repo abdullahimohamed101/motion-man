@@ -1,7 +1,7 @@
 """Command-line entry point (spec §5).
 
 ``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
-(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``, ``bundle``.
+(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``, ``bundle``, ``analyze``.
 
 Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
 locked · 130 interrupted.
@@ -253,4 +253,62 @@ def bundle_main(argv: list[str]) -> int:
     return EXIT_OK
 
 
-SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main, "bundle": bundle_main}
+def _window(text: str) -> tuple[int, int | None]:
+    try:
+        start, _, end = text.partition(",")
+        return round(float(start) * 1e6), (round(float(end) * 1e6) if end.strip() else None)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected START_S,END_S in seconds (END_S optional), got {text!r}") from None
+
+
+def analyze_main(argv: list[str]) -> int:
+    """``motionman analyze``: line crossings, zone events, occupancy, dwell and a heatmap for one run (plan P3)."""
+    from motionman import analysis, regions, store
+
+    p = argparse.ArgumentParser(prog="motionman analyze", description=analyze_main.__doc__.split(": ", 1)[1])
+    p.add_argument("--run", required=True, help="run ID of a published run")
+    p.add_argument("--regions", required=True, help="a region-set JSON file, or a saved region set ID (rs_…)")
+    p.add_argument("--window", type=_window, default=(0, None), help="START_S,END_S source seconds (default: all)")
+    p.add_argument("--csv", type=Path, default=None, help="also write the events as CSV here (must not exist)")
+    p.add_argument("--json", type=Path, default=None, help="also write the analysis as JSON here (must not exist)")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    for out in (a.csv, a.json):
+        if out is not None and out.exists():
+            print(f"error: {out} already exists; choose a new file", file=sys.stderr)
+            return EXIT_USAGE
+    root = store.data_root(a.data_root)
+    try:
+        run = analysis.find_run(root, a.run)
+        if Path(a.regions).is_file():
+            region_set = regions.load_file(Path(a.regions))
+            regions.save(root, region_set)  # so the UI can offer it too
+        else:
+            region_set = regions.load(root, run.manifest["input_id"] if run.manifest else "", a.regions)
+        result = analysis.analyze(run, region_set, root, window_us=a.window)
+    except MotionManError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return e.exit_code
+    s = result.summary
+    print(f"analysis {result.analysis_id}{' (already up to date)' if result.reused else ''}: "
+          f"{s['coverage']['frames']:,} frames, {s['events']['total']} events")  # fmt: skip
+    for r in s["regions"]:
+        if r["kind"] == "line":
+            c = r["crossings"]
+            neg, pos = c["NEGATIVE_TO_POSITIVE"], c["POSITIVE_TO_NEGATIVE"]
+            print(
+                f"  line {r['id']}: {r['crossings_total']} crossings ({neg} negative→positive, {pos} positive→negative)"
+            )
+        else:
+            print(f"  zone {r['id']}: {r['entries']} entries, {r['exits']} exits, peak {r['peak_occupancy']} at once, "
+                  f"{r['visits']} visits")  # fmt: skip
+    if a.csv is not None:
+        a.csv.write_text(analysis.export_csv(result), encoding="utf-8")
+    if a.json is not None:
+        a.json.write_text(analysis.export_json(result), encoding="utf-8")
+    print(f"→ {result.folder}")
+    return EXIT_OK
+
+
+SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main, "bundle": bundle_main,
+               "analyze": analyze_main}  # fmt: skip

@@ -326,5 +326,41 @@ class Engine:
         st.visit_us, st.visit_start, st.dwell_fired = 0, None, False
 
 
+class Heatmap:
+    """Image-space observed occupancy in object-µs per cell (MD§11, plan D10).
+
+    Sample-and-hold: each interval between two consecutive observations of one track adds its duration to the
+    cell of the earlier centre. Breaks in continuity add nothing, exactly like dwell. Tracked objects of every
+    class count; unassigned detections don't (they have no interval). Colour and smoothing are display concerns.
+    """
+
+    def __init__(self, width: int, height: int, grid: tuple[int, int], max_gap_us: int) -> None:
+        self.width, self.height, self.grid, self.max_gap_us = width, height, grid, max_gap_us
+        self.cells: dict[tuple[int, int], int] = {}
+        self._last: dict[int, tuple[int, int, float, float]] = {}
+
+    def feed(self, frame: int, t_us: int, objects: Iterable[Obs]) -> None:
+        seen: dict[int, Obs] = {}
+        for o in objects:
+            if o.track_id is not None:
+                seen.setdefault(o.track_id, o)
+        for tid in seen:
+            prev = self._last.get(tid)
+            if prev is not None and frame == prev[0] + 1 and t_us - prev[1] <= self.max_gap_us:
+                cell = self._cell(prev[2], prev[3])
+                self.cells[cell] = self.cells.get(cell, 0) + t_us - prev[1]
+        self._last = {tid: (frame, t_us, o.x, o.y) for tid, o in seen.items()}  # absent tracks drop out
+
+    def _cell(self, x: float, y: float) -> tuple[int, int]:
+        cols, rows = self.grid
+        return min(cols - 1, max(0, int(x * cols / self.width))), min(rows - 1, max(0, int(y * rows / self.height)))
+
+    def to_dict(self) -> dict:
+        order = sorted(self.cells, key=lambda k: (k[1], k[0]))  # row-major, so the file reads top to bottom
+        cells = [[c, r, self.cells[(c, r)]] for c, r in order]
+        return {"grid": list(self.grid), "units": "object_us", "label": "image-space observed occupancy",
+                "total_us": sum(self.cells.values()), "cells": cells}  # fmt: skip
+
+
 def _orient(ax: float, ay: float, bx: float, by: float, cx: float, cy: float) -> float:
     return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)

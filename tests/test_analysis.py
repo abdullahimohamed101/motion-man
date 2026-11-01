@@ -5,6 +5,7 @@ The fake tracker moves one object right by 1 px per frame (centre x = frame + 5,
 """
 
 import dataclasses
+import json
 import time
 
 import pytest
@@ -53,7 +54,8 @@ def files(folder):
 def test_an_analysis_publishes_its_files_and_finds_the_crossing(run, root):
     result = analysis.analyze(run, region_set(run, LINE, ZONE), root)
     assert result.folder == root.path / "analyses" / run.run_id / result.analysis_id and not result.reused
-    assert set(files(result.folder)) == {"analysis_spec.json", "events.jsonl", "summary.json", "manifest.json"}
+    assert set(files(result.folder)) == {"analysis_spec.json", "events.jsonl", "summary.json", "heatmap.json",
+                                         "manifest.json"}  # fmt: skip
     events = list(analysis.read_events(result))
     assert [(e["type"], e["rule_id"], e["track_id"], e["direction"]) for e in events] == [
         ("LINE_CROSSING", "door", 1, "NEGATIVE_TO_POSITIVE"), ("ZONE_ENTRY", "pen", 1, None)]  # fmt: skip
@@ -84,6 +86,7 @@ def strip(result):
         {k: v for k, v in e.items() if k not in ("event_id", "analysis_id")} for e in analysis.read_events(result)
     ]
     summary = {k: v for k, v in result.summary.items() if k not in ("analysis_id", "run_id")}
+    summary["bookmarks"] = [{k: v for k, v in b.items() if k != "event_id"} for b in summary["bookmarks"]]
     return events, summary
 
 
@@ -170,3 +173,102 @@ def test_a_failed_build_publishes_nothing_and_leaves_no_temp_folder(run, root, m
     with pytest.raises(RuntimeError, match="disk full"):
         analysis.analyze(run, region_set(run, LINE), root)
     assert list((root.path / "analyses" / run.run_id).iterdir()) == []
+
+
+# --- step 4: heatmap, bookmarks, export, CLI ---
+
+WHOLE = {**ZONE, "id": "all", "name": "All", "box": [0.0, 0.0, 1.0, 1.0]}
+
+
+def test_the_heatmap_holds_exactly_the_observed_dwell(run, root):
+    result = analysis.analyze(run, region_set(run, WHOLE), root)
+    heat = analysis.read_heatmap(result)
+    (zone,) = result.summary["regions"]
+    assert heat["grid"] == [256, 144] and heat["units"] == "object_us" and "image-space" in heat["label"]
+    assert heat["total_us"] == zone["dwell_total_us"] == sum(v for _, _, v in heat["cells"]) > 0
+    # Centre x = frame + 5 in a 64 px frame: 4 columns per pixel; frame 3 is missing, so no interval starts there.
+    assert {c for c, _, _ in heat["cells"]} == {(f + 5) * 4 for f in range(19) if f not in (2, 3)}
+    assert {r for _, r, _ in heat["cells"]} == {int(12.5 * 144 / 48)}
+
+
+def test_an_empty_window_gives_a_defined_empty_heatmap(run, root):
+    result = analysis.analyze(
+        run, region_set(run, WHOLE), root, window_us=(100_000, 133_333)
+    )  # frame 3 only (the end is exclusive)
+    heat = analysis.read_heatmap(result)
+    assert heat["total_us"] == 0 and heat["cells"] == [] and result.summary["coverage"]["frames"] == 1
+
+
+def test_bookmarks_name_their_criterion(run, root):
+    result = analysis.analyze(run, region_set(run, LINE, ZONE), root)
+    marks = {(b["criterion"], b["rule_id"]): b for b in result.summary["bookmarks"]}
+    assert set(marks) == {("first crossing", "door"), ("first entry", "pen"), ("peak occupancy", "pen")}
+    events = {e["type"]: e for e in analysis.read_events(result)}
+    assert marks[("first crossing", "door")]["event_id"] == events["LINE_CROSSING"]["event_id"]
+    assert marks[("peak occupancy", "pen")]["value"] == 1 and marks[("peak occupancy", "pen")]["event_id"] is None
+    frames = [b["frame"] for b in result.summary["bookmarks"]]
+    assert frames == sorted(frames)
+
+
+def test_exports_keep_ids_and_units(run, root):
+    import csv
+    import io
+    import json
+
+    dwell_zone = {**ZONE, "dwell_threshold_s": 0.1}
+    result = analysis.analyze(run, region_set(run, LINE, dwell_zone), root)
+    events = list(analysis.read_events(result))
+    rows = list(csv.DictReader(io.StringIO(analysis.export_csv(result))))
+    assert tuple(rows[0]) == analysis.EVENT_COLUMNS and len(rows) == len(events)
+    assert [r["event_id"] for r in rows] == [e["event_id"] for e in events]
+    by_type = {r["type"]: r for r in rows}
+    assert by_type["LINE_CROSSING"]["rule_name"] == "Door" and by_type["LINE_CROSSING"]["value_unit"] == ""
+    assert by_type["DWELL_THRESHOLD"]["value_unit"] == "us" and int(by_type["DWELL_THRESHOLD"]["value"]) >= 100_000
+    crossing = next(e for e in events if e["type"] == "LINE_CROSSING")
+    assert by_type["LINE_CROSSING"]["confirming_t_us"] == str(crossing["confirming_t_us"])
+    doc = json.loads(analysis.export_json(result))
+    assert doc["events"] == events and doc["units"]["time"] == "us" and doc["summary"] == result.summary
+
+
+def write_regions(tmp_path, run, *items):
+    path = tmp_path / "regions.json"
+    path.write_text(json.dumps(region_set(run, *items).to_dict()))
+    return path
+
+
+def test_cli_analyze_by_file_and_by_id(run, root, tmp_path, capsys):
+    from motionman import cli
+
+    path = write_regions(tmp_path, run, LINE, ZONE)
+    out_csv, out_json = tmp_path / "events.csv", tmp_path / "analysis.json"
+    args = ["analyze", "--run", run.run_id, "--data-root", str(root.path)]
+    assert cli.main([*args, "--regions", str(path), "--csv", str(out_csv), "--json", str(out_json)]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "line door: 1 crossings (1 negative→positive" in out and "zone pen: 1 entries" in out
+    assert out_csv.read_text().startswith("event_id,type") and json.loads(out_json.read_text())["events"]
+    rs_id = region_set(run, LINE, ZONE).region_set_id  # the file was saved to the region store as well
+    assert cli.main([*args, "--regions", rs_id]) == cli.EXIT_OK
+    assert "(already up to date)" in capsys.readouterr().out
+    assert cli.main([*args, "--regions", rs_id, "--window", "0,0.2"]) == cli.EXIT_OK
+    assert ", 0 events" in capsys.readouterr().out
+
+
+def test_cli_analyze_refuses_bad_input_with_exit_2(run, root, tmp_path, capsys):
+    from motionman import cli
+
+    good = write_regions(tmp_path, run, LINE)
+    args = ["analyze", "--data-root", str(root.path)]
+    assert cli.main([*args, "--run", "r_nope", "--regions", str(good)]) == 2
+    bad = tmp_path / "bad.json"
+    bad.write_text("{")
+    assert cli.main([*args, "--run", run.run_id, "--regions", str(bad)]) == 2
+    assert cli.main([*args, "--run", run.run_id, "--regions", "rs_0000000000000000"]) == 2
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({"schema_version": "1.0", "input_id": "sha256:" + "0" * 64, "name": "x",
+                                 "regions": [LINE]}))  # fmt: skip
+    assert cli.main([*args, "--run", run.run_id, "--regions", str(other)]) == 2
+    taken = tmp_path / "taken.csv"
+    taken.write_text("keep me")
+    assert cli.main([*args, "--run", run.run_id, "--regions", str(good), "--csv", str(taken)]) == 2
+    assert taken.read_text() == "keep me"
+    assert "different video" in capsys.readouterr().err
