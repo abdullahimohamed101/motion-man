@@ -1,5 +1,5 @@
 # P2 Measure: stage timings, benchmarks, doctor and debug bundles
-Status: Draft · Branch: `feat/p2-measure` · Spec: A§9, A§10 (MD§12, MD§17, MD§21)
+Status: Active · Branch: `feat/p2-measure` · Spec: A§9, A§10 (MD§12, MD§17, MD§21)
 
 ## Outcome
 Every run records where its time went (setup, decode, detect+track, render, write, finalize) with per-frame
@@ -15,7 +15,7 @@ Release A is then complete.
 - No accuracy claims: comparisons speak about speed and counts, never "better detections".
 - No zones, events, heatmaps or review layers (P3+).
 
-## Decisions (confirm before step 1)
+## Decisions (confirmed 2026-11-01)
 - D1 Stage boundaries, all `perf_counter` wall time per frame: **decode** = time inside `next()` on the
   frame reader (includes the timestamp check); **detect_track** = `tracker.update` as today; **render** =
   `trails.update` + `annotate`; **write** = video `writer.write` + JSONL line write. Stage sums may be less than
@@ -66,7 +66,7 @@ Release A is then complete.
   job wall. Runs from before P2 show "Not recorded in this run" for these, never zeros.
 
 ## Steps
-1. [ ] Stage timings (D1–D4): pipeline instrumentation, `timings.jsonl` artifact in the manifest, report
+1. [x] Stage timings (D1–D4): pipeline instrumentation, `timings.jsonl` artifact in the manifest, report
    timing fields + warmup policy. Tests: rows = frames, stage sums ≤ wall, short-run nulls with reasons,
    failed runs still report what was measured.
 2. [ ] UI Performance breakdown (D12) and README timing definitions; one real crosswalk run to name the
@@ -107,3 +107,4 @@ Release A is then complete.
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-01 step 1: pipeline times decode (inside next()), detect_track, render, write per frame → timings.jsonl (streamed, in the manifest); Metrics gains begin_job/add_frame/finish; report timing adds setup_s, finalize_s, job_wall_s, per-stage p50/p95/total, unattributed remainder, warmup policy + samples, instrumentation mode; old keys kept. 9 tests, 303 total. Real crosswalk (battery 97%, discharging): 44.4 fps; setup 3.33 s (model load 2.99), wall 30.54 s, finalize 0.79 s, job 34.66 s; detect_track 89.5% of wall (p50 19.35 ms), render 3.7%, write 3.7%, decode 2.1%, unattributed 0.9%. Caveat for README: decode/write time the calls only; OpenCV's codec may work on background threads.
