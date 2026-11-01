@@ -17,7 +17,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from motionman import records, store
+from motionman import records, render, store
+from motionman.types import Track
 
 INDEX_STRIDE = 128  # one byte offset every 128 records (MD§4)
 IMPL_VERSION = 1  # bump when the derived format or its rules change
@@ -256,3 +257,89 @@ class FrameSource:
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+
+
+# --- Stills and evidence export (plan P1 D2, D6) ---------------------------------------------------------------
+
+EXPORT_IMPL_VERSION = 1
+
+
+def tracks_of(record: dict) -> list[Track]:
+    return [
+        Track(o["track_id"], o["class_id"], o["class_name"], o["confidence"], tuple(o["bbox_xyxy"]))
+        for o in record["objects"]
+    ]
+
+
+def observed(record: dict, track_id: int) -> bool:
+    """Whether a track ID has an observation in this exact frame (not merely somewhere in the run)."""
+    return any(o["track_id"] == track_id for o in record["objects"])
+
+
+def trails_for(index: RecordIndex, frame: int, length: int) -> dict[int, list[tuple[int, int]]]:
+    """Observed box centres per track ID over the ``length`` frames ending at ``frame``, oldest first."""
+    if length <= 0:
+        return {}
+    trails: dict[int, list[tuple[int, int]]] = {}
+    for rec in index.records(max(0, frame - length + 1), frame + 1):
+        for o in rec["objects"]:
+            if o["track_id"] is not None:
+                x1, y1, x2, y2 = o["bbox_xyxy"]
+                trails.setdefault(o["track_id"], []).append((round((x1 + x2) / 2), round((y1 + y2) / 2)))
+    return trails
+
+
+def render_still(
+    frames: FrameSource, index: RecordIndex, frame: int, options: render.ViewOptions
+) -> tuple[np.ndarray, dict]:
+    """The exact source frame with overlays drawn from its own record. Returns (image, record)."""
+    record = index.record(frame)
+    image = frames.frame(frame)
+    trails = trails_for(index, frame, options.trail_length)
+    return render.annotate_still(image, tracks_of(record), trails, options), record
+
+
+def export_evidence(
+    *,
+    run_id: str,
+    records_sha256: str,
+    input_id: str | None,
+    source_verified: bool,
+    frames: FrameSource,
+    index: RecordIndex,
+    frame: int,
+    options: render.ViewOptions,
+    root: store.DataRoot,
+) -> Path:
+    """Write ``exports/<export_id>/evidence.png`` and ``export.json`` (D6). The PNG is exactly the still the
+    inspector shows for these settings; the export ID is the hash of the recipe, so a repeat reuses it."""
+    still, record = render_still(frames, index, frame, options)
+    recipe = {
+        "kind": "evidence_png",
+        "impl_version": EXPORT_IMPL_VERSION,
+        "run_id": run_id,
+        "records_sha256": records_sha256,
+        "input_id": input_id,
+        "source_frame_index": frame,
+        "source_t_us": record["source_t_us"],
+        "view": {**asdict(options), "classes": list(options.classes) if options.classes else None},
+        "record_sha256": store.sha256_json(record),
+    }
+    export_id = store.sha256_json(recipe).removeprefix("sha256:")
+    folder = root.path / "exports" / export_id
+    png = folder / "evidence.png"
+    if not (png.is_file() and (folder / "export.json").is_file()):
+        folder.mkdir(parents=True, exist_ok=True)
+        ok, encoded = cv2.imencode(".png", still)
+        if not ok:
+            raise InspectError("could not encode the evidence PNG")
+        tmp = folder / ".evidence.png.tmp"
+        tmp.write_bytes(encoded.tobytes())
+        tmp.replace(png)
+        store.write_json_atomic(
+            folder / "export.json",
+            {"export_id": export_id, **recipe, "source_verified": source_verified,
+             "png": {"path": "evidence.png", "bytes": png.stat().st_size, "sha256": store.sha256_file(png)},
+             "created_at_utc": datetime.now(UTC).isoformat(timespec="milliseconds")},
+        )  # fmt: skip
+    return png
