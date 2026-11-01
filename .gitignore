@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# weights, clips, and run outputs (spec §10)
+*.pt
+*.mp4
+*.mov
+runs/
+.DS_Store
+clips/

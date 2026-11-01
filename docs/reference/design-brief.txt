@@ -1,0 +1,86 @@
+MOTIONMAN | TWO-DAY MVP DESIGN
+Claude-ready implementation brief | Python-first | 12 focused hours + 2 hours buffer
+
+1. PRODUCT AND HARD SCOPE
+
+Build a local command-line tool that reads one recorded video, detects and tracks objects, draws bounding boxes/IDs/motion trails, and saves an annotated video plus reproducible run data. The demonstration is one command producing three useful artifacts. It should be small enough for its author to explain every module in an NVIDIA tools-development interview.
+
+Required: one constant-frame-rate MP4; pretrained detection; persistent tracking within that video; annotated MP4; per-frame JSONL; measured summary JSON; useful errors; tests; README. CPU execution must work. CUDA is optional, not a prerequisite. Start with a 30-60-second clip containing a few moving people or vehicles, recorded by you or permitted for reuse.
+
+Not in this build: web UI, API server, database, cloud deployment, live camera/RTSP, multiple streams, training, re-identification, custom tracker, C++, custom CUDA kernels, TensorRT, or RT-DETR integration. Do not turn this into ServerFlow or Agent Black Box. There is no real-time FPS requirement.
+
+2. STACK AND ARCHITECTURE
+
+Use Python 3.11, OpenCV, Ultralytics with a small pretrained YOLO11n detector (yolo11n.pt), and its explicit ByteTrack configuration (bytetrack.yaml). Use the installed PyTorch backend; pytest is the only required test tool. Pin the package versions that pass the first smoke test. Keep configuration in argparse flags and a small dataclass; no plugin framework or configuration service.
+
+The synchronous pipeline is: decode one frame -> detect/track -> update trails -> annotate -> write video and JSONL -> update metrics. One model instance owns tracker state for the entire run. Feed consecutive frames using model.track(frame, persist=True, tracker="bytetrack.yaml", ...). Do not recreate the model per frame, share tracker state between videos, or parallelize tracking calls.
+
+Module boundaries:
+- cli.py: parse and validate flags; build RunConfig; return a meaningful exit code.
+- video_io.py: open/validate reader and writer; yield frames; release resources.
+- tracking.py: wrap the pretrained model; convert results to ordinary Track records.
+- render.py: maintain bounded trails and draw annotations on a frame copy.
+- metrics.py: accumulate timings/counts and write the final report.
+- pipeline.py: run(config) coordinates the synchronous loop and cleanup.
+
+Add __init__.py and __main__.py, tests/, README.md, and a pinned requirements.txt. Keep these modules small; ordinary functions and one tracker wrapper are enough.
+
+CLI contract:
+  python -m motionman --source demo.mp4 --output-dir runs/demo --device cpu
+
+Flags: --source and --output-dir required; --device cpu|cuda|auto (default cpu); --model (default yolo11n.pt); --imgsz (default 640); --max-frames optional. No GUI is required. Output: annotated.mp4, tracks.jsonl, report.json. Require a new or empty output directory; never overwrite the source or existing results.
+
+=== PAGE BREAK ===
+
+3. DATA, CORRECTNESS, AND FAILURE CONTRACTS
+
+Represent a frame by its zero-based index, timestamp_s = index / source_fps, and BGR image. The MVP supports ordinary constant-frame-rate video with valid FPS and even dimensions; reject unsupported metadata clearly. Keep annotation coordinates in the original frame's pixel space. Preserve original output dimensions and playback FPS, regardless of processing speed. Audio is not preserved.
+
+Tracking adapter contract: update(frame) -> list[Track]. Each Track contains track_id (integer or null), class_id, class_name, confidence, and bbox_xyxy (four pixel coordinates). Treat empty detections and missing boxes.id as normal. Never invent IDs. An object without an assigned ID can still be drawn, but receives no motion trail.
+
+Write exactly one JSONL record for each successfully processed frame: frame_index, timestamp_s, and objects (a list of Track records, possibly empty). Stream records to disk rather than collecting them in memory. Track IDs are local to this run, can switch or fragment under occlusion, and are not reliable counts of unique people.
+
+For each valid ID, retain at most 30 center points in a deque. Remove trail entries after 60 frames without an observation. Do not retain decoded frames, model result objects, or unlimited track history. Start with no threading. If time remains, add only an optional decoder thread with Queue(maxsize=2), blocking backpressure, and no frame drops. Tracking/render/write remain in order on the main thread. A threaded variant must propagate decoder errors and use a stop event plus bounded waits so cancellation cannot deadlock.
+
+Fail clearly for missing input, a video that cannot open, invalid FPS, no decodable frames, unavailable explicitly requested CUDA, and a writer that cannot open. auto may select CPU when CUDA is unavailable and must log the choice. Release capture/writer and close JSONL in finally, including Ctrl-C or mid-run errors. Mark partial reports as interrupted/error, not successful. Reopen the output video after a successful run and verify its decoded frame count matches processed_frames.
+
+4. BENCHMARK CONTRACT
+
+report.json records status, source metadata, processed_frames, model/weights identifier, image size, device, relevant package versions, machine/GPU description, and precision used. Set confidence/IoU thresholds explicitly and record them; use FP32 initially. Do not claim inference-only timing when timing the entire tracking wrapper.
+
+Measure processing_wall_s with perf_counter from before the first decode until the final writer flush/release. end_to_end_fps = processed_frames / processing_wall_s; this includes decode, detection/tracking, drawing, and output. Report model-loading time separately. Also report detect_track_ms p50/p95 for the model.track call, excluding the first 10 processed frames as warmup; those frames still appear in all outputs. For 10 or fewer frames, latency percentiles are null with a reason. On CUDA, synchronize around wall-clock GPU timings so asynchronous work is actually measured. A simple timing-sample list is acceptable for these short demo clips.
+
+Benchmark the same clip and configuration three times. Report all three throughput values and their median on actual hardware. CPU and CUDA comparisons are optional and must hold model, input size, precision, and output settings constant. Do not promise 40+ FPS, 25 streams, latency reductions, or ID-switch improvements. Accuracy claims require labeled evaluation; this MVP uses a clearly labeled qualitative visual inspection.
+
+=== PAGE BREAK ===
+
+5. TWO-DAY BUILD ROADMAP
+
+Day 1 (six focused hours; lunch excluded)
+- 09:00-10:00: environment, dependencies, weights, and one-frame detection on CPU. Timebox CUDA troubleshooting out of this block. Exit: real boxes can be produced.
+- 10:00-12:00: synchronous reader -> model.track -> annotation -> writer loop. Exit: playable output with IDs from a short clip.
+- 13:00-15:00: trails, per-frame JSONL, summary metrics, and CLI flags. Exit: all three run artifacts exist and agree on frame count.
+- 15:00-16:00: input/writer validation, empty detections, cleanup, and basic tests. Exit: invalid input produces an understandable failure, not a traceback-only experience.
+
+Day 2 (six focused hours; keep two additional hours unscheduled)
+- 09:00-11:00: deterministic unit tests and a small synthetic-video integration test with a fake tracker. Cover record conversion, missing IDs, empty frames, trail bounds/expiry, timing math, output frame count, invalid input, and resource cleanup on failure. Normal pytest must not require a GPU, network, or weight download.
+- 11:00-12:00: real-model demo and visual review. Verify boxes, IDs, trails, playback, and JSONL alignment. Fix correctness issues before optimizing.
+- 13:00-14:00: run the three repeatable benchmarks; inspect reports and explain bottlenecks.
+- 14:00-15:00: optional CUDA smoke test OR decoder prefetch, only if the baseline is complete. Cut this block first if behind. Re-run correctness checks after any change.
+- 15:00-16:00: README, demo recording, and a five-minute architecture explanation. Use the buffer for bugs, not new features.
+
+6. DEFINITION OF DONE AND INTERVIEW HANDOFF
+
+A fresh environment can install dependencies, run pytest, and execute the documented command. One 30-60-second clip produces a playable annotated.mp4, valid tracks.jsonl with a record per processed frame, and an honestly measured report.json. The README includes setup/run/test commands, module responsibilities, actual benchmark results and hardware, known limitations, and sample-input attribution. Ignore downloaded weights, source clips, and generated runs in git.
+
+Be ready to explain: why detection and tracking are separate; why a tracker needs ordered frames and one owner; why a bounded queue needs backpressure; how cleanup survives exceptions; and why GPU timing needs synchronization. Tie the project to validation tooling through reproducible inputs, structured results, failure handling, and measurement. Describe it as a Python object-tracking tool, not a completed C++/TensorRT or silicon-validation platform.
+
+7. INSTRUCTIONS TO CLAUDE
+
+Implement this specification incrementally. First inspect the existing directory and preserve unrelated files. Create a minimal package and a synchronous vertical slice before adding trails, logging, metrics, or optimizations. Follow the module boundaries above without introducing additional services or frameworks. Validate the actual library APIs in the installed versions. Keep every milestone runnable, run relevant tests after each, and show the commands executed and results. Separate mock-based tests from real-model verification. Do not fabricate benchmarks, IDs, test results, or completed GPU work. If an optional feature threatens the two-day deadline, omit it and document the limitation. End with exact install/run/test commands, verified artifacts, remaining limitations, and a brief explanation of the implementation.
+
+PRIMARY IMPLEMENTATION REFERENCES
+- YOLO11 models: https://docs.ultralytics.com/models/yolo11/
+- Tracking and persist: https://docs.ultralytics.com/modes/track/
+- OpenCV VideoWriter: https://docs.opencv.org/4.x/dd/d9e/classcv_1_1VideoWriter.html
+- PyTorch CUDA timing: https://docs.pytorch.org/docs/stable/notes/cuda.html
