@@ -160,7 +160,7 @@ def test_interrupt_mid_run_reports_interrupted(clip, tmp_path):
 
 
 def test_no_decodable_frames_is_an_error(clip, tmp_path, monkeypatch):
-    monkeypatch.setattr(video_io, "read_frames", lambda cap, fps, max_frames=None: iter(()))
+    monkeypatch.setattr(video_io, "read_frames", lambda cap, fps, max_frames=None, frame_limit=None: iter(()))
     out = tmp_path / "run"
     with pytest.raises(VideoError, match="no decodable frames"):
         run(RunConfig(clip, out))
@@ -190,8 +190,8 @@ def test_writer_failure_reports_error_and_releases_reader(clip, tmp_path, monkey
             released.append(True)
             self._cap.release()
 
-    def tracking_reader(path):
-        cap, info = real_open_reader(path)
+    def tracking_reader(path, limits=None):
+        cap, info = real_open_reader(path, *([limits] if limits else []))
         return RecordingCapture(cap), info
 
     def broken_writer(path, info):

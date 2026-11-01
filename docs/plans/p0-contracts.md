@@ -56,7 +56,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
    legacy reader adapter. Tests incl. reading `runs/demo-recording`-shaped legacy lines.
 2. [x] `store.py`: streamed SHA-256, canonical JSON (sorted, no NaN), run_id, resolved RunSpec
    (weights hash, ByteTrack YAML contents + hash, code revision, requirements hash, env). Tests.
-3. [ ] `video_io`: CFR timestamp check + limits in preflight and per frame. Tests with synthetic CFR and
+3. [x] `video_io`: CFR timestamp check + limits in preflight and per frame. Tests with synthetic CFR and
    a deliberately VFR clip.
 4. [ ] Pipeline canonical mode: staging dir → write → validate (order, counts, schema, decode) → hash →
    `manifest.json` (A§3) → atomic rename to `runs/`; legacy mode writes the same manifest in place. Lease.
@@ -91,3 +91,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 ## Log
 - 2026-11-01 step 1: records.py (v1.0 writer with observation_ids and integer source_t_us, box policy: clip ≤0.5 px overrun, reject the rest; validate(); read_records() adapting pre-v1.0 lines with legacy=True and unknown dims/run_id left None). 20 tests. Real legacy file runs/demo-recording/tracks.jsonl: 1,356 records contiguous, t_us = formula exactly (0 µs diff), 25,361 objects. Pipeline still writes the old format until step 4. 152 tests.
 - 2026-11-01 step 2: store.py (streamed sha256, canonical JSON rejecting NaN, run_id r_<UTC>_<6hex>, ByteTrack YAML read from package files without importing Ultralytics, git commit + dirty, resolve_runspec: config_sha256 over settings; reproducibility recorded but not hashed; missing weights null + reason). 11 tests. Real hashes match shasum (yolo11n.pt, crosswalk.mp4 81 MB in 0.03 s). 163 tests.
+- 2026-11-01 step 3: measured first: OpenCV POS_MSEC after grab() = current frame's PTS (CFR clips: 0.00-frame drift; ffmpeg VFR 30→15 fps clip: OpenCV reports a plausible 20.69 fps, timestamps drift 9.3 frames). Limits dataclass (A§6) on RunConfig; open_reader checks size/dims/frames/duration, then CFR on the first 240 frames, then reopens at frame 0; read_frames checks every frame and treats the frame limit as an error, never truncation. 15 tests (real ffmpeg VFR clip; skips without ffmpeg). Real CLI: crosswalk preflight 0.23 s (outside wall time), 60-frame run exit 0; VFR clip exit 2 'frame 2 is at 66.7 ms, expected 96.7 ms', no dir. 178 tests.

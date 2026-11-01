@@ -80,7 +80,7 @@ def run(
     ``on_progress`` is called at most every ``PROGRESS_INTERVAL_S`` and once after the last frame.
     The CLI passes none.
     """
-    cap, info = video_io.open_reader(config.source)
+    cap, info = video_io.open_reader(config.source, config.limits)
     m = metrics.Metrics()
     status, error = "error", None
     device_used: str | None = None
@@ -103,7 +103,7 @@ def run(
         m.start()
         started = last_report = perf_counter()
         reported = -1
-        for frame in video_io.read_frames(cap, info.fps, config.max_frames):
+        for frame in video_io.read_frames(cap, info.fps, config.max_frames, config.limits.max_frames):
             t = perf_counter()
             tracks = tracker.update(frame.image)
             m.detect_track_ms.append((perf_counter() - t) * 1000)

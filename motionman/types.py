@@ -54,6 +54,21 @@ class VideoInfo:
 
 
 @dataclass(frozen=True)
+class Limits:
+    """Guardrails, not measured capacity (spec A§6). Recorded in each run; exceeding one is a visible failure."""
+
+    max_file_bytes: int = 512 * 1024**2
+    max_duration_s: float = 600.0
+    max_long_side: int = 1920
+    max_short_side: int = 1080
+    max_frames: int = 36_000
+    output_budget_bytes: int = 2 * 1024**3
+
+
+DEFAULT_LIMITS = Limits()
+
+
+@dataclass(frozen=True)
 class RunConfig:
     source: Path
     output_dir: Path
@@ -63,3 +78,4 @@ class RunConfig:
     max_frames: int | None = None
     conf: float = 0.25  # D5: explicit, recorded thresholds
     iou: float = 0.7
+    limits: Limits = DEFAULT_LIMITS
