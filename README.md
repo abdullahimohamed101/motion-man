@@ -180,6 +180,22 @@ left out of the median; the exit code is 1 if any trial failed. Options: `--devi
 `--telemetry`, `--label`, `--data-root`. A short smoke run (3 × 240 frames, battery 93%) gave a median of
 42.42 fps with a range of 37.76–43.11, which is why the range is reported and not just one number.
 
+```bash
+.venv/bin/python -m motionman compare <baseline-id> <candidate-id> --intended imgsz
+```
+
+`compare` checks the factors the protocol requires: input, frame range, sampling, output policy, warmup, task,
+model weights, class map, tracker config, imgsz, conf, IoU, class filter, precision, device, telemetry, code
+commit, software, hardware, platform and power. Factors you list in `--intended` are expected to differ; any other
+difference is printed as a **CONFOUNDER** and the verdict says the comparison is not controlled. It also notes
+failed trials, mixed power within a benchmark, and fewer than 3 trials, and says when the two trial ranges overlap.
+It compares speed only and writes `data/comparisons/<id>/comparison.json`; it exits 0 even when confounded.
+
+Example (short smoke runs, 3 × 240 frames each, both on battery): imgsz 640 gave a median of 42.42 fps
+(37.76–43.11) and imgsz 480 gave 49.09 fps (42.1–50.25), +15.7%, with detect+track p50 down 4.06 ms. `compare`
+flagged the code commit as a confounder (the two runs came from different commits with uncommitted changes) and
+noted that the ranges overlap, so this is a hint, not a controlled result.
+
 The tables below were measured before the benchmark command existed, by running the CLI three times by hand.
 
 Three runs of the same clip and configuration in each power state (`clips/crosswalk.mp4`: 1,356 frames,

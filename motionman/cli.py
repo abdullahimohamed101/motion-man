@@ -1,7 +1,7 @@
 """Command-line entry point (spec §5).
 
 ``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
-(plan P2 D11) dispatches instead: ``benchmark``.
+(plan P2 D11) dispatches instead: ``benchmark``, ``compare``.
 
 Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
 locked · 130 interrupted.
@@ -10,6 +10,7 @@ locked · 130 interrupted.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import traceback
@@ -153,4 +154,40 @@ def benchmark_main(argv: list[str]) -> int:
     return EXIT_OK if s["failed"] == 0 else EXIT_FAILURE
 
 
-SUBCOMMANDS = {"benchmark": benchmark_main}
+def compare_main(argv: list[str]) -> int:
+    """``motionman compare``: what changed between two benchmarks, and what else did (plan P2 D6)."""
+    from motionman import compare
+
+    p = argparse.ArgumentParser(prog="motionman compare", description=compare_main.__doc__.split(": ", 1)[1])
+    p.add_argument("a", help="baseline benchmark: an ID under <data root>/benchmarks or a benchmark.json path")
+    p.add_argument("b", help="candidate benchmark, same forms")
+    p.add_argument(
+        "--intended", default="", help=f"comma-separated factors changed on purpose: {', '.join(compare.FACTORS)}"
+    )
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    intended = [f.strip() for f in a.intended.split(",") if f.strip()]
+    try:
+        doc = compare.compare(a.a, a.b, intended, a.data_root)
+        path = compare.write(doc, a.data_root)
+    except MotionManError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return e.exit_code
+    for side in ("a", "b"):
+        f = doc[side]["fps"]
+        rng = f"range {f['min']}–{f['max']}, {f['trials']} trials" if f.get("median") is not None else f.get("reason")
+        print(f"{side.upper()} {doc[side]['benchmark_id']}: median {f.get('median')} fps ({rng})")
+    for f in doc["factors"]:
+        if f["changed"]:
+            tag = "intended" if f["intended"] else "CONFOUNDER"
+            print(f"  {tag:<10} {f['name']}: {json.dumps(f['a'])} → {json.dumps(f['b'])}")
+    for name in doc["unchanged_intended"]:
+        print(f"  note: --intended {name} but it did not change")
+    for note in doc["notes"]:
+        print(f"  note: {note}")
+    print(doc["verdict"])
+    print(f"{compare.SPEED_ONLY} → {path}")
+    return EXIT_OK  # a confounded comparison is information, not a failure (D6)
+
+
+SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main}
