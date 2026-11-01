@@ -4,16 +4,16 @@
 Updated: 2026-10-31
 
 ## Now
-- Active plan: `docs/plans/cli-mvp.md`: all 7 steps done, A1–A10 PASS, reviewer findings fixed. Not shipped.
-- Branch: `feat/cli-mvp`, stacked on `feat/project-docs` (neither pushed nor merged)
+- Active plan: none. CLI MVP shipped for review: `docs/plans/done/cli-mvp.md` (A1–A10 PASS, reviewer findings fixed).
+- Branch: `feat/cli-mvp` → PR into `main` (includes the docs commits; `feat/project-docs` is superseded)
 - Env: `.venv` (py3.11.17); `yolo11n.pt` and `clips/crosswalk.mp4` local and gitignored (README has the commands)
 
 ## Next step (exact)
-1. `ship`: move the plan to `docs/plans/done/`, draft the PR text, ask before pushing.
-2. Then write the UI plan (spec §9).
+1. Owner reviews and merges the PR (never merged by an agent).
+2. `plan` the local UI (spec §9) as `docs/plans/ui.md`, on a new branch off `main` after the merge.
 
 ## Blocked / needs owner
-- none
+- PR review and merge
 
 ## Last check
-- `scripts/check.sh`: ruff ok, 78 passed. Crosswalk benchmarks after fixes: exit 0 ×3, median 32.14 fps (CPU, battery).
+- `scripts/check.sh`: ruff ok, 78 passed. Crosswalk benchmarks: exit 0 ×3, median 32.14 fps (CPU, battery).

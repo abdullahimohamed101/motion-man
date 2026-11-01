@@ -1,5 +1,5 @@
 # CLI MVP: video in, three artifacts out
-Status: Active · Branch: `feat/cli-mvp` · Spec: §1–§8, §10
+Status: Done · Branch: `feat/cli-mvp` · Spec: §1–§8, §10
 
 ## Outcome
 `python -m motionman --source clip.mp4 --output-dir runs/demo --device cpu` produces a playable
