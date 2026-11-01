@@ -2,7 +2,7 @@ import threading
 
 import pytest
 
-from motionman import pipeline
+from motionman import pipeline, store
 from motionman.pipeline import OutputCheckError
 from motionman.tracking import DeviceError, ModelError
 from motionman.ui import runner as runner_module
@@ -60,7 +60,7 @@ class GateBox:
 
 
 def make_runner(tmp_path, tracker=FakeTracker, resolve=lambda device: "cpu"):
-    return Runner(runs_root=tmp_path / "runs" / "ui", make_tracker=tracker, resolve=resolve)
+    return Runner(data_root=tmp_path / "data", make_tracker=tracker, resolve=resolve)
 
 
 def run_to_end(runner, **start):
@@ -80,14 +80,17 @@ def test_demo_source_run_completes_with_three_artifacts(clip, tmp_path):
     assert s.status == "complete" and s.message is None
     assert s.report["status"] == "success" and s.report["processed_frames"] == 20 == s.processed
     assert sorted(s.artifacts) == ["annotated.mp4", "report.json", "tracks.jsonl"]
-    assert s.out_dir == s.run_dir / "out" and s.run_dir.parent == tmp_path / "runs" / "ui"
+    assert s.run_dir == tmp_path / "data" / "runs" / s.report["run_id"]  # a published canonical run
+    assert (s.run_dir / "manifest.json").is_file() and list((tmp_path / "data" / "staging").iterdir()) == []
     assert s.device_requested == "cpu" and s.device_used == "cpu" and s.source_name == "clip.mp4"
 
 
-def test_upload_is_saved_into_its_own_run_dir(clip, tmp_path):
+def test_upload_is_imported_by_hash_and_the_temporary_copy_removed(clip, tmp_path):
     s = run_to_end(make_runner(tmp_path), upload=("My Clip.MP4", clip.read_bytes()))
     assert s.status == "complete" and s.source_name == "My Clip.MP4"
-    assert (s.run_dir / "source.mp4").read_bytes() == clip.read_bytes()
+    managed = tmp_path / "data" / "inputs" / s.report["input_id"].removeprefix("sha256:") / "source.mp4"
+    assert managed.read_bytes() == clip.read_bytes()
+    assert list((tmp_path / "data" / ".uploads").iterdir()) == []
 
 
 def test_every_run_gets_a_new_directory(clip, tmp_path):
@@ -146,8 +149,9 @@ def test_invalid_upload_gives_message_and_next_step(tmp_path):
     s = run_to_end(runner, upload=("notes.mp4", b"not a video"))
     assert s.status == "error" and "cannot open video" in s.message
     assert s.next_step.startswith("Choose another video")
-    assert s.report is None and s.artifacts == {}
-    assert not s.run_dir.exists()  # nothing was written, so no empty run folder is left behind
+    assert s.report is None and s.artifacts == {} and s.run_dir is None
+    assert list((tmp_path / "data" / ".uploads").iterdir()) == []  # the uploaded copy is removed
+    assert not (tmp_path / "data" / "staging").exists()  # rejected before anything was staged
     assert runner.start(RunSettings(), upload=("again.mp4", b"x"))  # lock released after an error
     runner.join(30)
 
@@ -159,18 +163,19 @@ def test_device_error_suggests_cpu(clip, tmp_path):
     s = run_to_end(make_runner(tmp_path, resolve=no_cuda), source=clip)
     assert s.status == "error" and "CUDA is not available" in s.message
     assert s.next_step == "Choose CPU or Auto and run again."
-    assert not s.run_dir.exists()
+    assert s.run_dir is None and s.artifacts == {}
 
 
-def test_mid_run_failure_keeps_partial_artifacts_and_report(clip, tmp_path):
+def test_mid_run_failure_is_not_offered_as_a_result(clip, tmp_path):
     def failing(cfg):
         return FakeTracker(cfg, fail_at=5, exc=RuntimeError("boom"))
 
     s = run_to_end(make_runner(tmp_path, tracker=failing), source=clip)
     assert s.status == "error" and s.message == "Unexpected error: RuntimeError: boom"
-    assert s.report["status"] == "error" and s.report["processed_frames"] == 5  # this run's partial report
-    assert set(s.artifacts) == {"annotated.mp4", "report.json", "tracks.jsonl"}
-    assert s.run_dir.exists()  # partial output is kept (spec §9: preserve useful artifacts)
+    assert s.report is None and s.artifacts == {} and s.run_dir is None  # partial files are not a result
+    assert list((tmp_path / "data" / "runs").iterdir()) == []  # never published
+    (staged,) = list((tmp_path / "data" / "staging").iterdir())  # diagnostics kept
+    assert (staged / "manifest.json").is_file()
 
 
 @pytest.mark.parametrize(
@@ -243,18 +248,22 @@ def test_failure_inside_start_ends_in_error_and_frees_the_lock(clip, tmp_path, m
     s = runner.snapshot()
     assert s.status == "error" and not s.busy  # not stuck on "processing" with Run disabled
     assert "can't start new thread" in s.message and s.next_step
-    assert not any((tmp_path / "runs" / "ui").iterdir())  # the run folder it made is removed
+    assert not (tmp_path / "data" / "staging").exists()  # nothing was staged
     monkeypatch.undo()
     assert runner.start(RunSettings(), source=clip)  # the job lock was released
     runner.join(30)
 
 
-def test_upload_that_cannot_be_written_leaves_no_folder(tmp_path):
+def test_upload_that_cannot_be_written_leaves_no_folder(tmp_path, monkeypatch):
+    def disk_full(self, data):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(runner_module.Path, "write_bytes", disk_full)
     runner = make_runner(tmp_path)
-    assert runner.start(RunSettings(), upload=("x." + "a" * 300, b"data"))  # file name too long for the filesystem
+    assert runner.start(RunSettings(), upload=("clip.mp4", b"data"))
     s = runner.snapshot()
-    assert s.status == "error"
-    assert not any((tmp_path / "runs" / "ui").iterdir())
+    assert s.status == "error" and "No space left" in s.message
+    assert list((tmp_path / "data" / ".uploads").iterdir()) == []
 
 
 class HostStop(BaseException):
@@ -274,3 +283,12 @@ def test_non_exception_in_worker_still_ends_in_error(clip, tmp_path):
 def test_device_error_message_drops_the_cli_flag_hint():
     message, _ = describe_error(DeviceError("--device cuda requested but CUDA is not available; use --device cpu"))
     assert message == "--device cuda requested but CUDA is not available"
+
+
+def test_a_run_held_by_another_process_gives_a_clear_next_step(clip, tmp_path):
+    runner = make_runner(tmp_path)
+    with store.execution_lease(store.data_root(tmp_path / "data")):  # e.g. a CLI run on the same data folder
+        s = run_to_end(runner, source=clip)
+    assert s.status == "error" and s.message.startswith("Another run is using the data folder")
+    assert s.next_step == "Wait for it to finish, then run again."
+    assert run_to_end(runner, source=clip).status == "complete"  # works once the other run ends

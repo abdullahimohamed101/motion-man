@@ -46,7 +46,8 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 - D5 Canonical mode copies the source into `data/inputs/<input_id>/` once (deduplicated by hash); legacy
   mode hashes the source in place and re-hashes after the run to detect modification.
 - D6 Lease: `fcntl.flock` on `data/.execution.lock`, non-blocking; a second run fails clearly. Legacy mode has
-  no data root, so no lease (documented). Replaces the UI's in-process lock.
+  no data root, so no lease (documented). Amended in step 5: the UI keeps its in-process lock too, so a double click
+  is refused immediately; the lease covers other processes.
 - D7 run_id = `r_<UTC yyyymmddThhmmssZ>_<6 hex>`; `config_sha256` over canonical resolved RunSpec JSON.
 - D8 Limits from A§6 enforced in preflight (duration, dims, frames, free disk ≥ budget); output size checked
   after writing; exceeding either is a FAILED run with a message.
@@ -60,7 +61,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
    a deliberately VFR clip.
 4. [x] Pipeline canonical mode: staging dir → write → validate (order, counts, schema, decode) → hash →
    `manifest.json` (A§3) → atomic rename to `runs/`; legacy mode writes the same manifest in place. Lease.
-5. [ ] UI runner uses canonical mode and the lease; UI behaviour otherwise unchanged (UI2 redesign is P1).
+5. [x] UI runner uses canonical mode and the lease; UI behaviour otherwise unchanged (UI2 redesign is P1).
 6. [ ] Failure tests (MD§25 P0.4): invalid input, empty detections, writer failure, interruption, lease
    held, limit exceeded, source modified mid-run; none produce a SUCCEEDED manifest or a published run.
 7. [ ] Baseline (P0.2): real CPU clip in canonical mode; reopen artifacts; verify manifest hashes from disk.
@@ -76,7 +77,7 @@ runner at the data root. No new packages beyond these two modules; no rename of 
 | P0-5 | Legacy `--output-dir` mode unchanged for users, plus `manifest.json` | old command | |
 | P0-6 | VFR clip and over-limit clip rejected before inference, nothing published | synthetic clips | |
 | P0-7 | Second concurrent run refused by the lease; failed/interrupted runs never in `runs/` | two processes; SIGINT | PASS: second process exit 75; SIGINT exit 130, INTERRUPTED manifest in staging (118 frames), not published |
-| P0-8 | UI run lands in `data/runs/` and shows as before | browser | |
+| P0-8 | UI run lands in `data/runs/` and shows as before | browser | PASS: r_20261101T060711Z_a0b0a2 published; Complete, N/A latency, 3 downloads; CLI-held lease → UI error + next step |
 
 ## Risks
 - OpenCV timestamps on some containers are coarse or missing → D4 tolerance; if unavailable, reject with
@@ -93,3 +94,4 @@ MD says 0.5–1 focused day. Because records, identity and publication contracts
 - 2026-11-01 step 2: store.py (streamed sha256, canonical JSON rejecting NaN, run_id r_<UTC>_<6hex>, ByteTrack YAML read from package files without importing Ultralytics, git commit + dirty, resolve_runspec: config_sha256 over settings; reproducibility recorded but not hashed; missing weights null + reason). 11 tests. Real hashes match shasum (yolo11n.pt, crosswalk.mp4 81 MB in 0.03 s). 163 tests.
 - 2026-11-01 step 3: measured first: OpenCV POS_MSEC after grab() = current frame's PTS (CFR clips: 0.00-frame drift; ffmpeg VFR 30→15 fps clip: OpenCV reports a plausible 20.69 fps, timestamps drift 9.3 frames). Limits dataclass (A§6) on RunConfig; open_reader checks size/dims/frames/duration, then CFR on the first 240 frames, then reopens at frame 0; read_frames checks every frame and treats the frame limit as an error, never truncation. 15 tests (real ffmpeg VFR clip; skips without ffmpeg). Real CLI: crosswalk preflight 0.23 s (outside wall time), 60-frame run exit 0; VFR clip exit 2 'frame 2 is at 66.7 ms, expected 96.7 ms', no dir. 178 tests.
 - 2026-11-01 step 4: store.py data root/import (dedup by hash, temp+verify+rename)/flock lease (LeaseError exit 75)/records-file validation/manifest/publish (rename, never overwrite); pipeline: canonical (lease, import, staging, publish) and legacy (in place + manifest) share one path; v1.0 records; runspec.json; validation before success (decode count, records order/count/schema, source unchanged, output budget); open_writer returns the codec; Tracker.class_names; CLI --output-dir optional, --data-root. Bug caught by test: budget breach returned early without raising; fixed. Removed dead types.frame_record/Track.to_dict. 190 tests. Real: see P0-2/3/7.
+- 2026-11-01 step 5: UI runner runs canonical (data root, lease via pipeline); uploads written to data/.uploads temp, imported by hash, then removed; failed attempts are not offered as results (no partial downloads; diagnostics stay in staging, UI2 copy); LeaseError/StoreError mapped to next steps; runs/ui retired. Tests adapted + lease-held test. 191 tests. Browser: P0-8.

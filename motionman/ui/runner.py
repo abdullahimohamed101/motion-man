@@ -1,27 +1,26 @@
-"""Background runs for the UI (plan ui.md D2).
+"""Background runs for the UI (plan ui.md D2; plan P0 step 5).
 
-Streamlit stops the script thread whenever a widget changes, so inference must not run there. A
-Runner starts ``pipeline.run`` on a worker thread and exposes a thread-safe snapshot that the page
-polls. One job runs at a time per process (INV-1); each run gets a fresh tracker and a new directory
-under ``runs/ui/`` (INV-5). No Streamlit imports here, so this module is tested without a browser.
+Streamlit stops the script thread whenever a widget changes, so inference must not run there. A Runner starts
+``pipeline.run`` on a worker thread and exposes a thread-safe snapshot that the page polls. Runs are canonical
+(spec A§5): imported by hash, staged, validated and published under the data root, guarded by the same
+cross-process lease the CLI uses. An in-process lock additionally refuses a second start immediately, so a
+double click gets "a run is in progress" instead of a lease error. No Streamlit imports here.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import json
 import logging
 import shutil
 import tempfile
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic, perf_counter
 from typing import Literal
 
-from motionman import pipeline, video_io
+from motionman import pipeline, store, video_io
 from motionman.pipeline import OutputCheckError
 from motionman.tracking import DeviceError, ModelError, resolve_device
 from motionman.types import MotionManError, RunConfig
@@ -31,7 +30,7 @@ log = logging.getLogger(__name__)
 
 Status = Literal["idle", "processing", "complete", "error"]
 
-# One job per process, across browser sessions: tracking is CPU-heavy and never runs in parallel here.
+# One job per process, across browser sessions; the data-root lease extends this to other processes (CLI).
 _JOB_LOCK = threading.Lock()
 
 
@@ -51,12 +50,11 @@ class JobState:
     total: int | None = None  # None: no usable total, so the page shows a count, not a percentage
     elapsed_s: float = 0.0  # last value reported by the pipeline
     started_at: float | None = None  # time.monotonic() at start, so the page can show live elapsed time
-    run_dir: Path | None = None
-    out_dir: Path | None = None
-    report: dict | None = None  # this run's report.json, or None (never a previous run's)
+    run_dir: Path | None = None  # the published run folder; only set once a run succeeds
+    report: dict | None = None  # this run's report.json, or None (never a previous run's, never a partial one)
     message: str | None = None  # short explanation for the error state
     next_step: str | None = None
-    artifacts: dict[str, Path] = field(default_factory=dict)  # files that exist, for downloads
+    artifacts: dict[str, Path] = field(default_factory=dict)  # files of the published run, for downloads
 
     @property
     def busy(self) -> bool:
@@ -72,11 +70,11 @@ class JobState:
 class Runner:
     def __init__(
         self,
-        runs_root: Path = Path("runs/ui"),
+        data_root: Path | None = None,
         make_tracker: Callable[[RunConfig], pipeline.FrameTracker] = pipeline.default_tracker,
         resolve: Callable[[str], str] = resolve_device,
     ) -> None:
-        self.runs_root = runs_root
+        self.root = store.data_root(data_root)
         self._make_tracker = make_tracker
         self._resolve = resolve
         self._lock = threading.Lock()
@@ -95,41 +93,43 @@ class Runner:
             raise ValueError("pass exactly one of source or upload")
         if not _JOB_LOCK.acquire(blocking=False):
             return False
-        run_dir: Path | None = None
+        upload_dir: Path | None = None
         try:
-            run_dir = self._new_run_dir()
             if upload is not None:
+                # Same filesystem as the data root; the pipeline imports it by hash, then this copy is deleted.
                 name, data = upload
-                source = run_dir / f"source{Path(name).suffix.lower() or '.mp4'}"
+                (self.root.path / ".uploads").mkdir(parents=True, exist_ok=True)
+                upload_dir = Path(tempfile.mkdtemp(prefix="upload-", dir=self.root.path / ".uploads"))
+                source = upload_dir / f"upload{_safe_suffix(name)}"
                 source.write_bytes(data)
                 source_name = name
             else:
                 source_name = source.name
-            config = RunConfig(source=source, output_dir=run_dir / "out", device=settings.device, conf=settings.conf)
+            config = RunConfig(
+                source=source, output_dir=None, device=settings.device, conf=settings.conf, data_root=self.root.path
+            )
             # A new run replaces everything: no stale Complete badge or old measurements (spec §9).
             self._set(
                 JobState(
                     status="processing",
                     source_name=source_name,
                     device_requested=settings.device,
-                    run_dir=run_dir,
-                    out_dir=config.output_dir,
                     started_at=monotonic(),
                 )
             )
-            self._thread = threading.Thread(target=self._work, args=(config,), name="motionman-run", daemon=True)
+            self._thread = threading.Thread(
+                target=self._work, args=(config, upload_dir), name="motionman-run", daemon=True
+            )
             self._thread.start()
         except Exception as e:  # e.g. the upload can't be written or the thread can't start
             log.exception("could not start the run")
-            if run_dir is not None:
-                shutil.rmtree(run_dir, ignore_errors=True)
+            _remove(upload_dir)
             message, next_step = describe_error(e)
             # A terminal state, so the page doesn't stay on "processing" with Run disabled.
             self._set(JobState(status="error", message=message, next_step=next_step))
             _JOB_LOCK.release()
         except BaseException:
-            if run_dir is not None:
-                shutil.rmtree(run_dir, ignore_errors=True)
+            _remove(upload_dir)
             self._set(JobState())
             _JOB_LOCK.release()
             raise
@@ -140,24 +140,27 @@ class Runner:
         if self._thread is not None:
             self._thread.join(timeout)
 
-    def _work(self, config: RunConfig) -> None:
+    def _work(self, config: RunConfig, upload_dir: Path | None) -> None:
         started = perf_counter()
         try:
             report = pipeline.run(
                 config, make_tracker=self._make_tracker, resolve=self._resolve_and_record, on_progress=self._progress
             )
+            run_dir = Path(report["run_dir"])
             self._update(
                 status="complete",
                 report=report,
                 processed=report["processed_frames"],
                 elapsed_s=perf_counter() - started,
-                artifacts=_existing_artifacts(config.output_dir),
+                run_dir=run_dir,
+                artifacts=_existing_artifacts(run_dir),
             )
         except BaseException as e:  # the worker must always end in a terminal state
-            self._fail(e, config, started)
+            self._fail(e, started)
             if not isinstance(e, Exception):
                 raise
         finally:
+            _remove(upload_dir)
             if self.snapshot().status == "processing":  # the error handling itself failed
                 self._update(
                     status="error",
@@ -166,22 +169,13 @@ class Runner:
                 )
             _JOB_LOCK.release()
 
-    def _fail(self, e: BaseException, config: RunConfig, started: float) -> None:
+    def _fail(self, e: BaseException, started: float) -> None:
         if not isinstance(e, MotionManError):
             log.error("run failed", exc_info=e)
         message, next_step = describe_error(e)
-        if not config.output_dir.exists():
-            # Failed before writing anything (bad input, device, model): don't leave an empty run folder.
-            # It holds at most our copy of an upload; runs with output keep their partial artifacts.
-            shutil.rmtree(config.output_dir.parent, ignore_errors=True)
-        self._update(
-            status="error",
-            message=message,
-            next_step=next_step,
-            elapsed_s=perf_counter() - started,
-            report=_read_report(config.output_dir),  # partial report, if the run got that far
-            artifacts=_existing_artifacts(config.output_dir),
-        )
+        # A failed attempt is never published; its partial files stay in staging for diagnosis (UI2 copy:
+        # "This attempt did not finish. Partial files are not a completed result.").
+        self._update(status="error", message=message, next_step=next_step, elapsed_s=perf_counter() - started)
 
     def _resolve_and_record(self, requested: str) -> str:
         used = self._resolve(requested)
@@ -190,17 +184,6 @@ class Runner:
 
     def _progress(self, processed: int, total: int | None, elapsed_s: float) -> None:
         self._update(processed=processed, total=total, elapsed_s=elapsed_s)
-
-    def _new_run_dir(self) -> Path:
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        for n in range(1000):
-            run_dir = self.runs_root / (stamp if n == 0 else f"{stamp}-{n}")
-            try:
-                run_dir.mkdir(parents=True, exist_ok=False)  # never reuse a directory (INV-5)
-                return run_dir
-            except FileExistsError:
-                continue
-        raise RuntimeError(f"no free run directory under {self.runs_root}")
 
     def _set(self, state: JobState) -> None:
         with self._lock:
@@ -219,10 +202,20 @@ def describe_error(e: BaseException) -> tuple[str, str]:
     if isinstance(e, ModelError):
         return text, "Check that yolo11n.pt is in the project folder or that the network is reachable, then retry."
     if isinstance(e, OutputCheckError):
-        return text, "Run again. If it repeats, keep report.json from this run and report the problem."
+        return (
+            f"This attempt did not finish. Partial files are not a completed result. ({text})",
+            "Run again. If it repeats, keep the attempt's folder under data/staging and report the problem.",
+        )
+    if isinstance(e, store.LeaseError):
+        return (
+            "Another run is using the data folder, possibly from the command line.",
+            "Wait for it to finish, then run again.",
+        )
+    if isinstance(e, store.StoreError):
+        return text, "Check free disk space and write access to the data folder, then run again."
     if isinstance(e, VideoError):
-        if "writer" in text or "output directory" in text:
-            return text, "Check free disk space and write access to the runs/ui folder, then run again."
+        if "writer" in text:
+            return text, "Check free disk space and write access to the data folder, then run again."
         return text, "Choose another video: a constant-frame-rate MP4 with even width and height."
     return (
         f"Unexpected error: {type(e).__name__}: {text}",
@@ -230,16 +223,19 @@ def describe_error(e: BaseException) -> tuple[str, str]:
     )
 
 
-def _existing_artifacts(out_dir: Path) -> dict[str, Path]:
+def _existing_artifacts(run_dir: Path) -> dict[str, Path]:
     names = (pipeline.ANNOTATED, pipeline.TRACKS, pipeline.REPORT)
-    return {name: out_dir / name for name in names if (out_dir / name).is_file()}
+    return {name: run_dir / name for name in names if (run_dir / name).is_file()}
 
 
-def _read_report(out_dir: Path) -> dict | None:
-    try:
-        return json.loads((out_dir / pipeline.REPORT).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+def _remove(folder: Path | None) -> None:
+    if folder is not None:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _safe_suffix(name: str) -> str:
+    suffix = Path(name).suffix.lower()
+    return suffix if suffix in {".mp4", ".m4v", ".mov"} else ".mp4"
 
 
 @dataclass(frozen=True)
