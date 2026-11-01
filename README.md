@@ -111,8 +111,9 @@ Opens a Streamlit workbench at http://localhost:8501, listening on localhost onl
 Device, detection threshold and saved tracking presets sit under **Advanced settings**, closed by default.
 While it runs you see frames, percentage and elapsed time. When it finishes the result opens:
 
-- **Saved runs** at the top reopens any verified run in the data folder. Older pre-manifest folders under
-  `runs/` appear only with **Show legacy runs** and are read-only and unverified.
+- **Library** in the top bar reopens any verified run in the data folder. Older pre-manifest folders under
+  `runs/` appear only with **Show legacy runs** (at the bottom of the Library) and are read-only and unverified.
+- **Events & zones**: draw lines and rectangles and analyze them (see Events & zones below).
 - **Inspect**: the Tracked or Original video (native playback, not synchronized with the frame below), and an
   inspected frame. The **Source frame** slider shows that exact frame from the source video with its own
   saved detections; arrow keys step one frame. **View options** change labels, trail length and opacity, the
