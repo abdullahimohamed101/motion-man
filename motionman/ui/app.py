@@ -1,5 +1,7 @@
 """MotionMan workbench (spec A§7/A§8, UI2): Choose video / Try demo → Run tracking → Inspect → Export.
 
+Navigation follows ``docs/design/ui.md``: the top bar holds the brand, the Library and New video; each page shows
+its title once with the live status pill beside it; an item's actions (Export, ⋯ details) sit in its header.
 Layout and state only. Tracking runs in the pipeline via Runner; inspection reads saved evidence through
 ``runs`` and ``inspection`` and never runs the model. Start with ``scripts/ui.sh``.
 """
@@ -71,16 +73,13 @@ def open_cached(summary: runs.RunSummary, root: store.DataRoot):
     return cache[summary.run_id][:3]
 
 
-def show_run(run_id: str, *, sync_picker: bool = True) -> None:
+def show_run(run_id: str) -> None:
     st.session_state["run_id"], st.session_state["page"] = run_id, "result"
-    if sync_picker:  # only before the picker renders; afterwards it already holds this value
-        st.session_state["run_picker"] = run_id
 
 
 def new_video() -> None:
-    """Back to setup. Clears the picker too, or its old value would immediately reopen that run."""
+    """Back to setup."""
     st.session_state["page"] = "setup"
-    st.session_state["run_picker"] = None
 
 
 st.set_page_config(page_title="MotionMan", page_icon=style.FAVICON, layout="wide", initial_sidebar_state="collapsed")
@@ -104,9 +103,10 @@ if page == "result" and current is None:
     page = st.session_state["page"] = "setup"  # the run disappeared (or legacy runs were hidden)
 
 
-# --- Top bar: logo + wordmark + source | saved-run picker, legacy toggle, status pill, New video / Export -----
+# --- Top bar: brand | Library (saved runs + legacy filter), New video. Item data stays on the page. ----------
 @st.fragment(run_every=0.5 if state.busy else 2.0)
 def status_badge() -> None:
+    """The live status pill, shown once, beside the page title."""
     s = runner.snapshot()
     if s.status != st.session_state.get("seen_status"):
         st.rerun()  # a run started, finished or failed: redraw the whole page
@@ -118,41 +118,52 @@ def status_badge() -> None:
         badge = view.BADGES["error"]
     else:
         badge = view.Badge("Ready", "gray", ":material/radio_button_unchecked:")
-    st.badge(badge.label, icon=badge.icon, color=badge.color, width="stretch")
+    st.badge(badge.label, icon=badge.icon, color=badge.color)
 
 
-with st.container(key="topbar"):
-    bar_brand, bar_runs, bar_legacy, bar_status, bar_actions = st.columns(
-        [2.4, 3.2, 1.5, 1.2, 2.9], vertical_alignment="center"
+def library_menu() -> None:
+    """Saved runs as a list (clip name · human time · size), newest first; the legacy filter lives here too."""
+    # Keyed by the open run so choosing one remounts (closes) the menu; the container keeps a stable CSS hook.
+    menu = st.container(key="library").popover(
+        "Library", icon=":material/video_library:", key=f"library-{current.run_id if current else 'none'}"
     )
-    with bar_brand:
-        st.html(style.brand_html(current.display_name if current else None))
-    with bar_runs:
-        ids = [r.run_id for r in shelf]
-        if ids:
-            if st.session_state.get("run_picker") not in ids:
-                st.session_state["run_picker"] = current.run_id if current else None
-            choice = st.selectbox(
-                "Saved runs",
-                ids,
-                format_func=lambda rid: by_id[rid].label,
-                placeholder="Open a saved run",
-                key="run_picker",
-                label_visibility="collapsed",
-            )
-            if choice is not None and (current is None or choice != current.run_id):
-                show_run(choice, sync_picker=False)
-                st.rerun()
+    with menu:
+        if shelf:
+            for r in shelf:
+                is_current = current is not None and r.run_id == current.run_id
+                st.button(
+                    view.run_row(r.display_name, r.started_at, r.frames, r.kind == "legacy"),
+                    key=f"open-{r.run_id}", type="tertiary", width="stretch",
+                    icon=":material/check:" if is_current else ":material/movie:",
+                    on_click=show_run, args=(r.run_id,),
+                )  # fmt: skip
         else:
-            st.caption("No saved runs yet.")
-    with bar_legacy:
-        st.toggle("Legacy", key="show_legacy", help="Show legacy runs: outputs from before verified runs. Read-only.")
-    with bar_status:
-        status_badge()
-    with bar_actions:
-        act_new, act_export = st.columns(2)
+            st.caption("No saved runs yet. Track a video and it will appear here.")
+        st.divider()
+        st.toggle("Show legacy runs", key="show_legacy",
+                  help="Outputs from before verified runs. Read-only and unverified.")  # fmt: skip
+
+
+with st.container(key="topbar", horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
+    st.html(style.brand_html(), width="content")
+    with st.container(horizontal=True, width="content", gap="small", vertical_alignment="center"):
+        library_menu()
         if page == "result":
-            act_new.button("New video", icon=":material/add:", on_click=new_video, width="stretch")
+            st.button("New video", icon=":material/add:", on_click=new_video, key="new_video")
+
+
+def page_header(title: str, caption: str | None = None):
+    """Title, live status pill and an optional right-hand action cluster on one centre line; facts underneath.
+    Returns the action cluster so the page can fill it once it knows what the actions need."""
+    with st.container(key="pagehead"):
+        with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
+            with st.container(horizontal=True, width="content", gap="small", vertical_alignment="center"):
+                st.markdown(f"### {title}", width="content")
+                status_badge()
+            actions = st.container(horizontal=True, width="content", gap="small", vertical_alignment="center")
+        if caption:
+            st.caption(caption)
+    return actions
 
 
 # --- Setup: Choose video / Try demo → Run tracking ---------------------------------------------------------
@@ -170,9 +181,7 @@ def progress_panel() -> None:
 
 
 def setup_page() -> None:
-    with st.container(key="pagehead"):
-        st.markdown("### Choose a video to track objects, or try the demo.")
-        st.caption(LIMITS)
+    page_header("Track a video", f"Choose a video or try the demo. {LIMITS}")
     with st.container(border=True, key="setup-card", width=720):
         source_card()
 
@@ -261,10 +270,13 @@ def result_page(summary: runs.RunSummary) -> None:
     contexts: dict = st.session_state.setdefault("contexts", {})
     ctx = workspace.restore(contexts.get(rid), count, derived.tracks)
 
-    with st.container(key="pagehead"):
-        st.markdown(f"### {summary.display_name}")
-        note = " · source unverified (legacy run)" if not run.source_verified else ""
-        st.caption(f"Run `{rid}` · {count:,} frames · {run.width}×{run.height} at {run.fps:.3f} fps playback{note}")
+    note = " · source unverified (legacy run)" if not run.source_verified else ""
+    facts = [view.when_label(summary.started_at), view.duration_label(count, run.fps), f"{count:,} frames",
+             f"{run.width}×{run.height}"]  # fmt: skip
+    actions = page_header(summary.display_name or "Unknown source", " · ".join(x for x in facts if x) + note)
+    with actions:
+        export_slot = st.container(key="export")  # filled once the inspected frame and view options are known
+        details_menu(run, summary)
     inspect_tab, perf_tab = st.tabs(["Inspect", "Performance"])
 
     with inspect_tab:
@@ -327,8 +339,21 @@ def result_page(summary: runs.RunSummary) -> None:
     with perf_tab:
         perf_panel(run, summary)
 
-    with act_export:
+    with export_slot:
         export_menu(run, derived, frames, frame, options, record)
+
+
+def details_menu(run, summary) -> None:
+    """The overflow (⋯): technical identity of this run, one click away instead of in the headline."""
+    with st.popover("", icon=":material/more_horiz:", help="Run details", key="details"):
+        st.markdown("**Run details**")
+        started = (summary.started_at or "unknown")[:19].replace("T", " ")
+        st.caption(f"Run ID · `{run.run_id}`")
+        st.caption(f"Started · {started} UTC")
+        st.caption(f"Playback · {run.fps:.3f} fps")
+        st.caption("Source · " + ("verified" if run.source_verified else "unverified (legacy run)"))
+        st.caption(f"Folder · `{summary.path}`")
+        st.caption("More in Performance → Run details.")
 
 
 def object_panel(run, derived, frames, track, record, frame_key) -> None:
@@ -414,8 +439,8 @@ def stage_table(run, report, rows) -> None:
 
 
 def export_menu(run, derived, frames, frame, options, record) -> None:
-    with st.popover("Export", type="primary", icon=":material/ios_share:", width="stretch"):
-        st.caption(f"From run `{run.run_id}`. Audio is not included in any export.")
+    with st.popover("Export", type="primary", icon=":material/ios_share:", key="export_menu"):
+        st.caption("Audio is not included in any export.")
         files = (
             (run.video_path, "Annotated video", "video/mp4", "annotated.mp4"),
             (

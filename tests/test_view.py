@@ -1,3 +1,4 @@
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -124,3 +125,28 @@ def test_phase_metrics_for_new_and_old_runs():
     phases = view.phase_metrics(old)
     assert [m.value for m in phases] == [view.NO_RESULT, "30.10 s", view.NO_RESULT, view.NO_RESULT]
     assert phases[0].help == phases[3].help == view.NOT_RECORDED  # never a zero
+
+
+def test_when_label_reads_like_a_person_wrote_it():
+    from datetime import datetime
+
+    now = datetime(2026, 11, 1, 19, 50, tzinfo=UTC)
+    assert view.when_label("2026-11-01T19:45:56.123Z", now) == "Today, 7:45 PM"
+    assert view.when_label("2026-10-31T09:05:00+00:00", now) == "Yesterday, 9:05 AM"
+    assert view.when_label("2026-10-27T23:59:00Z", now) == "Tue, 11:59 PM"
+    assert view.when_label("2026-03-04T08:00:00Z", now) == "4 Mar, 8:00 AM"
+    assert view.when_label("2025-12-25T08:00:00Z", now) == "25 Dec 2025"
+    assert view.when_label(None, now) is None and view.when_label("not a date", now) is None
+
+
+def test_duration_and_library_rows_never_show_ids():
+    from datetime import datetime
+
+    now = datetime(2026, 11, 1, 19, 50, tzinfo=UTC)
+    assert view.duration_label(1356, 23.976) == "57 s"
+    assert view.duration_label(6000, 23.976) == "4 min 10 s"
+    assert view.duration_label(10, 0) == "0 s"
+    row = view.run_row("crosswalk.mp4", "2026-11-01T19:45:56Z", 1356, False, now)
+    assert row == "crosswalk.mp4 · Today, 7:45 PM · 1,356 frames"
+    assert view.run_row("demo.mp4", None, 240, True, now) == "demo.mp4 · Legacy (unverified)"
+    assert view.run_row(None, None, None, False, now) == "Unknown source"

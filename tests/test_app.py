@@ -72,8 +72,22 @@ def render(at=None):
 
 
 def open_run(at, run_id):
-    at.selectbox(key="run_picker").set_value(run_id)
+    """Choose a run in the Library menu (one row per run, keyed by run ID)."""
+    at.button(key=f"open-{run_id}").click()
     return render(at)
+
+
+def library_rows(at):
+    return {b.key.removeprefix("open-"): b.label for b in at.button if b.key and b.key.startswith("open-")}
+
+
+def run_button(at):
+    return next(b for b in at.button if b.label == "Run tracking")
+
+
+def page_buttons(at):
+    """Buttons on the page itself, without the Library's run rows."""
+    return [b.label for b in at.button if not (b.key and b.key.startswith("open-"))]
 
 
 def badge(at):
@@ -86,9 +100,11 @@ def captions(at):
 
 def test_fresh_page_is_the_guided_setup(world):
     at = render()
-    assert any(m.value.startswith("### Choose a video to track objects") for m in at.markdown)
+    assert any(m.value == "### Track a video" for m in at.markdown)
+    assert any(c.startswith("Choose a video or try the demo.") for c in captions(at))
     assert "Ready" in badge(at)
-    assert [b.label for b in at.button] == ["Run tracking"] and not at.button[0].disabled
+    assert page_buttons(at) == ["Run tracking"] and not run_button(at).disabled
+    assert set(library_rows(at)) == {world["a"], world["b"]}  # saved runs are reachable from the Library
     assert at.expander[0].label == "Advanced settings"  # thresholds and device are tucked away
     assert any("64×48" in c for c in captions(at))  # the demo was preflighted
 
@@ -98,7 +114,7 @@ def test_run_tracking_passes_the_advanced_settings(world, clip):
     at = render()
     at.segmented_control(key="device").set_value("Auto")
     at.slider(key="conf").set_value(0.4)
-    at.button[0].click()
+    run_button(at).click()
     render(at)
     assert world["fake"].starts == [(RunSettings(device="auto", conf=0.4), {"source": clip})]
 
@@ -117,6 +133,10 @@ def test_opening_a_run_shows_inspect_and_performance(world):
     at = open_run(render(), world["a"])
     assert [t.label for t in at.tabs] == ["Inspect", "Performance"]
     assert "Complete" in badge(at) and any(b.label == "New video" for b in at.button)
+    assert any(c.startswith("Run ID · `") and world["a"] in c for c in captions(at))  # the ⋯ details menu
+    # The ID is never in the headline: not in the title, not in the facts line under it.
+    assert not any(m.value.startswith("### ") and world["a"] in m.value for m in at.markdown)
+    assert not any(world["a"] in c for c in captions(at) if not c.startswith(("Run ID", "Folder")))
     assert at.slider(key=f"frame-{world['a']}").value == 0
     assert [m.value for m in at.metric][2] == "20"  # Performance: frames processed, from this run's report
 
@@ -177,7 +197,7 @@ def test_new_video_returns_to_setup_and_stays_there(world):
     next(b for b in at.button if b.label == "New video").click()
     at = render(at)
     at = render(at)  # a second rerun must not reopen the previous run
-    assert any(m.value.startswith("### Choose a video") for m in at.markdown)
+    assert any(m.value == "### Track a video" for m in at.markdown)
 
 
 def test_evidence_png_export_writes_a_file(world):
@@ -194,7 +214,7 @@ def test_a_finished_run_opens_its_result(world):
     world["fake"].state = JobState(status="complete", report={"run_id": world["b"]}, run_dir=None)
     at = render()
     assert [t.label for t in at.tabs] == ["Inspect", "Performance"]
-    assert at.selectbox(key="run_picker").value == world["b"]
+    assert any(c.startswith("Run ID · `") and world["b"] in c for c in captions(at))  # run B, not the newest A
 
 
 def test_runner_error_shows_next_step_on_setup(world):
@@ -217,10 +237,11 @@ def test_a_damaged_run_is_refused_with_a_next_step(world):
 def test_legacy_runs_are_hidden_until_asked_for(world, clip):
     pipeline.run(RunConfig(clip, world["tmp"] / "legacy" / "old"), make_tracker=FakeTracker, resolve=lambda d: "cpu")
     at = render()
-    assert "legacy:old" not in at.selectbox(key="run_picker").options
-    at.toggle(key="show_legacy").set_value(True)
+    assert "legacy:old" not in library_rows(at)
+    at.toggle(key="show_legacy").set_value(True)  # the filter lives in the Library menu
     at = render(at)
-    assert any("Legacy (unverified)" in o for o in at.selectbox(key="run_picker").options)
+    assert "Legacy (unverified)" in library_rows(at)["legacy:old"]
+    assert not any("legacy" in label for rid, label in library_rows(at).items() if rid != "legacy:old")
 
 
 def test_a_broken_legacy_run_shows_an_error_not_a_crash(world, clip):

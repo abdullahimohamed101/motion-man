@@ -7,6 +7,7 @@ an unavailable latency is "N/A"; state is never shown by colour alone.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from motionman.ui.runner import JobState, SourceInfo
 
@@ -160,6 +161,50 @@ def report_details(r: dict, source_name: str | None, run_dir) -> list[tuple[str,
         ("Model load", _num(r["timing"]["model_load_s"], "{:.2f} s")),
         ("Run folder", str(run_dir)),
     ]
+
+
+def when_label(iso: str | None, now: datetime | None = None) -> str | None:
+    """A human time for a run's start, in local time: "Today, 7:45 PM", "Yesterday, 7:45 PM", "Mon, 7:45 PM"
+    inside the last week, "1 Nov, 7:45 PM" this year, else "1 Nov 2025". None when the time is unknown."""
+    if not iso:
+        return None
+    try:
+        t = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    now = now or datetime.now().astimezone()
+    if t.tzinfo is not None:
+        t = t.astimezone(now.tzinfo)
+    clock = t.strftime("%I:%M %p").lstrip("0")
+    days = (now.date() - t.date()).days
+    if days == 0:
+        day = "Today"
+    elif days == 1:
+        day = "Yesterday"
+    elif 1 < days < 7:
+        day = t.strftime("%a")
+    elif t.year == now.year:
+        day = f"{t.day} {t.strftime('%b')}"
+    else:
+        return f"{t.day} {t.strftime('%b %Y')}"
+    return f"{day}, {clock}"
+
+
+def duration_label(frames: int, fps: float) -> str:
+    """A clip length from its frame count: "56 s" under two minutes, else "4 min 12 s"."""
+    seconds = frames / fps if fps else 0.0
+    if seconds < 120:
+        return f"{seconds:.0f} s"
+    whole = timedelta(seconds=round(seconds))
+    minutes, secs = divmod(int(whole.total_seconds()), 60)
+    return f"{minutes} min {secs} s"
+
+
+def run_row(display_name: str | None, started_at: str | None, frames: int | None, legacy: bool,
+            now: datetime | None = None) -> str:  # fmt: skip
+    """One Library row: clip name, human time and size; legacy runs say so instead of claiming a frame count."""
+    tail = "Legacy (unverified)" if legacy else (f"{frames:,} frames" if frames else None)
+    return " · ".join(x for x in (display_name or "Unknown source", when_label(started_at, now), tail) if x)
 
 
 def _num(value: float | None, fmt: str) -> str:
