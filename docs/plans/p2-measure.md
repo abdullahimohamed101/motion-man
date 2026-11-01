@@ -80,22 +80,22 @@ Release A is then complete.
    repeated clips; probe files removed; nothing outside its temp folder touched.
 7. [x] `bundle` + `--verify` (D10). Tests: allowlist only, footage opt-in, no absolute paths, home folder or
    env vars in any entry, tamper and traversal refused, bundle reopens.
-8. [ ] Real verification and docs: 3-repeat benchmark, one controlled comparison, doctor on this host (and
+8. [x] Real verification and docs: 3-repeat benchmark, one controlled comparison, doctor on this host (and
    a failing check shown), bundle exported and verified; README, `docs/interview.md`, `docs/demo-script.md`.
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| P2-1 | Offline gate passes; new suites need no weights, GPU or network | `scripts/check.sh`; CI | |
-| P2-2 | Every run reports setup, decode, detect_track, render, write, finalize and job wall; rows = frames | test + real run | |
-| P2-3 | Warmup policy and sample counts persisted; too few samples → null with a reason | test | |
-| P2-4 | Benchmark repeats never reuse inference: N trackers, N run_ids, N fresh records hashes on real repeats | test + real | |
-| P2-5 | Benchmark shows median and range; failed trials visible and excluded from the median | test | |
-| P2-6 | Compare flags undeclared differences as confounders and never labels accuracy | test + real | |
-| P2-7 | Unsupported metrics show Unavailable with a reason (GPU here; old runs in the UI) | test + browser | |
-| P2-8 | Doctor is read-only, removes only its own probes, reports a failing check with a next step | test + real | |
-| P2-9 | Bundles reopen and verify; tampering refused; footage and full paths only when opted in; no env dump | test + real | |
-| P2-10 | A measured bottleneck is explained from stage timings in README (real numbers, power state stated) | real run | |
+| P2-1 | Offline gate passes; new suites need no weights, GPU or network | `scripts/check.sh`; CI || Local pass, 355 tests (doctor's torch probe and model loader injected; no weights or network). CI: pending on the P2 PR |
+| P2-2 | Every run reports setup, decode, detect_track, render, write, finalize and job wall; rows = frames | test + real run || Pass: test_stages (rows = frames, totals ≤ wall, job = setup + wall + finalize); real runs report all fields (e.g. setup 3.45 s, wall 29.36 s) |
+| P2-3 | Warmup policy and sample counts persisted; too few samples → null with a reason | test || Pass: test_stages::test_warmup_policy_and_short_runs_are_explicit; report.timing.warmup = exclude_first_inferred / 10 / samples |
+| P2-4 | Benchmark repeats never reuse inference: N trackers, N run_ids, N fresh records hashes on real repeats | test + real || Pass: test_benchmark (3 trackers, 3 run_ids, 3 records hashes); real: 6 trials, 6 distinct run_ids and records hashes |
+| P2-5 | Benchmark shows median and range; failed trials visible and excluded from the median | test || Pass: test_benchmark median/range and failed-trial tests; real: 45.86 (43.99–46.19) and 54.21 (50.61–55.16) |
+| P2-6 | Compare flags undeclared differences as confounders and never labels accuracy | test + real || Pass: test_compare; real: smoke pair flagged `code`; final pair "Controlled", +18.2%, scope line says speed only |
+| P2-7 | Unsupported metrics show Unavailable with a reason (GPU here; old runs in the UI) | test + browser || Pass: GPU "Unavailable" with reason (telemetry, doctor); pre-P2 runs show "—" / Not recorded in the browser (step 2) |
+| P2-8 | Doctor is read-only, removes only its own probes, reports a failing check with a next step | test + real || Pass: test_doctor (tree unchanged, probe folder removed, data root not created); real `--device cuda` → FAIL + next step, exit 1 |
+| P2-9 | Bundles reopen and verify; tampering refused; footage and full paths only when opted in; no env dump | test + real || Pass: test_bundle (allowlist, redaction, footage opt-in, tamper/traversal refused); real bundle verified, 0 home-path hits, tampered copy exit 1 |
+| P2-10 | A measured bottleneck is explained from stage timings in README (real numbers, power state stated) | real run || Pass: README "Where the time goes": detect+track 89.5% of wall; imgsz 480 cuts its p50 by 3.25 ms for +18.2% FPS (battery stated) |
 
 ## Risks
 - Instrumentation overhead: four extra `perf_counter` pairs per frame (~µs) against ~22 ms frames; measured
@@ -114,3 +114,4 @@ Release A is then complete.
 - 2026-11-01 step 5: compare.py: 21 factors from each benchmark's first succeeded run (runspec + report + environment + power sources); intended vs confounders; notes for failed trials, inconsistent settings, mixed power, < 3 trials; median fps change %, range overlap, stage p50 deltas; verdict says "Controlled" only with no confounders and no notes; speed-only scope line. CLI `compare A B --intended …` (IDs or paths), writes data/comparisons/<id>/comparison.json, exit 0 (2 on unreadable input). 8 tests, 329 total. Real (3 × 240 frames, battery): imgsz 640 median 42.42 vs imgsz 480 49.09 fps, +15.7%, detect_track p50 −4.06 ms; ranges overlap; code commit flagged as confounder (different commits, dirty tree).
 - 2026-11-01 step 6: doctor.py: python, packages vs requirements pins, weights, device (resolve_device + CUDA/MPS availability), model load with warmup (skipped on device FAIL or --no-model), encode/decode probe in a fresh mkdtemp removed in finally, --source preflight via open_reader, storage (no data root created), capacity vs budget, timer; each PASS/WARN/FAIL/UNAVAILABLE + next step; exit 1 on FAIL; --json. Input-quality measurements + hints from 60 sequentially decoded samples (dark < 40 luma, blurry < 50 Laplacian var at 640 px, repeated > 20%). 13 tests, 342 total (device probe and model loader injected: no torch in tests). Real: all PASS (model load 2.28 s, encode probe 4 ms, crosswalk preflight 228 ms; luma 121.4, Laplacian 3,604, 0% repeats → no hints); --device cuda → FAIL with next step, model load skipped, exit 1.
 - 2026-11-01 step 7: bundle.py: verified run only (open_run re-hashes); allowlist (manifest, runspec, report, tracks, timings, telemetry, doctor.json without model load, README.txt with reproduce commands) + bundle_manifest.json (bytes + sha256 per entry); redaction: home folder → <redacted> first (a test caught the basename rule keeping the username), other absolute paths → <redacted>/<name>; --include-paths, --include-footage (streamed); verify: flat allowlisted names only, no duplicates, size cap, manifest/entry agreement, streamed re-hash. store.sha256_bytes. CLI `bundle --run` / `--verify` (exit 1 on a bad bundle, 2 on unknown or damaged run). 13 tests, 355 total. Real: bundle of r_20261101T073439Z_625362 = 610 KiB, 8 entries + manifest, verify ok, zero matches for $HOME or the username.
+- 2026-11-01 step 8: real verification on clean commit 2d4ca5e, all on battery (86% → 80%). Benchmark imgsz 640: 46.19 / 45.86 / 43.99 → median 45.86; imgsz 480: 55.16 / 54.21 / 50.61 → median 54.21; compare --intended imgsz: +18.2%, ranges disjoint, Controlled; detect_track p50 19.48 → 16.23 ms, other stages ≤ 0.11 ms. First trial setup 3.45 s vs ~0.39 s later (one-time process startup). Overhead: pre-P2 code (6a419d7, temp worktree) 45.98 / 44.91 / 45.14 → median 45.14, overlapping the instrumented range: no measurable cost. Doctor all PASS; bundle of r_20261101T081305Z_d8239d verified (608 KiB, 0 home hits), a tampered copy refused (exit 1). Docs: README results + instrumentation cost, interview (Release A section, stale line refs fixed, test count), demo script (new UI flow, measurement tools), ARCHITECTURE layout.

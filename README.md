@@ -228,10 +228,22 @@ difference is printed as a **CONFOUNDER** and the verdict says the comparison is
 failed trials, mixed power within a benchmark, and fewer than 3 trials, and says when the two trial ranges overlap.
 It compares speed only and writes `data/comparisons/<id>/comparison.json`; it exits 0 even when confounded.
 
-Example (short smoke runs, 3 × 240 frames each, both on battery): imgsz 640 gave a median of 42.42 fps
-(37.76–43.11) and imgsz 480 gave 49.09 fps (42.1–50.25), +15.7%, with detect+track p50 down 4.06 ms. `compare`
-flagged the code commit as a confounder (the two runs came from different commits with uncommitted changes) and
-noted that the ranges overlap, so this is a hint, not a controlled result.
+**Measured with these commands** (full clip, 3 trials each, clean commit `2d4ca5e`, battery 86% → 80%):
+
+| Benchmark | Trial FPS | Median | Detect+track p50 (median of trials) |
+|---|---|---|---|
+| imgsz 640 (`b_20261101T081304Z_73cb9b`) | 46.19, 45.86, 43.99 | **45.86** | 19.48 ms |
+| imgsz 480 (`b_20261101T081646Z_7ffa58`) | 55.16, 54.21, 50.61 | **54.21** | 16.23 ms |
+
+`compare … --intended imgsz` reported +18.2% median FPS, ranges not overlapping, and "Controlled: nothing else
+differs"; the other stages moved by 0.1 ms or less, so the gain is all in detect+track. `compare` checks the power
+*source* only: the charge fell from 86% to 80% across the two, which it does not see. The first trial's setup was
+3.45 s and later trials' about 0.39 s, because the first model load in a process pays one-time startup costs.
+An earlier pair of short smoke runs from different commits was flagged as confounded by `code`, as it should be.
+
+**Instrumentation cost.** Three runs of the pre-P2 code (`6a419d7`) under the same conditions measured 45.98,
+44.91 and 45.14 fps (median 45.14). With stage timing the median was 45.86 (43.99–46.19). The ranges overlap, so
+the per-frame timers have no measurable cost here.
 
 The tables below were measured before the benchmark command existed, by running the CLI three times by hand.
 
