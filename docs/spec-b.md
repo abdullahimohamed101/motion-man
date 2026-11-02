@@ -90,7 +90,7 @@ network service. After each phase gate, stop for the owner's go-ahead.
 ## B§8 P4 evaluation and disagreement (MD§13)
 - Detection evaluation per class: sort predictions by confidence; match each to the highest-IoU unmatched
   eligible ground-truth box at or above the IoU threshold (default 0.5) with a documented tie-break;
-  predictions at or below the recorded confidence threshold are dropped first. Predictions whose centre falls in
+  predictions below the confidence threshold are dropped first (default: the run's own). Predictions whose centre falls in
   an ignored region are neither TP nor FP. Only frames whose reviewed class scope covers the class are scored;
   partial frames are excluded. Output precision and recall (null + reason when undefined), TP/FP/FN, matched IoU
   distribution and example frames. Never called mAP. Every result names dataset revision, thresholds,
