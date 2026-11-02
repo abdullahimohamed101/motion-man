@@ -219,3 +219,36 @@ def heatmap_overlay(image: np.ndarray, heat: dict, opacity: float) -> np.ndarray
     colours = cv2.applyColorMap((big * 255).astype(np.uint8), cv2.COLORMAP_INFERNO).astype(np.float64)
     alpha = (opacity * big)[..., None]
     return (img * (1 - alpha) + colours * alpha).round().astype(np.uint8)
+
+
+REVIEW_PRED = (150, 150, 150)  # predictions: thin grey, so the reviewer's own boxes stand out
+REVIEW_GT = (224, 214, 208)  # reviewed boxes (ground truth): mist, thicker
+REVIEW_IGNORED = (70, 70, 70)
+
+
+def draw_review(image: np.ndarray, predictions: Sequence[dict], annotations: Sequence[dict], ignored: Sequence,
+                pending: Sequence[float] | None = None, accepted: frozenset = frozenset()) -> np.ndarray:  # fmt: skip
+    """A review frame (plan P4 D10): ignored areas shaded, predictions thin and grey (accepted ones dimmer still),
+    reviewed boxes in mist with their annotation id, and the box being typed in the signal colour."""
+    img = image.copy()
+    scale = max(1, round(img.shape[1] / 960))
+    for box in ignored:
+        x1, y1, x2, y2 = (round(v) for v in box)
+        region = img[y1:y2, x1:x2]
+        img[y1:y2, x1:x2] = (region * 0.35).astype(np.uint8)
+        cv2.rectangle(img, (x1, y1), (x2, y2), REVIEW_IGNORED, scale, cv2.LINE_AA)
+    for o in predictions:
+        x1, y1, x2, y2 = (round(v) for v in o["bbox_xyxy"])
+        done = o["observation_id"] in accepted
+        cv2.rectangle(img, (x1, y1), (x2, y2), (90, 90, 90) if done else REVIEW_PRED, scale, cv2.LINE_AA)
+        if not done:
+            text = f"{o['class_name']} {o['confidence']:.2f}"
+            cv2.putText(img, text, (x1 + 2, max(10, y1 - 3)), _FONT, 0.4 * scale, REVIEW_PRED, scale, cv2.LINE_AA)
+    for a in annotations:
+        x1, y1, x2, y2 = (round(v) for v in a["bbox_xyxy"])
+        cv2.rectangle(img, (x1, y1), (x2, y2), REVIEW_GT, 2 * scale, cv2.LINE_AA)
+        _label(img, f"{a['annotation_id']} {a['class_name']}", (x1, y1), REVIEW_GT, 0.45 * scale, scale)
+    if pending is not None:
+        x1, y1, x2, y2 = (round(v) for v in pending)
+        cv2.rectangle(img, (x1, y1), (x2, y2), PENDING_COLOR, 2 * scale, cv2.LINE_AA)
+    return img
