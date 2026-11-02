@@ -312,3 +312,8 @@ def _read(path: Path) -> dict:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         raise DatasetError(f"can't read {Path(path).name}: {e}") from None
+
+
+def select_frames(draft: dict, frames: list[int]) -> None:
+    """Add frames to review (for example from a run comparison); nothing about them is labelled."""
+    draft["selected"] = sorted(set(draft["selected"]) | set(frames))
