@@ -104,3 +104,77 @@ def test_reviewing_never_infers(world):
     at.button(key="qnext").click()
     at = render(at)
     assert world["fake"].starts == []
+
+
+# --- step 7: Evaluate and Compare runs ---
+
+
+def committed(world, split="eval", dataset_id=DS):
+    """Frames 0 and 10 reviewed for person: both predictions accepted, plus one object the model missed."""
+    run = analysis.find_run(world["root"], world["a"])
+    d = datasets.new_draft(world["root"], dataset_id, run, [0, 10])
+    datasets.set_frame(d, 0, "reviewed", ["person"])
+    datasets.add_annotation(d, 0, "person", [0, 5, 10, 20], "accepted")
+    datasets.set_frame(d, 10, "reviewed", ["person"])
+    datasets.add_annotation(d, 10, "person", [10, 5, 20, 20], "accepted")
+    datasets.add_annotation(d, 10, "person", [40, 25, 50, 40], "added")
+    datasets.save_draft(world["root"], d)
+    return f"{dataset_id}@r{datasets.commit(world['root'], dataset_id, split)[0]}"
+
+
+def section(world, name):
+    at = open_run(render(), world["a"])
+    at.segmented_control(key="qsection").set_value(name)
+    return render(at)
+
+
+def results_folder(world, kind):
+    base = world["root"].path / kind
+    return (
+        sorted(p.name for p in base.rglob("*") if p.is_dir() and p.name[:3] in ("ev_", "dg_")) if base.exists() else []
+    )
+
+
+def test_evaluate_scores_the_run_and_names_revision_thresholds_and_version_on_screen(world):
+    ref = committed(world)
+    committed(world, split="tuning", dataset_id="tune")
+    at = section(world, "Evaluate")
+    assert at.selectbox(key="qeval-ref").options == [ref]  # tuning revisions are never offered
+    assert results_folder(world, "evaluations") == []  # nothing is written by opening the section
+    at.button(key="qeval-go").click()
+    at = render(at)
+    assert len(results_folder(world, "evaluations")) == 1
+    go = next(b for b in at.button if b.key == "qeval-go")
+    assert go.label == "Up to date" and go.disabled
+    assert any(c.value.startswith(f"fixed-threshold detection precision/recall · {ref} (sha ") and
+               "confidence ≥ 0.25 · IoU ≥ 0.5 · detection-v1" in c.value for c in at.caption)  # fmt: skip
+    m = {x.label: x.value for x in at.metric}
+    assert m["Precision"] == "1.000" and m["Recall"] == "0.667" and m["False pos. / missed"] == "0 / 1"
+    at.button(key="qex-false_negatives-0").click()  # the missed object, traced to its frame
+    at = render(at)
+    assert at.slider(key=f"frame-{world['a']}").value == 10 and world["fake"].starts == []
+
+
+def test_evaluate_explains_when_there_is_no_eval_revision(world):
+    committed(world, split="tuning", dataset_id="tune")
+    at = section(world, "Evaluate")
+    assert any(c.value.startswith("No frozen eval revision") for c in at.caption)
+
+
+def test_compare_runs_counts_differences_and_sends_frames_to_review_without_labelling(world):
+    committed(world)
+    at = section(world, "Compare runs")
+    (label,) = at.selectbox(key="qcmp-run").options  # shown by date, size, frames and the run id's tail
+    assert label.endswith(world["b"][-6:]) and "imgsz 640" in label and results_folder(world, "disagreements") == []
+    at.button(key="qcmp-go").click()
+    at = render(at)
+    m = {x.label: x.value for x in at.metric}
+    assert m["Same box, same class"] == "0" and m["Only in this run"] == "20" and m["Only in the other"] == "20"
+    assert any("track IDs are local to each run" in c.value for c in at.caption)
+    before = datasets.load_draft(world["root"], DS)
+    at.button(key="qcmp-send").click()
+    at = render(at)
+    after = datasets.load_draft(world["root"], DS)
+    assert len(after["selected"]) > len(before["selected"]) and after["annotations"] == before["annotations"]
+    assert any(c.value.startswith("Added 10 frames to crosswalk-eval") for c in at.caption)
+    assert world["fake"].starts == []

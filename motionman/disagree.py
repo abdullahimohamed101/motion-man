@@ -58,6 +58,16 @@ def match_frame(a_objs: list[dict], b_objs: list[dict], threshold: float) -> lis
     return out
 
 
+def disagreement_id(a_id: str, a_sha: str, b_id: str, b_sha: str, iou_threshold: float) -> str:
+    """The id a comparison of these runs has (or will have); cheap, so a page can tell if it is up to date."""
+    spec = {"a": [a_id, a_sha], "b": [b_id, b_sha], "iou": iou_threshold, "version": VERSION}
+    return "dg_" + store.sha256_json(spec).removeprefix("sha256:")[:16]
+
+
+def published(root: store.DataRoot, did: str) -> bool:
+    return _intact(root.path / "disagreements" / did, did)
+
+
 def compare(a: runs.OpenRun, b: runs.OpenRun, root: store.DataRoot, iou_threshold: float = DEFAULT_IOU) -> Result:
     """Compare two verified runs of one video and publish the result (or reuse an identical one)."""
     for r in (a, b):
@@ -69,9 +79,7 @@ def compare(a: runs.OpenRun, b: runs.OpenRun, root: store.DataRoot, iou_threshol
         raise DisagreeError("the two runs have different frame sizes")
     if not 0 < iou_threshold <= 1:
         raise DisagreeError("IoU threshold must be in (0, 1]")
-    spec = {"a": [a.run_id, a.records_sha256], "b": [b.run_id, b.records_sha256], "iou": iou_threshold,
-            "version": VERSION}  # fmt: skip
-    did = "dg_" + store.sha256_json(spec).removeprefix("sha256:")[:16]
+    did = disagreement_id(a.run_id, a.records_sha256, b.run_id, b.records_sha256, iou_threshold)
     target = root.path / "disagreements" / did
     if _intact(target, did):
         return Result(did, target, _read(target / SUMMARY), reused=True)

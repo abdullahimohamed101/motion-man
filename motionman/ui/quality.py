@@ -1,4 +1,4 @@
-"""Quality lab, part 1: review frames into a dataset and commit frozen revisions (spec B§7, B§9; plan P4 D10).
+"""Quality lab: review frames into frozen revisions, evaluate runs, compare runs (spec B§7–B§9; plan P4 D10).
 
 Layout and state only. Datasets are validated and stored by ``datasets``; the review queue comes from ``review``;
 the run's records are only read and the model never runs. Every edit reloads the draft from disk, changes it,
@@ -7,11 +7,12 @@ validates and saves it, so the page can't drift from the file. Ground truth exis
 
 from __future__ import annotations
 
+import json
 import re
 
 import streamlit as st
 
-from motionman import datasets, inspection, render, review, runs, store
+from motionman import analysis, datasets, disagree, evaluate, inspection, render, review, runs, store
 
 NEW_STEP = datasets.DEFAULT_STEP
 
@@ -21,7 +22,14 @@ def quality_tab(run: runs.OpenRun, derived, frames, root: store.DataRoot) -> Non
         st.info("The Quality lab needs a verified run with its source video, so legacy runs can be inspected but not "
                 "reviewed. Next step: run the video again.", icon=":material/info:")  # fmt: skip
         return
-    review_section(run, derived, frames, root)
+    section = st.segmented_control("Section", ["Review", "Evaluate", "Compare runs"], default="Review", required=True,
+                                   key="qsection", label_visibility="collapsed")  # fmt: skip
+    if section == "Evaluate":
+        evaluate_section(run, root)
+    elif section == "Compare runs":
+        compare_section(run, root)
+    else:
+        review_section(run, derived, frames, root)
 
 
 def _datasets_for(root: store.DataRoot, input_id: str) -> list[str]:
@@ -332,3 +340,171 @@ def _pending_box(run) -> list[float] | None:
 
 def _box_text(box) -> str:
     return "[" + ", ".join(f"{v:.0f}" for v in box) + "]"
+
+
+# --- Evaluate ----------------------------------------------------------------------------------------------------
+
+
+def _eval_refs(root, input_id: str) -> list[str]:
+    """Frozen eval revisions of datasets for this video, newest first. Tuning revisions are never offered."""
+    refs = []
+    for did in _datasets_for(root, input_id):
+        refs += [f"{did}@r{r['revision']}" for r in datasets.list_revisions(root, did) if r["split"] == "eval"]
+    return sorted(refs, key=lambda r: (r.split("@")[0], -int(r.split("@r")[1])))
+
+
+def evaluate_section(run, root) -> None:
+    st.markdown("#### Evaluate")
+    refs = _eval_refs(root, run.manifest["input_id"])
+    if not refs:
+        st.caption("No frozen eval revision for this video yet. Review frames and commit one as eval in Review.")
+        return
+    run_conf = float(run.runspec["settings"]["inference"]["conf"])
+    a, b, c = st.columns([2, 1, 1])
+    ref = a.selectbox("Reviewed revision", refs, key="qeval-ref")
+    conf = b.number_input("Confidence ≥", run_conf, 1.0, run_conf, step=0.05, key="qeval-conf",
+                          help="Can't go below the run's own threshold: it never kept those boxes.")  # fmt: skip
+    iou_t = c.number_input("IoU ≥", 0.05, 1.0, evaluate.DEFAULT_IOU, step=0.05, key="qeval-iou")
+    try:
+        eid = evaluate.evaluation_id(run, ref, datasets.revision_sha256(root, ref), conf, iou_t)
+    except datasets.DatasetError as e:
+        st.error(str(e), icon=":material/error:")
+        return
+    done = evaluate.published(root, run.run_id, eid)
+    with st.container(horizontal=True):
+        clicked = st.button("Up to date" if done else "Evaluate", type="secondary" if done else "primary",
+                            icon=":material/check:" if done else ":material/fact_check:", key="qeval-go",
+                            disabled=done)  # fmt: skip
+        st.caption("Scores this run's saved boxes against the reviewed frames; the model does not run.")
+    if clicked:
+        try:
+            with st.spinner("Scoring against the reviewed frames…"):
+                evaluate.evaluate(run, ref, root, conf=conf, iou_threshold=iou_t)
+            st.rerun()
+        except evaluate.EvaluationError as e:
+            st.error(str(e), icon=":material/error:")
+    if done:
+        evaluation_results(run, evaluate.load(root, run.run_id, eid).doc)
+
+
+def evaluation_results(run, d: dict) -> None:
+    th, tot = d["thresholds"], d["total"]
+    st.caption(f"{d['metric']} · {d['dataset']['ref']} (sha {d['dataset']['sha256'][7:19]}…) · confidence ≥ "
+               f"{th['confidence']} · IoU ≥ {th['iou']} · {d['evaluator_version']}")  # fmt: skip
+    cols = st.columns(4)
+    for col, (label, key) in zip(cols[:2], (("Precision", "precision"), ("Recall", "recall")), strict=True):
+        value = f"{tot[key]:.3f}" if tot[key] is not None else "—"
+        col.metric(label, value, help=tot.get(f"{key}_reason"), border=True)
+    cols[2].metric("Matched (TP)", f"{tot['tp']:,}", border=True)
+    cols[3].metric("False pos. / missed", f"{tot['fp']:,} / {tot['fn']:,}", border=True)
+    f = d["frames"]
+    st.caption(f"{f['scored']} frames scored, {f['excluded']} excluded, {len(f['not_evaluated'])} not in this run, "
+               f"{f['ignored_predictions']} predictions in ignored areas. {d['scope']}")  # fmt: skip
+    rows = [{"Class": cls, "TP": c["tp"], "FP": c["fp"], "FN": c["fn"], "Frames": c["frames"],
+             "Precision": c["precision"], "Recall": c["recall"]} for cls, c in d["classes"].items()]  # fmt: skip
+    st.dataframe(rows, hide_index=True, width="stretch", key=f"qeval-classes-{d['evaluation_id']}")
+    left, right = st.columns(2)
+    for col, kind, title in ((left, "false_positives", "False positives"), (right, "false_negatives", "Missed")):
+        with col.container(border=True):
+            st.markdown(f"**{title}** (examples)")
+            examples = d["examples"][kind]
+            if not examples:
+                st.caption("None.")
+            for i, e in enumerate(examples[:6]):
+                text = f"frame {e['frame']:,} · {e['class_name']}" + (
+                    f" {e['confidence']:.2f}" if "confidence" in e else ""
+                )
+                st.button(text, key=f"qex-{kind}-{i}", icon=":material/open_in_new:", on_click=_inspect,
+                          args=(run.run_id, e["frame"]))  # fmt: skip
+    if st.session_state.get(f"qinspect-{run.run_id}") is not None:
+        st.caption(f"Inspect is now on frame {st.session_state[f'qinspect-{run.run_id}']:,}. Open the Inspect tab.")
+
+
+def _inspect(rid: str, frame: int) -> None:
+    st.session_state[f"frame-{rid}"] = frame
+    st.session_state[f"qinspect-{rid}"] = frame
+
+
+# --- Compare runs ------------------------------------------------------------------------------------------------
+
+
+def _same_video_runs(root, run) -> dict[str, tuple[str, str]]:
+    """Other published runs of this video: run id → (label, records hash), read from manifests only (cheap)."""
+    out = {}
+    for s in runs.list_runs(root):
+        if s.run_id == run.run_id or s.kind != "canonical":
+            continue
+        try:
+            m = json.loads((s.path / store.MANIFEST).read_text(encoding="utf-8"))
+            spec = json.loads((s.path / store.RUNSPEC).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue  # an unreadable run is simply not offered; opening it would refuse it anyway
+        if m.get("input_id") == run.manifest["input_id"] and m.get("records_sha256"):
+            imgsz = (spec.get("settings") or {}).get("inference", {}).get("imgsz")
+            out[s.run_id] = (f"{(s.started_at or '')[:16].replace('T', ' ')} · imgsz {imgsz} · {s.frames} frames · "
+                             f"{s.run_id[-6:]}", m["records_sha256"])  # fmt: skip
+    return out
+
+
+def compare_section(run, root) -> None:
+    st.markdown("#### Compare runs")
+    others = _same_video_runs(root, run)
+    if not others:
+        st.caption("No other run of this video to compare with. Run the video again with different settings.")
+        return
+    a, b = st.columns([3, 1])
+    other = a.selectbox("Compare this run with", list(others), key="qcmp-run", format_func=lambda r: others[r][0])
+    iou_t = b.number_input("Same box at IoU ≥", 0.05, 1.0, disagree.DEFAULT_IOU, step=0.05, key="qcmp-iou")
+    did = disagree.disagreement_id(run.run_id, run.records_sha256, other, others[other][1], iou_t)
+    done = disagree.published(root, did)
+    with st.container(horizontal=True):
+        clicked = st.button("Up to date" if done else "Compare", type="secondary" if done else "primary",
+                            icon=":material/check:" if done else ":material/compare:", key="qcmp-go",
+                            disabled=done)  # fmt: skip
+        st.caption("Matches boxes by position on every frame both runs processed; track IDs are never compared.")
+    if clicked:
+        try:
+            with st.spinner("Comparing the two runs frame by frame…"):
+                disagree.compare(run, analysis.find_run(root, other), root, iou_t)
+            st.rerun()
+        except (disagree.DisagreeError, analysis.AnalysisError) as e:
+            st.error(str(e), icon=":material/error:")
+    if done:
+        comparison_results(run, root, disagree.load(root, did).doc)
+
+
+def comparison_results(run, root, d: dict) -> None:
+    c = d["counts"]
+    cols = st.columns(4)
+    for col, (label, key) in zip(cols, (("Same box, same class", "matched_same_class"), ("Class differs",
+                                 "class_disagreement"), ("Only in this run", "unmatched_a"),
+                                 ("Only in the other", "unmatched_b")), strict=True):  # fmt: skip
+        col.metric(label, f"{c[key]:,}", border=True)
+    iou_p50 = d["matched_iou"]["p50"]
+    st.caption(f"{d['frames_compared']:,} frames compared · differences on {d['frames_with_differences']:,} · "
+               f"matched IoU p50 {iou_p50 if iou_p50 is not None else '—'}. {d['note']}")  # fmt: skip
+    rows = [{"Class": cls, "Same": v["matched_same_class"], "Class differs": v["class_disagreement"],
+             "Only this run": v["unmatched_a"], "Only other": v["unmatched_b"]}
+            for cls, v in d["by_class"].items()]  # fmt: skip
+    st.dataframe(rows, hide_index=True, width="stretch", key=f"qcmp-classes-{d['disagreement_id']}")
+    top = d["top_frames"]
+    if not top:
+        return
+    st.markdown("**Most differences**")
+    st.caption(", ".join(f"frame {t['frame']:,} ({t['differences']})" for t in top[:10]))
+    drafts = _datasets_for(root, run.manifest["input_id"])
+    if drafts:
+        a, b = st.columns([2, 1], vertical_alignment="bottom")
+        target = a.selectbox("Send these frames to review in", drafts, key="qcmp-send-to")
+        b.button(f"Send top {min(10, len(top))} frames", key="qcmp-send", width="stretch", on_click=_send,
+                 args=(root, target, [t["frame"] for t in top[:10]]))  # fmt: skip
+    else:
+        st.caption("Create a dataset in Review to send these frames there.")
+    if st.session_state.get("qsent"):
+        st.caption(st.session_state["qsent"])
+
+
+def _send(root, did, frames_) -> None:
+    _edit(root, did, lambda d: datasets.select_frames(d, frames_))
+    if not st.session_state.get("qerror"):
+        st.session_state["qsent"] = f"Added {len(frames_)} frames to {did} (nothing labelled; review them in Review)."

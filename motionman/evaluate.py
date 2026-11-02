@@ -170,10 +170,7 @@ def evaluate(run: runs.OpenRun, ref: str, root: store.DataRoot, conf: float | No
     _check(run, revision, ref, run_conf, conf, iou_threshold)
     conf = run_conf if conf is None else conf
     rev_sha = datasets.revision_sha256(root, ref)
-    thresholds = {"confidence": conf, "iou": iou_threshold}
-    spec = {"run_id": run.run_id, "records_sha256": run.records_sha256, "dataset": ref, "revision_sha256": rev_sha,
-            "thresholds": thresholds, "evaluator_version": EVALUATOR_VERSION}  # fmt: skip
-    eid = "ev_" + store.sha256_json(spec).removeprefix("sha256:")[:16]
+    eid = evaluation_id(run, ref, rev_sha, conf, iou_threshold)
     target = root.path / "evaluations" / run.run_id / eid
     if _intact(target, eid):
         return Result(eid, target, _read(target / RESULT), reused=True)
@@ -209,6 +206,19 @@ def evaluate(run: runs.OpenRun, ref: str, root: store.DataRoot, conf: float | No
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return Result(eid, target, doc, reused=False)
+
+
+def evaluation_id(run, ref: str, revision_sha256: str, conf: float, iou_threshold: float) -> str:
+    """The id an evaluation with these inputs has (or will have); cheap, so a page can tell if it is up to date."""
+    thresholds = {"confidence": conf, "iou": iou_threshold}
+    spec = {"run_id": run.run_id, "records_sha256": run.records_sha256, "dataset": ref,
+            "revision_sha256": revision_sha256, "thresholds": thresholds,
+            "evaluator_version": EVALUATOR_VERSION}  # fmt: skip
+    return "ev_" + store.sha256_json(spec).removeprefix("sha256:")[:16]
+
+
+def published(root: store.DataRoot, run_id: str, eid: str) -> bool:
+    return _intact(root.path / "evaluations" / run_id / eid, eid)
 
 
 def _check(run, revision: dict, ref: str, run_conf: float | None, conf: float | None, iou_threshold: float) -> None:
