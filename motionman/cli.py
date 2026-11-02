@@ -1,7 +1,8 @@
 """Command-line entry point (spec §5).
 
 ``python -m motionman --source …`` runs one video, unchanged since the MVP. A first argument naming a subcommand
-(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``, ``bundle``, ``analyze``.
+(plan P2 D11) dispatches instead: ``benchmark``, ``compare``, ``doctor``, ``bundle``, ``analyze``, ``dataset``,
+``evaluate``, ``disagree``.
 
 Exit codes: 0 success · 1 unexpected failure · 2 invalid arguments, input, device or model · 75 data folder
 locked · 130 interrupted.
@@ -317,5 +318,113 @@ def analyze_main(argv: list[str]) -> int:
     return EXIT_OK
 
 
+def _rate(c: dict, key: str) -> str:
+    return f"{c[key]:.3f}" if c[key] is not None else f"— ({c[key + '_reason']})"
+
+
+def dataset_main(argv: list[str]) -> int:
+    """``motionman dataset``: import a MotionMan dataset JSON as a draft, or show a dataset or revision (plan P4)."""
+    from motionman import datasets, store
+
+    p = argparse.ArgumentParser(prog="motionman dataset", description=dataset_main.__doc__.split(": ", 1)[1])
+    sub = p.add_subparsers(dest="action", required=True)
+    imp = sub.add_parser("import", help="import a dataset file as a new draft (labels become 'imported')")
+    imp.add_argument("file", type=Path)
+    imp.add_argument("--as", dest="as_id", default=None, help="dataset id to import as (default: the file's)")
+    show = sub.add_parser("show", help="summarize a dataset (its draft and revisions) or one revision (id@rN)")
+    show.add_argument("ref")
+    for q in (imp, show):
+        q.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    root = store.data_root(a.data_root)
+    try:
+        if a.action == "import":
+            d = datasets.import_file(root, a.file, a.as_id)
+            print(f"imported {d['dataset_id']} as a draft: {len(d['frames'])} frames, {len(d['annotations'])} labels "
+                  "(origin imported); commit it after review to make it ground truth")  # fmt: skip
+            return EXIT_OK
+        if "@" in a.ref:
+            doc = datasets.load_revision(root, a.ref)
+            print(f"{a.ref} ({doc['split']}, committed {doc['committed_at_utc']}, parent "
+                  f"{doc['parent_revision'] or '—'}, sha {datasets.revision_sha256(root, a.ref)[:19]}…)")  # fmt: skip
+        else:
+            doc = datasets.load_draft(root, a.ref)
+            revs = datasets.list_revisions(root, a.ref)
+            print(f"{a.ref} draft: {len(doc['selected'])} frames selected; revisions: "
+                  + (", ".join(f"r{r['revision']} {r['split']}" for r in revs) or "none"))  # fmt: skip
+    except MotionManError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return e.exit_code
+    reviewed = [f for f in doc["frames"] if f["status"] == "reviewed"]
+    by_class: dict[str, int] = {}
+    for ann in doc["annotations"]:
+        by_class[ann["class_name"]] = by_class.get(ann["class_name"], 0) + 1
+    print(f"  frames: {len(reviewed)} reviewed, {len(doc['frames']) - len(reviewed)} excluded")
+    print("  labels: " + (", ".join(f"{c} ×{n}" for c, n in sorted(by_class.items())) or "none"))
+    return EXIT_OK
+
+
+def evaluate_main(argv: list[str]) -> int:
+    """``motionman evaluate``: fixed-threshold detection precision/recall against a frozen eval revision (plan P4)."""
+    from motionman import analysis, evaluate, store
+
+    p = argparse.ArgumentParser(prog="motionman evaluate", description=evaluate_main.__doc__.split(": ", 1)[1])
+    p.add_argument("--run", required=True, help="run ID of a published run")
+    p.add_argument("--dataset", required=True, help="a frozen eval revision, written <dataset>@r<N>")
+    p.add_argument("--conf", type=float, default=None, help="confidence threshold (default: the run's own)")
+    p.add_argument("--iou", type=float, default=evaluate.DEFAULT_IOU, help="IoU threshold (default: 0.5)")
+    p.add_argument("--json", action="store_true", help="print the full result as JSON")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    root = store.data_root(a.data_root)
+    try:
+        res = evaluate.evaluate(analysis.find_run(root, a.run), a.dataset, root, conf=a.conf, iou_threshold=a.iou)
+    except MotionManError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return e.exit_code
+    d = res.doc
+    if a.json:
+        print(json.dumps(d, indent=2, sort_keys=True))
+        return EXIT_OK
+    th = d["thresholds"]
+    print(f"{d['metric']} · {d['dataset']['ref']} · confidence ≥ {th['confidence']} · IoU ≥ {th['iou']} · "
+          f"{d['evaluator_version']}{' (already up to date)' if res.reused else ''}")  # fmt: skip
+    for cls, c in [*d["classes"].items(), ("total", d["total"])]:
+        print(f"  {cls:<14} TP {c['tp']:>4}  FP {c['fp']:>4}  FN {c['fn']:>4}  precision {_rate(c, 'precision')}  "
+              f"recall {_rate(c, 'recall')}")  # fmt: skip
+    f = d["frames"]
+    print(f"  frames: {f['scored']} scored, {f['excluded']} excluded, {len(f['not_evaluated'])} not in this run")
+    print(f"→ {res.folder}")
+    return EXIT_OK
+
+
+def disagree_main(argv: list[str]) -> int:
+    """``motionman disagree``: where two runs of one video differ, box by box, by position only (plan P4)."""
+    from motionman import analysis, disagree, store
+
+    p = argparse.ArgumentParser(prog="motionman disagree", description=disagree_main.__doc__.split(": ", 1)[1])
+    p.add_argument("run_a")
+    p.add_argument("run_b")
+    p.add_argument("--iou", type=float, default=disagree.DEFAULT_IOU, help="IoU to count as the same box (0.5)")
+    p.add_argument("--data-root", type=Path, default=None, help="default: $MOTIONMAN_DATA_ROOT or ./data")
+    a = p.parse_args(argv)
+    root = store.data_root(a.data_root)
+    try:
+        res = disagree.compare(analysis.find_run(root, a.run_a), analysis.find_run(root, a.run_b), root, a.iou)
+    except MotionManError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return e.exit_code
+    d, c = res.doc, res.doc["counts"]
+    print(f"{d['frames_compared']:,} frames compared at IoU ≥ {d['iou_threshold']}"
+          f"{' (already up to date)' if res.reused else ''}")  # fmt: skip
+    print(f"  same box, same class {c['matched_same_class']:,} · class differs {c['class_disagreement']:,} · "
+          f"only in A {c['unmatched_a']:,} · only in B {c['unmatched_b']:,}")  # fmt: skip
+    print("  most differences: " + ", ".join(f"frame {t['frame']} ({t['differences']})" for t in d["top_frames"][:5]))
+    print("  track IDs are never compared; neither run is assumed right")
+    print(f"→ {res.folder}")
+    return EXIT_OK
+
+
 SUBCOMMANDS = {"benchmark": benchmark_main, "compare": compare_main, "doctor": doctor_main, "bundle": bundle_main,
-               "analyze": analyze_main}  # fmt: skip
+               "analyze": analyze_main, "dataset": dataset_main, "evaluate": evaluate_main,
+               "disagree": disagree_main}  # fmt: skip
