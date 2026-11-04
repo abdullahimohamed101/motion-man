@@ -1,0 +1,33 @@
+# ADR-003: RT-DETR from the original implementation, frozen by manifest
+Status: Proposed (confirmed or replaced at the end of G1)
+Date: 2026-11-04
+
+## Context
+The native engine needs a detector that TensorRT can run without custom plugins and that the owner's direction
+names: RT-DETR. Several packages expose a model called RT-DETR with different exporters, preprocessing and
+output conventions. Mixing them silently changes results.
+
+## Decision
+- Use the original implementation (lyuwenyu/RT-DETR, PyTorch branch) at one pinned commit, with one R18-class
+  COCO checkpoint as the first candidate. Larger variants are a G3/G4 hardware decision.
+- Export with the upstream ONNX exporter and its deploy postprocessor: inputs `images`, `orig_target_sizes`
+  (width, height); outputs `labels`, `boxes` (xyxy in source pixels), `scores`. The real exported names, dtypes
+  and shapes are checked and recorded; nothing is assumed from YOLO.
+- Preprocessing: fixed 640×640, batch 1, direct resize (no letterbox), RGB, NCHW, frozen in a machine-readable
+  contract with golden tensors.
+- Precision: FP32 engine first (TF32 policy recorded), mixed precision only after G1 parity, following the pinned
+  TensorRT version's own precision workflow.
+- `configs/native/` holds the intended profile; a generated `manifest.json` holds the actual hashes and revisions.
+  Weights, ONNX and engines are never committed.
+
+## Alternatives
+- Ultralytics `RTDETR`: convenient, but a different exporter and preprocessing from the original. Rejected for the
+  native contract; usable only as a cross-check.
+- Keep YOLO11n in TensorRT: does not meet the direction. Rejected.
+
+## Consequences
+- The checkpoint and the RT-DETR repository are downloaded on the PC at G1, with the owner's go-ahead.
+- Detection numbers from YOLO11n runs and RT-DETR runs are different models; comparisons say so.
+
+## Revisit when
+The pinned export needs a TensorRT plugin, fails parity (spec C§6), or does not fit the PC's GPU.
