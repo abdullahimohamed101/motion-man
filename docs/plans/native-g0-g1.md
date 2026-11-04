@@ -1,5 +1,5 @@
 # Native G0–G1: hardware baseline and RT-DETR TensorRT feasibility
-Status: Draft · Branch: `feat/native-g0` (after P4 ships) · Spec: C§2–C§6, ADR-001..003
+Status: Approved 2026-11-04, starts after P4 ships · Branch: `feat/native-g0` · Spec: C§2–C§6, ADR-001..003
 
 ## Outcome
 The owner's NVIDIA PC has one pinned, supported CUDA/TensorRT stack proven by a real CUDA smoke test (G0). A

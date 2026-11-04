@@ -1,5 +1,5 @@
 # ADR-001: Native engine as a whole-run backend
-Status: Proposed (owner approval of `docs/spec-c.md`)
+Status: Accepted (owner, 2026-11-04)
 Date: 2026-11-04
 
 ## Context

@@ -1,5 +1,5 @@
 # ADR-002: Performance and quality claims are measured, never assumed
-Status: Proposed (owner approval of `docs/spec-c.md`)
+Status: Accepted (owner, 2026-11-04)
 Date: 2026-11-04
 
 ## Context

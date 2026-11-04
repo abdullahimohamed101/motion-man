@@ -125,7 +125,7 @@ switches under occlusion, RT-DETR FP16. Each is published as **met, unmet or inc
   HOTA, FN and fragmentation. P4's isolated reviewed frames do not establish identity continuity.
 
 ## C§11 ADRs for this release (NA§4.3)
-Recorded so far: ADR-001 native backend boundary, ADR-002 evidence policy, ADR-003 RT-DETR model contract
+Approved by the owner 2026-11-04. Recorded so far: ADR-001 native backend boundary, ADR-002 evidence policy (both Accepted), ADR-003 RT-DETR model contract
 (Proposed until G1), ADR-004 tracker ownership and INV-1 change (Proposed until G4). Still to record at their
 gate: Linux/WSL target and dependency matrix (G0), child-run schema compatibility (G2), slot and scheduling
 lifetime (G4), durable remote job protocol (G5).
