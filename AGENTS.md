@@ -21,7 +21,9 @@ Rewrite `docs/STATE.md` in place (do not append history; git keeps history).
 
 ## Scope
 MVP and Release A done (`docs/spec.md`, `docs/spec-a.md`). Now Release B part 1, P3–P4 (`docs/spec-b.md`).
-Anything outside those is out of scope: say so, don't build it. Stop at each phase gate for the owner's go-ahead.
+Next: Release C, the native C++/CUDA/TensorRT engine, gates G0–G6 (`docs/spec-c.md`); it starts after P4 ships
+and the owner approves the spec. Anything outside those is out of scope: say so, don't build it. Stop at each
+phase gate for the owner's go-ahead.
 
 ## Invariants (never break without an ADR)
 - INV-1 One model instance owns tracker state per run; frames fed in order; no parallel track calls.
@@ -39,7 +41,8 @@ Anything outside those is out of scope: say so, don't build it. Stop at each pha
 - Gate: `scripts/check.sh` (ruff + pytest, failures only). Run before `ship`. CI runs the same gate on every PR
   and push to `main` (`.github/workflows/check.yml`, ubuntu-24.04, CPU-only torch).
 - Demo: `.venv/bin/python -m motionman --source <clip>.mp4 --output-dir runs/<name> --device cpu`
-- Host is Apple Silicon: no CUDA here. CUDA paths are UNVERIFIED (env) unless run elsewhere.
+- Host is Apple Silicon: no CUDA here. CUDA paths are UNVERIFIED (env) unless run elsewhere. GPU work runs on
+  the owner's NVIDIA PC over SSH (spec C§4); record PC results only from PC output.
 
 ## Git
 Branch `feat/<slug>` off `main`. Commit per step. Push / PR / merge only when asked.
@@ -49,8 +52,10 @@ Branch `feat/<slug>` off `main`. Commit per step. Push / PR / merge only when as
 - `docs/spec.md`: product spec; grep for the `§N` you need, never read whole
 - `docs/spec-a.md`: Release A contracts (`A§N`); same rule
 - `docs/spec-b.md`: Release B P3–P4 contracts (`B§N`); same rule
+- `docs/spec-c.md`: Release C native engine contracts (`C§N`); same rule
 - `docs/design/ui.md`: UI navigation, header and action-colour rules; read before changing UI layout
-- `docs/reference/`: original briefs and master design; open only to settle a spec ambiguity
+- `docs/reference/`: original briefs, master design and `native-architecture.md`; open only to settle a spec
+  ambiguity
 - `docs/decisions/INDEX.md`: one line per ADR; open an ADR only for the area you touch
 - `docs/plans/`: active plans; `docs/plans/done/` is archive, ignore unless asked
 - `docs/interview.md`, `docs/demo-script.md`: handoff material; update their numbers if benchmarks change
