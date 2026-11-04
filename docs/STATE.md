@@ -23,6 +23,13 @@ Updated: 2026-11-01
 - The 45-frame review session (step 8): only a person can create ground truth (INV-7).
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
+## After P4: new direction (2026-11-04)
+- Release C, native C++/CUDA/TensorRT/RT-DETR engine on the owner's NVIDIA PC. Drafted on branch
+  `feat/native-plan` (worktree `.worktrees/native-plan`, off `main`, not pushed): `docs/spec-c.md`,
+  ADR-001..004 (Proposed), `docs/plans/native-g0-g1.md` (Draft), source `docs/reference/native-architecture.md`.
+- Needs owner: approve spec-c and the G0–G1 plan; PC inventory output (`nvidia-smi`, `nvcc --version`,
+  `cmake --version`, OS, disk) and SSH access; `brew install cmake` on the Mac.
+
 ## Last check
 - `scripts/check.sh` on `feat/p4-review`: ruff ok, 519 passed.
 - Crosswalk P3 demo (run ed3f02): 22 crossings, 7 entries, peak 9, analyzed in 0.46 s.
