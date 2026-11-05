@@ -11,3 +11,6 @@ runs/
 .DS_Store
 clips/
 data/
+
+# native build trees (spec C§3: never committed)
+build/

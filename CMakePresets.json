@@ -1,0 +1,26 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {"major": 3, "minor": 24, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "mac-cpu",
+      "displayName": "Portable core, no CUDA (Mac and CI)",
+      "binaryDir": "${sourceDir}/build/mac-cpu",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "MOTIONMAN_CUDA": "OFF"}
+    },
+    {
+      "name": "linux-cuda-release",
+      "displayName": "NVIDIA PC: CUDA + TensorRT, release",
+      "binaryDir": "${sourceDir}/build/linux-cuda-release",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "MOTIONMAN_CUDA": "ON"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "mac-cpu", "configurePreset": "mac-cpu"},
+    {"name": "linux-cuda-release", "configurePreset": "linux-cuda-release"}
+  ],
+  "testPresets": [
+    {"name": "mac-cpu", "configurePreset": "mac-cpu", "output": {"outputOnFailure": true}},
+    {"name": "linux-cuda-release", "configurePreset": "linux-cuda-release", "output": {"outputOnFailure": true}}
+  ]
+}

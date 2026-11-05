@@ -1,5 +1,5 @@
 # Native G0–G1: hardware baseline and RT-DETR TensorRT feasibility
-Status: Approved 2026-11-04, starts after P4 ships · Branch: `feat/native-g0` · Spec: C§2–C§6, ADR-001..003
+Status: Active (P4 merged, PR #13) · Branch: `feat/native-g0` · Spec: C§2–C§6, ADR-001..003
 
 ## Outcome
 The owner's NVIDIA PC has one pinned, supported CUDA/TensorRT stack proven by a real CUDA smoke test (G0). A
@@ -25,7 +25,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 - D8 Model artifacts live under `~/.cache/motionman/models/<profile>/` on the PC, never in the repo.
 
 ## Steps
-1. [ ] **[Mac]** Portable C++ skeleton: `native/CMakeLists.txt`, `CMakePresets.json` (`mac-cpu` without CUDA
+1. [x] **[Mac]** Portable C++ skeleton: `native/CMakeLists.txt`, `CMakePresets.json` (`mac-cpu` without CUDA
    discovery; `linux-cuda-release` that fails if CUDA/TensorRT are missing), `native/include/motionman/` frame
    key and detection types, `native/tests/unit/` with a CTest target. Needs `brew install cmake` (owner's yes).
 2. [ ] **[Mac]** Reference fixtures: `configs/reference/inputs.json` (clip SHA-256s, golden frame indices),
@@ -53,7 +53,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | |
+| NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | 1/1 passed (Apple clang 21, CMake 4.4.5) |
 | NG-2 | Python gate unchanged | `scripts/check.sh` | |
 | NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | |
 | NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | |
@@ -74,3 +74,4 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-05 step 1: root `CMakeLists.txt` + `CMakePresets.json` (`mac-cpu` OFF, `linux-cuda-release` ON), `native/` with header-only `motionman_core` (FrameKey, Detection, TrackedObject, valid_box), CTest `types` (label unit, -Wall -Wextra -Werror, no framework). Mac: configure, build, 1/1 pass, no CUDA compiler probed. `linux-cuda-release` on the Mac fails at configure (no CUDA toolkit), as intended; its TensorRT check is UNVERIFIED until the PC. `build/` gitignored. Python gate 523 passed.
