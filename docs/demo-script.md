@@ -56,6 +56,11 @@ scripts/ui.sh                              # http://localhost:8501
    **First crossing** bookmark, then **Show in Inspect**. Say: *"Every event points to the frame that confirmed
    it. Analysis reads saved records only; jitter inside the deadband or a missed frame never becomes a crossing,
    and the README lists the cases that still can, like a box changing shape."*
+6. Open **Quality lab → Evaluate**, pick `crosswak-eval@r2` and the 480 run. Say: *"A reviewed answer key of 46
+   frames, frozen and hashed. At 480 the model agrees on 96% of its boxes but misses about one person in five
+   that the 640 boxes found."* Click a miss on frame 480 to jump there, then the frame 60 pair: *"And tracing
+   examples found a mistake in my own answer key. Accepting 640's boxes means this is agreement, not true
+   accuracy; the README says so."*
 
 ## 5. Measurement tools (45 s)
 ```bash

@@ -114,6 +114,7 @@ While it runs you see frames, percentage and elapsed time. When it finishes the 
 - **Library** in the top bar reopens any verified run in the data folder. Older pre-manifest folders under
   `runs/` appear only with **Show legacy runs** (at the bottom of the Library) and are read-only and unverified.
 - **Events & zones**: draw lines and rectangles and analyze them (see Events & zones below).
+- **Quality lab**: review frames into an answer key, score runs against it, compare two runs (see below).
 - **Inspect**: the Tracked or Original video (native playback, not synchronized with the frame below), and an
   inspected frame. The **Source frame** slider shows that exact frame from the source video with its own
   saved detections; arrow keys step one frame. **View options** change labels, trail length and opacity, the
@@ -246,6 +247,64 @@ would fix both; that is a later, explicit setting, not a silent change to existi
 **Motion arrows** (Inspect → View options): image-space velocity in px/s over up to 5 consecutive observed frames,
 from source time; under 10 px/s is not drawn. Never a real-world speed.
 
+## Quality lab: review and evaluation
+
+A person reviews a sample of frames and the app scores runs against that answer key. Nothing here runs the model,
+and a run's records are never changed.
+
+In the UI, open a run and choose **Quality lab**:
+- **Review**: make a dataset (every Nth frame), then per frame name the classes you fully checked, accept the
+  correct predictions, add or fix missed boxes, mark areas too hard to judge as *ignored*, or exclude the frame.
+  A review queue suggests frames worth a look (low confidence, a box that jumped, a track that came back, and,
+  once this run has been compared with another, where the two disagree); they are candidates, not errors. **Commit** freezes a read-only revision (`eval` or `tuning`).
+- **Evaluate**: score this run against a frozen `eval` revision. Every result names the revision and its hash, the
+  thresholds and the evaluator version; each false positive and miss links to its frame.
+- **Compare runs**: count where two runs of the same video agree and differ, frame by frame, and send the most
+  different frames to review. Track IDs are local to each run and are never compared.
+
+```bash
+.venv/bin/python -m motionman dataset show crosswak-eval@r2
+.venv/bin/python -m motionman evaluate --run <run_id> --dataset crosswak-eval@r2   # --conf, --iou, --json
+.venv/bin/python -m motionman disagree <run_a> <run_b>
+.venv/bin/python -m motionman dataset import shared.json --as colleague
+```
+
+**Scoring rules** (fixed-threshold detection precision/recall, `detection-v2`): predictions below the confidence
+threshold (default: the run's own) are dropped; per class, highest confidence first, each prediction takes the
+unmatched reviewed box with the highest IoU ≥ 0.5. Predictions and reviewed boxes centred in an ignored area count
+neither way. A class is scored on a frame only if the reviewer marked it fully checked; undefined rates are null
+with a reason. Results are stored under `data/evaluations/<run_id>/<evaluation_id>/`, and only frozen `eval`
+revisions of the same video and frame size are accepted.
+
+**Measured on the crosswalk clip** (`crosswak-eval@r2`, sha `eb8a9411c5b3…`: 46 frames, every 30th, all reviewed for
+*person*; one ignored band over the far-sidewalk crowd, y 500–630 px, on every frame; 289 person boxes scored,
+149 inside the band). How it was made matters: the reviewer accepted every box the 640 run drew on those frames (all classes; only
+*person* is scored) and added none, so
+**this is an agreement check, not an absolute accuracy measurement.**
+
+| Run | imgsz | TP | FP | Missed | Precision | Recall | Matched IoU p50 |
+|-----|------:|---:|---:|-------:|----------:|-------:|----------------:|
+| `ed3f02` | 640 | 289 | 0 | 0 | 1.000 | 1.000 | 1.000 |
+| `6057dc` | 480 | 227 | 9 | 62 | 0.962 | 0.785 | 0.934 |
+
+The 640 row is perfect by construction (its boxes are the answer key). The 480 row says that at input size 480
+YOLO11n misses about one in five of the people the reviewed 640 boxes contain outside the far band. Tracing the
+examples back to their frames:
+- **Frame 480, 4 misses**: real, small pedestrians in the middle distance on the right that the 480 run did not
+  detect. A genuine cost of the smaller input.
+- **Frame 870, false positive `870:13`**: one 480 box spanning two people (IoU 0.46 with the nearest reviewed box);
+  a genuine localisation error.
+- **Frame 60, false positive `60:7` + miss `a53`**: an answer-key mistake. The accepted 640 box merges two people
+  and a car; the 480 box is the correct one. Tracing found it, which is the point of keeping examples.
+
+**Regression check on the real revision** (640 run, frame 480): removing one matched prediction gives
+TP 288 / missed 1, recall 1.000 → 0.997; removing its reviewed box instead gives TP 288 / FP 1, precision → 0.997.
+Each changes exactly one count.
+
+**Comparing the two runs** (`disagree ed3f02 6057dc`, all 1,356 frames, IoU ≥ 0.5): 18,215 boxes match with the
+same class, 97 differ in class, 7,049 appear only at 640 and 1,557 only at 480; the most different frames are
+268 and 499 (15 each).
+
 ## Test
 
 ```bash
@@ -277,6 +336,11 @@ Ultralytics gets imported, so they never need a GPU, the network, or the model w
 | `analytics.py` | Pure rules over observations: crossings, zone states, occupancy, dwell, thresholds, heatmap |
 | `analysis.py` | One pass over a verified run's records; deterministic, atomically published results; CSV/JSON export |
 | `ui/zones.py` | The Events & zones tab: region editor and overlay, Analyze, results, heatmap |
+| `datasets.py` | Review datasets: drafts, per-frame verdicts, boxes, ignored areas, read-only revisions, import |
+| `evaluate.py` | Fixed-threshold detection precision/recall against a frozen eval revision; published results |
+| `disagree.py` | Frame-by-frame agreement between two runs of one video (class-agnostic, one-to-one) |
+| `review.py` | Review queue: candidate frames from simple heuristics and run differences |
+| `ui/quality.py` | The Quality lab tab: Review, Evaluate, Compare runs |
 
 ## Benchmark
 
@@ -404,7 +468,9 @@ a smaller input size, a lighter model or a GPU would. A short run is still domin
 - **Track IDs are not people counts.** IDs are local to one run and fragment under occlusion and in crowds. On
   the demo clip, 701 distinct IDs appear and the median ID lasts 11 frames, while static objects (traffic lights)
   keep one ID for the whole clip. ByteTrack's ID counter also skips numbers, so labels reach the thousands.
-- **No accuracy claims.** The output was inspected visually; there is no labelled evaluation.
+- **No absolute accuracy claims yet.** The one reviewed set (`crosswak-eval@r2`) was built by accepting the 640
+  run's boxes, so it measures agreement with them, not true recall; people in the far-sidewalk band are not graded,
+  and at least one accepted box is known to be wrong (frame 60). 46 frames of one clip are a small sample.
 - **Events use the box centre.** When a box changes shape (legs detected or hidden, a person cut off at the frame
   edge) its centre moves even if the person doesn't, which can produce a crossing; one such pair appears in the
   crosswalk demo. Observed stays split at every frame the tracker misses (333 short stays for 7 entries on the far

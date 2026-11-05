@@ -89,6 +89,19 @@ tracker.
   checked as genuine by eye, 2 at the frame edge; one false pair from a box changing shape, kept and explained
   rather than tuned away (a bigger deadband drops genuine crossings too).
 
+## Release B, P4 (if asked, about 1 minute)
+- **Review and evaluation.** A person reviews sampled frames into a draft (classes fully checked, accepted or added
+  boxes, ignored areas, excluded frames), then commits a read-only, hashed revision. The evaluator is pure: fixed
+  confidence and IoU thresholds, greedy highest-confidence matching with documented tie-breaks, only fully checked
+  classes scored, ignored areas count neither way, null rates with a reason. Every score names revision, hash,
+  thresholds and evaluator version.
+- **Real result, stated carefully.** On 46 crosswalk frames: the 480 run scores precision 0.962, recall 0.785
+  against reviewed boxes taken from the 640 run, so it is an agreement number, not true accuracy. Tracing examples
+  showed 4 genuine small-pedestrian misses (frame 480), one merged box (frame 870), and one mistake in my own answer
+  key (frame 60). A regression check (remove one prediction or one reviewed box) moves exactly one count.
+- **Bug found on real data.** Ignored areas first only dropped predictions, so reviewed boxes inside them became
+  false misses (149 of them here). Fixed, tested, and the evaluator version bumped so old scores can't mix in.
+
 ## The five questions the brief says to be ready for
 
 **Why are detection and tracking separate?**

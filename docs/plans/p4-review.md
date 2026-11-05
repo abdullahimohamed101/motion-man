@@ -1,0 +1,119 @@
+# P4 Review and evaluation: reviewed datasets, detection metrics, run disagreement
+Status: Done · Branch: `feat/p4-review` · Spec: B§2, B§7–B§9 (MD§13, MD§18 fixtures 7 and 10, MD§22)
+
+## Outcome
+Some quality statements become measurable. A person reviews a small set of crosswalk frames in a compact form
+(accept, false positive, fix, add missed, exclude, mark classes complete) and commits a frozen revision. Any
+compatible run can then be scored against it: per-class precision and recall at stated thresholds, with every
+number tracing back to frames. Two runs of the same video can be compared box by box, by position, with the
+differences offered as review candidates. Predictions are never changed and the model never runs.
+
+## Non-goals
+- Tracking metrics (HOTA, IDF1, MOTA) and temporal ground-truth identity beyond an optional field: deferred
+  until temporal labels and a pinned reference implementation exist (B§8).
+- mAP, PR curves, or any claim beyond the reviewed frames, classes and thresholds.
+- Generated, model-assisted or "auto-accepted" ground truth. Labels exist only where a person reviewed (INV-7).
+- Import formats other than MotionMan dataset JSON (COCO etc. need the owner's go-ahead).
+- Freehand box drawing: boxes are edited with numeric fields and a live overlay (as in P3).
+- Experiments and robustness recipes (P5).
+
+## Decisions (confirmed 2026-11-01)
+- D1 Storage: `<data root>/datasets/<dataset_id>/draft.json` (editable) and `revisions/r<N>.json` (immutable,
+  written once by commit, hash recorded in `revisions/index.json`); `evaluations/<run_id>/<evaluation_id>/` and
+  `disagreements/<disagreement_id>/`, each with a `manifest.json`, built in a temp folder and renamed in (as P3).
+- D2 Dataset schema v1.0: `{schema_version, dataset_id, revision, parent_revision, input_id, split: "eval" |
+  "tuning", source_run_id (the run whose predictions seeded review, for reference only), frames: [{frame,
+  status: "reviewed" | "excluded", classes_complete: [names], ignored: [[x1,y1,x2,y2] px]}], annotations:
+  [{annotation_id, frame, class_name, bbox_xyxy (source px), origin: "accepted" | "added" | "corrected" |
+  "imported", note, gt_identity: int | null}]}`. `dataset_id` is a user-chosen slug `[a-z0-9-]{1,40}`.
+  Annotations are allowed only on reviewed frames; a reviewed frame must name at least one complete class.
+- D3 Seeding: a draft is started from a run and a frame list; nothing is labelled until the reviewer acts on a
+  frame. "Accept" copies a prediction's class and box into an annotation with origin `accepted`; the run's
+  records are only read.
+- D4 Frame selection for the eval subset: evenly spaced frames (default every 30th: 46 of 1,356), plus frames
+  the reviewer adds from the review queue. The selection is part of the draft, not computed later.
+- D5 Review queue candidates (labelled "candidates, not errors"): confidence below 0.40; first frame after a
+  track gap; abrupt box change (IoU < 0.5 between a track's consecutive boxes); disagreement items from D9.
+  Kinds take turns (each in frame order) so one flood can't hide the rest; capped at 200 shown, totals kept.
+- D6 Commit: validates the draft, writes `r<N>` with split chosen at commit, never overwrites. Evaluation only
+  accepts `eval` revisions; `tuning` revisions are for choosing settings, so a number is never tuned on the set
+  that scores it. The revision's hash and number are in every result.
+- D7 Evaluator v1 (B§8): drop predictions with confidence below the threshold (default: the run's recorded
+  conf); per class, sort predictions by confidence (ties: lower observation index first); match each to the
+  unmatched eligible ground-truth box with the highest IoU ≥ threshold (default 0.5; ties: lower annotation_id).
+  Predictions and reviewed boxes whose centre is in an ignored box are neither TP, FP nor FN. A frame counts for a class only if that
+  class is in its `classes_complete`; excluded frames count for nothing. Precision = TP/(TP+FP), recall =
+  TP/(TP+FN), each null with a reason when the denominator is 0. Output per class and micro-total, matched IoU
+  p10/p50/p90, and up to 12 example frames per error kind (FP, FN). Named "fixed-threshold detection
+  precision/recall", never mAP. `evaluation_id` hashes run id, records hash, revision hash, thresholds,
+  evaluator version.
+- D8 Compatibility: a run can be evaluated only against a revision with the same `input_id` and frame size;
+  frames outside the run's processed range are reported as not evaluated, not as misses.
+- D9 Disagreement v1: two runs with the same `input_id`; per common frame, class-agnostic one-to-one greedy
+  matching by descending IoU ≥ 0.5 (ties: lower observation index in A, then B). Items: matched same class,
+  class disagreement, unmatched A, unmatched B, plus matched IoU distribution. Track IDs are never compared and
+  no winner is declared. Each item has the frame and both observation ids; "Send to review" adds the frame to a
+  chosen draft.
+- D10 UI (per `docs/design/ui.md`): a **Quality lab** tab with three sections. Review: choose or create a
+  dataset, frame list and queue, the per-frame form (predictions with Accept / False positive / Fix, Add
+  missed with numeric box and overlay, Exclude, classes complete, ignore box), Commit (the one primary action
+  while the draft has unsaved changes). Evaluate: choose a frozen eval revision; cards per class and total,
+  thresholds, revision and evaluator version on screen; example frames open in Inspect. Compare runs: pick a
+  second run of the same video; counts per kind and an item table with frames.
+- D11 CLI: `dataset import FILE`, `dataset show ID[@rN]`, `evaluate --run ID --dataset ID@rN [--conf] [--iou]`,
+  `disagree RUN_A RUN_B [--iou]`. Exit 0; 2 on invalid or incompatible input.
+
+## Steps
+1. [x] `datasets.py`: schema and validation, draft save/load, seeding from a run, commit to immutable
+   revisions with an index, import/export. Tests: each refusal, revision immutability, raw records unchanged.
+2. [x] `evaluate.py`: matching and metrics per D7, publish. Tests: exact match, duplicates, empty positives and
+   negatives, ignored boxes, partial class scope excluded, null denominators with reasons, tie-breaks, an
+   injected FP and a removed GT box change TP/FP/FN exactly as expected, identical inputs → identical id/bytes.
+3. [x] `disagree.py`: spatial matching per D9, publish. Tests: fixture 7 (two runs with swapped track IDs and
+   the same boxes match spatially), class disagreement, unmatched both ways, frame-range intersection.
+4. [x] Review queue candidates (D5) as pure functions over the P1 index. Tests per heuristic and the cap.
+5. [x] CLI `dataset`, `evaluate`, `disagree`. Tests: happy paths and exit 2 refusals (tuning revision, other
+   video, unknown revision, frame size mismatch).
+6. [x] UI part 1: Quality lab → Review (dataset, frames, queue, form, commit). AppTests: never infers;
+   committing a correction leaves the run's hashes unchanged (fixture 10); a partially reviewed frame can't be
+   committed without a complete class.
+7. [x] UI part 2: Evaluate and Compare runs, with revision/thresholds/version on screen, example frames to
+   Inspect, Send to review. AppTests for each, and that nothing writes without its button.
+8. [x] **Owner review session (blocking):** the owner reviews the 46 evenly spaced frames (about an hour), then
+   commits `crosswalk-eval@r1` as `eval`. Then: evaluate runs `ed3f02` (imgsz 640) and `6057dc` (imgsz 480);
+   disagreement between them; a synthetic regression on the real revision (drop one reviewed box → recall
+   falls by exactly one TP); trace one FP and one FN to their frames. README, ARCHITECTURE, demo script,
+   acceptance table, STATE.
+
+## Acceptance
+| # | Criterion | Command | Result |
+|---|-----------|---------|--------|
+| P4-1 | Offline gate passes; no weights, GPU or network in new tests | `scripts/check.sh`; CI | ruff ok, 520 passed (CI on the PR) |
+| P4-2 | Partially reviewed frames are excluded unless their class scope is complete | `.venv/bin/pytest -q tests/test_evaluate.py -k scope` | 1 passed |
+| P4-3 | An injected FP or missed object changes the metric exactly as expected | `.venv/bin/pytest -q tests/test_evaluate.py -k injected` | 1 passed |
+| P4-4 | Swapped track IDs with the same boxes still match spatially (fixture 7) | `.venv/bin/pytest -q tests/test_disagree.py -k swapped` | 1 passed |
+| P4-5 | Committing a correction leaves raw prediction hashes unchanged (fixture 10) | `.venv/bin/pytest -q tests/test_datasets.py tests/test_quality_ui.py -k unchanged` | 2 passed |
+| P4-6 | Every score names revision, thresholds and evaluator version; null with reason when undefined | `.venv/bin/pytest -q tests/test_evaluate.py -k "names or undefined"` | 2 passed |
+| P4-7 | Only frozen eval revisions are scored; tuning or incompatible revisions are refused | `.venv/bin/pytest -q tests/test_evaluate.py -k refused` | 1 passed |
+| P4-8 | Review, evaluation and comparison never call the model | `.venv/bin/pytest -q tests/test_quality_ui.py -k never_infers` | 1 passed |
+| P4-9 | Real: owner-reviewed revision, two runs evaluated, disagreement, synthetic regression, numbers traced | real run (Log) | `crosswak-eval@r2` (46 frames, owner-reviewed); 640: 289/0/0, 480: P 0.962 R 0.785; disagreement 18,215 same; regression ±1 count; frames 480, 870, 60 traced (Log) |
+
+## Risks
+- The owner's review is the critical path: without it P4-9 can't pass, and no number may be invented (INV-7).
+  Steps 1–7 don't depend on it; step 8 stops and asks.
+- Reviewing small, distant people is slow and uncertain. The form lets a frame name only the classes it fully
+  covers and mark hard areas as ignored, so uncertainty is recorded instead of guessed.
+- 46 frames of one clip support statements about this clip and these thresholds only. README says so.
+- ByteTrack IDs fragment, so a track-level view is avoided: everything here is per frame and per box.
+
+## Log
+<!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-01 step 1: datasets.py: even_frames (every 30th), new_draft from a verified run (video id, frame size, source run, selected frames; nothing labelled), set_frame (reviewed/excluded, classes complete, ignored boxes; excluding drops that frame's labels), add/accept/remove annotations (accept copies class and box and notes the source observation; records only read), commit (validates, next number skips any file already on disk, exclusive create so a revision is written once, read-only, sha256 in revisions/index.json), load_revision verifies the hash (changed or orphaned revisions refused), parse_ref `<id>@r<N>`, import of a MotionMan draft or revision as a new draft with origin imported (ground truth only after a person commits); full validation with named refusals. 18 tests (incl. raw run hashes unchanged after commit: fixture 10), 480 total.
+- 2026-11-01 step 2: evaluate.py: pure score() per D7 (drop below the confidence threshold; per class, highest confidence first, ties by observation index; match the unmatched reviewed box with the highest IoU ≥ threshold, ties to the lower annotation id; centres in ignored boxes count neither way; only classes marked complete on reviewed frames are scored; excluded frames and frames the run never processed are reported, not counted as misses); precision/recall null with a reason on a zero denominator; matched IoU p10/p50/p90; up to 12 FP and FN examples with frames. evaluate(): refuses legacy runs, tuning revisions, another video, a different frame size, confidence below the run's own, IoU outside (0, 1], records changed since verification; id hashes run, records, revision hash, thresholds and evaluator version; published under evaluations/<run>/ev_*/ like P3 (temp folder, atomic rename, reuse, damaged rebuilt). Spec B§8 wording aligned to D7 (below the threshold is dropped). 13 tests, 493 total.
+- 2026-11-01 step 3: disagree.py: match_frame (class-agnostic, one-to-one, every pair at IoU ≥ threshold best first, ties by observation index in A then B) → matched same class, class disagreement, unmatched A, unmatched B; compare() streams both runs' records in lockstep over the frames both processed and re-hashes both files in full; refuses legacy runs, different videos or frame sizes, bad IoU; dg_ id from both runs' ids and records hashes, IoU and version; disagreement.json (counts, per class, matched IoU, frames with differences, top 20 frames, settings of each side, a note that track IDs are never compared and neither run is assumed right) + items.jsonl (differences only, with both observations) + manifest, published and reused like P3/P4; datasets.select_frames for Send to review (frames only, nothing labelled). 6 tests (fixture 7 swapped IDs, class disagreement, unmatched both ways, best-IoU one-to-one, common frames only, reuse and refusals, send to review), 499 total.
+- 2026-11-01 step 4: review.py: candidates over records (confidence < 0.40; first frame of a track's return after a gap; consecutive boxes with IoU < 0.5) plus run differences, labelled candidates not errors; up to 200 shown with totals per kind; frames_of for Add to review. Real check on run ed3f02 with the 640-vs-480 comparison (6057dc): 15,346 candidates (8,703 run differences, 5,462 low confidence, 1,151 track gaps, 30 box jumps); the planned kind-first ranking filled all 200 places with run differences from 36 frames, so kinds now take turns (57/30/57/56 across 82 frames; D5 updated). Comparison 640 vs 480 for the record: 18,215 boxes matched with the same class, 97 class disagreements, 7,049 only at 640, 1,557 only at 480, matched IoU p50 0.883, differences on 1,355 of 1,356 frames. 7 tests, 506 total.
+- 2026-11-01 step 5: CLI `dataset import FILE [--as ID]` (a draft, labels marked imported) and `dataset show ID|ID@rN` (selection, revisions, reviewed/excluded frames, labels by class); `evaluate --run --dataset ID@rN [--conf] [--iou] [--json]` (metric name, revision, thresholds and evaluator version on the first line, then TP/FP/FN and precision/recall per class and total, null rates with their reason, frames scored/excluded/not in this run); `disagree RUN_A RUN_B [--iou]` (counts, top frames, the track-ID note). MotionManError → exit 2 (tuning revision, unknown revision, malformed ref, unknown run, confidence below the run's own, existing import id, unknown dataset). Real smoke: disagree 640 vs 480 reused the saved comparison (exit 0); frames 268 and 499 differ most (15 boxes each). 4 tests, 510 total.
+- 2026-11-01 step 6: Quality lab tab (between Events & zones and Performance) in ui/quality.py, Review section: create a dataset (name, every Nth frame), pick a dataset for this video, frame picker with progress counts and Next to review; render.draw_review (ignored areas shaded, predictions thin grey with class and confidence, accepted ones dimmed, reviewed boxes in mist with ids, a typed box in lime); per-frame form: classes fully reviewed, Accept / Accept all (accepting marks the frame reviewed with those classes), reviewed boxes with remove, add a missed object or fix a box (numeric px, fixing replaces it as corrected), ignored areas, Mark reviewed, Exclude; review queue table with Add these frames; split + Commit revision (primary only while there are reviewed changes). Every edit reloads, changes, validates and saves the draft. Browser check on run ed3f02 with a throwaway dataset (deleted afterwards) found and fixed: a typed-box preview always drawn (fields now start at zero), the frame label going stale after a status change (plain labels; counts and the status line are current), a 21-prediction form too long (scrolling list), and multiselect chips with white text on bone at about 1.2:1 across the whole app (now void text, 17.3:1). 6 AppTests (new dataset, accept/add/exclude/commit with run hashes unchanged, no review without complete classes, fix as corrected, queue adds frames only, never infers), 516 total.
+- 2026-11-01 step 7: Quality lab gets a section switch (Review / Evaluate / Compare runs). Evaluate: eval revisions of this video only (tuning never offered), confidence (not below the run's own) and IoU, Evaluate primary only until an identical result exists (evaluate.evaluation_id / published), then the metric line with revision, its sha, thresholds and evaluator version on screen, precision/recall cards (— with the reason as help), TP and FP/missed, frames scored/excluded/not in run, per-class table, and up to 6 FP and missed examples that move Inspect to their frame. Compare runs: other runs of this video read from manifests only (no video re-hash until Compare), IoU, Compare primary until up to date (disagree.disagreement_id / published), four count cards, per-class table, top frames, Send top 10 frames to a dataset (frames only). Browser on run ed3f02: Compare with the 480 run 6057dc showed Up to date (reused) with 18,215 / 97 / 7,049 / 1,557 and the class table; Evaluate showed the no-eval-revision note (none exists yet: the owner reviews in step 8). 3 AppTests (evaluate with tuning not offered, nothing written until clicked, on-screen revision/thresholds/version, example to Inspect; no-revision note; compare counts, send frames without labels), 519 total.
+- 2026-11-04 step 8: owner reviewed 46 frames (`crosswak-eval@r2`, eval, every box accepted from the 640 run, none added; ignore band y 500–630 on every frame); real data showed ignored areas still graded reviewed boxes, fixed (detection-v2, aa4bd71); 640 1.000/1.000 by construction, 480 P 0.962 R 0.785 (227/9/62); disagree ed3f02 vs 6057dc 18,215 / 97 / 7,049 / 1,557; regression on frame 480 moves exactly one count; traced: frame 480 four genuine misses, frame 870 merged box, frame 60 answer-key error.
+- 2026-11-04 review: reviewer found no high-severity issues; fixed: imports without `ignored` or with foreign annotation ids now refused (were KeyError/ValueError), concurrent commits serialised by a lock (could orphan a revision), review queue now includes run differences from this run's latest comparison (D5 promised it, UI never passed them), damaged revisions or records shown as errors in the UI, 45→46 frames wording, README says all classes were accepted; tests added (equal-confidence tie-break, import refusals, concurrent commits, queue with differences).

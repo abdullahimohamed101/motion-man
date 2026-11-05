@@ -153,6 +153,11 @@ CSS = """
 [data-testid="stPopoverButton"][kind="primary"] [data-testid="stIconMaterial"] {
   color: var(--mm-void) !important; font-weight: 510;
 }
+/* Multiselect chips take the bone primary as their fill; Streamlit's default white text on it was about 1.2:1. */
+[data-testid="stMultiSelectTagsContainer"] [role="group"] > span,
+[data-testid="stMultiSelectTagsContainer"] [role="group"] > span * {
+  color: var(--mm-void) !important; fill: var(--mm-void);
+}
 [data-testid="stBaseButton-primary"]:not(:disabled):hover,
 [data-testid="stPopoverButton"][kind="primary"]:not(:disabled):hover {
   background: var(--mm-bone-hover); border-color: var(--mm-bone-hover);

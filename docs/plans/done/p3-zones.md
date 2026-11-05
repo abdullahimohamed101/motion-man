@@ -1,5 +1,5 @@
 # P3 Zones and events: regions, temporal rules, events, heatmap
-Status: Done (pending PR) · Branch: `feat/p3-zones` · Spec: B§2–B§6 (MD§10, MD§11, MD§18 fixtures, MD§21)
+Status: Done (merged PR #12, 2026-11-01) · Branch: `feat/p3-zones` · Spec: B§2–B§6 (MD§10, MD§11, MD§18 fixtures, MD§21)
 
 ## Outcome
 A user draws lines and rectangles on a saved run, presses Analyze, and sees when and where things happened:
@@ -84,7 +84,7 @@ give the same events, no matter how fast the clip was processed, and the model n
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| P3-1 | Offline gate passes; no weights, GPU or network in new tests | `scripts/check.sh`; CI | Local pass: ruff clean, 462 passed (fake tracker, no weights/GPU/network); CI pending on the P3 PR |
+| P3-1 | Offline gate passes; no weights, GPU or network in new tests | `scripts/check.sh`; CI | Pass: local 462 passed (fake tracker, no weights/GPU/network); PR #12 CI check SUCCESS |
 | P3-2 | One crossing gives one event; jitter or touching gives none; return after rearm gives a second | `.venv/bin/pytest -q tests/test_analytics.py -k "crossing or jitter or touch or return"` | Pass: 8 passed (one crossing, opposite direction, on-line centre, jitter, touch, unconfirmed excursion, endpoint, return) |
 | P3-3 | A break in observation invents no crossing, exit or continuous dwell | `.venv/bin/pytest -q tests/test_analytics.py -k "gap or break"` | Pass: 4 passed (gap across the line, break while pending, long time gap, reappear inside) |
 | P3-4 | Different processing speed, same records → identical analysis files | `.venv/bin/pytest -q tests/test_analysis.py -k speed` | Pass: slow vs fast fake tracker give identical events and summary (ids aside) |
