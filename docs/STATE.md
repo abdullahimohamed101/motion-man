@@ -7,7 +7,7 @@ Updated: 2026-11-04
 - Release A complete (`docs/spec-a.md`), merged (PRs #6–#9). UI redesign merged (PRs #10, #11); rules in
   `docs/design/ui.md`. P3 zones and events merged (PR #12, `docs/plans/done/p3-zones.md`).
 - **P4 review and evaluation: built, all 8 steps done** on `feat/p4-review` (`docs/plans/p4-review.md`, Done;
-  P4-2..P4-9 pass, P4-1 needs CI on the PR). Not pushed. Reviewer pass not yet run.
+  P4-2..P4-9 pass, P4-1 needs CI on the PR). Not pushed. Reviewer pass done, findings fixed (523 tests).
 - Real eval set: `crosswak-eval@r2` (name has the owner's typo; kept). 46 frames, every box accepted from the 640
   run, none added, ignore band y 500–630 on every frame. So scores are agreement with 640, not true accuracy;
   README Limitations says so. Frame 60 has a known wrong accepted box (merges two people and a car).
@@ -17,7 +17,7 @@ Updated: 2026-11-04
 - Known: `data/runs/r_20261101T060711Z_a0b0a2` is an early-P0 run; listed but refused on open. Safe to delete locally.
 
 ## Next step (exact)
-1. Reviewer subagent on `feat/p4-review`, fix findings, then PR when the owner asks.
+1. PR when the owner asks (then CI for P4-1).
 2. Optional, owner: fix the frame 60 box in the draft (Replaces a53) and commit `r3`; rerun the evaluations.
 3. After P4 merges: Release C G0 (`docs/plans/native-g0-g1.md` on `feat/native-plan`, approved).
 
@@ -32,6 +32,6 @@ Updated: 2026-11-04
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
 ## Last check
-- `scripts/check.sh` on `feat/p4-review`: ruff ok, 520 passed.
+- `scripts/check.sh` on `feat/p4-review`: ruff ok, 523 passed.
 - Crosswalk P3 demo (run ed3f02): 22 crossings, 7 entries, peak 9, analyzed in 0.46 s.
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

@@ -30,7 +30,7 @@ differences offered as review candidates. Predictions are never changed and the 
 - D3 Seeding: a draft is started from a run and a frame list; nothing is labelled until the reviewer acts on a
   frame. "Accept" copies a prediction's class and box into an annotation with origin `accepted`; the run's
   records are only read.
-- D4 Frame selection for the eval subset: evenly spaced frames (default every 30th: 45 of 1,356), plus frames
+- D4 Frame selection for the eval subset: evenly spaced frames (default every 30th: 46 of 1,356), plus frames
   the reviewer adds from the review queue. The selection is part of the draft, not computed later.
 - D5 Review queue candidates (labelled "candidates, not errors"): confidence below 0.40; first frame after a
   track gap; abrupt box change (IoU < 0.5 between a track's consecutive boxes); disagreement items from D9.
@@ -79,7 +79,7 @@ differences offered as review candidates. Predictions are never changed and the 
    committed without a complete class.
 7. [x] UI part 2: Evaluate and Compare runs, with revision/thresholds/version on screen, example frames to
    Inspect, Send to review. AppTests for each, and that nothing writes without its button.
-8. [x] **Owner review session (blocking):** the owner reviews the 45 evenly spaced frames (about an hour), then
+8. [x] **Owner review session (blocking):** the owner reviews the 46 evenly spaced frames (about an hour), then
    commits `crosswalk-eval@r1` as `eval`. Then: evaluate runs `ed3f02` (imgsz 640) and `6057dc` (imgsz 480);
    disagreement between them; a synthetic regression on the real revision (drop one reviewed box → recall
    falls by exactly one TP); trace one FP and one FN to their frames. README, ARCHITECTURE, demo script,
@@ -103,7 +103,7 @@ differences offered as review candidates. Predictions are never changed and the 
   Steps 1–7 don't depend on it; step 8 stops and asks.
 - Reviewing small, distant people is slow and uncertain. The form lets a frame name only the classes it fully
   covers and mark hard areas as ignored, so uncertainty is recorded instead of guessed.
-- 45 frames of one clip support statements about this clip and these thresholds only. README says so.
+- 46 frames of one clip support statements about this clip and these thresholds only. README says so.
 - ByteTrack IDs fragment, so a track-level view is avoided: everything here is per frame and per box.
 
 ## Log
@@ -116,3 +116,4 @@ differences offered as review candidates. Predictions are never changed and the 
 - 2026-11-01 step 6: Quality lab tab (between Events & zones and Performance) in ui/quality.py, Review section: create a dataset (name, every Nth frame), pick a dataset for this video, frame picker with progress counts and Next to review; render.draw_review (ignored areas shaded, predictions thin grey with class and confidence, accepted ones dimmed, reviewed boxes in mist with ids, a typed box in lime); per-frame form: classes fully reviewed, Accept / Accept all (accepting marks the frame reviewed with those classes), reviewed boxes with remove, add a missed object or fix a box (numeric px, fixing replaces it as corrected), ignored areas, Mark reviewed, Exclude; review queue table with Add these frames; split + Commit revision (primary only while there are reviewed changes). Every edit reloads, changes, validates and saves the draft. Browser check on run ed3f02 with a throwaway dataset (deleted afterwards) found and fixed: a typed-box preview always drawn (fields now start at zero), the frame label going stale after a status change (plain labels; counts and the status line are current), a 21-prediction form too long (scrolling list), and multiselect chips with white text on bone at about 1.2:1 across the whole app (now void text, 17.3:1). 6 AppTests (new dataset, accept/add/exclude/commit with run hashes unchanged, no review without complete classes, fix as corrected, queue adds frames only, never infers), 516 total.
 - 2026-11-01 step 7: Quality lab gets a section switch (Review / Evaluate / Compare runs). Evaluate: eval revisions of this video only (tuning never offered), confidence (not below the run's own) and IoU, Evaluate primary only until an identical result exists (evaluate.evaluation_id / published), then the metric line with revision, its sha, thresholds and evaluator version on screen, precision/recall cards (— with the reason as help), TP and FP/missed, frames scored/excluded/not in run, per-class table, and up to 6 FP and missed examples that move Inspect to their frame. Compare runs: other runs of this video read from manifests only (no video re-hash until Compare), IoU, Compare primary until up to date (disagree.disagreement_id / published), four count cards, per-class table, top frames, Send top 10 frames to a dataset (frames only). Browser on run ed3f02: Compare with the 480 run 6057dc showed Up to date (reused) with 18,215 / 97 / 7,049 / 1,557 and the class table; Evaluate showed the no-eval-revision note (none exists yet: the owner reviews in step 8). 3 AppTests (evaluate with tuning not offered, nothing written until clicked, on-screen revision/thresholds/version, example to Inspect; no-revision note; compare counts, send frames without labels), 519 total.
 - 2026-11-04 step 8: owner reviewed 46 frames (`crosswak-eval@r2`, eval, every box accepted from the 640 run, none added; ignore band y 500–630 on every frame); real data showed ignored areas still graded reviewed boxes, fixed (detection-v2, aa4bd71); 640 1.000/1.000 by construction, 480 P 0.962 R 0.785 (227/9/62); disagree ed3f02 vs 6057dc 18,215 / 97 / 7,049 / 1,557; regression on frame 480 moves exactly one count; traced: frame 480 four genuine misses, frame 870 merged box, frame 60 answer-key error.
+- 2026-11-04 review: reviewer found no high-severity issues; fixed: imports without `ignored` or with foreign annotation ids now refused (were KeyError/ValueError), concurrent commits serialised by a lock (could orphan a revision), review queue now includes run differences from this run's latest comparison (D5 promised it, UI never passed them), damaged revisions or records shown as errors in the UI, 45→46 frames wording, README says all classes were accepted; tests added (equal-confidence tie-break, import refusals, concurrent commits, queue with differences).

@@ -105,6 +105,10 @@ def test_higher_confidence_matches_first_and_equal_iou_goes_to_the_lower_annotat
     strong, weak = obj(1, "person", [0, 0, 10, 12], 0.95), obj(0, "person", [0, 0, 10, 10], 0.6)
     r = run_score([rec(weak, strong)], [reviewed()], [ann(1, "person", [0, 0, 10, 10])])
     assert counts(r) == (1, 1, 0) and r["examples"]["false_positives"][0]["observation_id"] == "0:0"  # weak lost
+    # equal confidence: the lower observation index matches first, even with the worse box
+    late, early = obj(3, "person", [0, 0, 10, 10], 0.8), obj(2, "person", [0, 0, 10, 12], 0.8)
+    r = run_score([rec(late, early)], [reviewed()], [ann(1, "person", [0, 0, 10, 10])])
+    assert counts(r) == (1, 1, 0) and r["examples"]["false_positives"][0]["observation_id"] == "0:3"
 
 
 def test_thresholds_are_applied():

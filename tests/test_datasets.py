@@ -165,3 +165,32 @@ def test_import_makes_a_new_draft_whose_labels_say_imported(run, root, tmp_path)
     copy.write_text('{"kind": "something"}')
     with pytest.raises(datasets.DatasetError, match="not a MotionMan dataset"):
         datasets.import_file(root, copy, "x")
+
+
+def test_import_refuses_frames_without_ignored_and_foreign_annotation_ids(run, root, tmp_path):
+    reviewed_draft(run, root)
+    _, path = datasets.commit(root, "crosswalk-eval", "eval")
+    good = json.loads(path.read_text())
+    copy = tmp_path / "shared.json"
+    no_ignored = json.loads(json.dumps(good))
+    del no_ignored["frames"][0]["ignored"]  # would otherwise crash the evaluator after commit
+    copy.write_text(json.dumps(no_ignored))
+    with pytest.raises(datasets.DatasetError, match="ignored must be a list"):
+        datasets.import_file(root, copy, "x")
+    foreign = json.loads(json.dumps(good))
+    foreign["annotations"][0]["annotation_id"] = "gt1"
+    copy.write_text(json.dumps(foreign))
+    with pytest.raises(datasets.DatasetError, match="must be a1, a2"):
+        datasets.import_file(root, copy, "y")
+    assert datasets.list_datasets(root) == ["crosswalk-eval"]
+
+
+def test_concurrent_commits_both_stay_in_the_index(run, root):
+    from concurrent.futures import ThreadPoolExecutor
+
+    reviewed_draft(run, root)
+    with ThreadPoolExecutor(2) as pool:
+        numbers = sorted(n for n, _ in pool.map(lambda s: datasets.commit(root, "crosswalk-eval", s), ["eval"] * 4))
+    assert numbers == [1, 2, 3, 4]
+    assert [r["revision"] for r in datasets.list_revisions(root, "crosswalk-eval")] == [1, 2, 3, 4]
+    assert all(datasets.load_revision(root, f"crosswalk-eval@r{n}") for n in numbers)

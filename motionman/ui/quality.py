@@ -13,6 +13,7 @@ import re
 import streamlit as st
 
 from motionman import analysis, datasets, disagree, evaluate, inspection, render, review, runs, store
+from motionman.types import MotionManError
 
 NEW_STEP = datasets.DEFAULT_STEP
 
@@ -166,12 +167,21 @@ def frame_form(run, derived, root, did, draft, frame, record, entry, anns, accep
 
 
 def queue(run, derived, root, did) -> None:
+    comparison = _latest_comparison(root, run)
+    key = (run.run_id, comparison and comparison.disagreement_id)
     cache = st.session_state.setdefault("qcands", {})
-    if run.run_id not in cache:
+    if key not in cache:
         cache.clear()
-        cache[run.run_id] = review.candidates(derived.index.records(0, derived.index.count))
-    shown, totals = cache[run.run_id]
+        items = disagree.read_items(comparison) if comparison else ()
+        cache[key] = review.candidates(derived.index.records(0, derived.index.count), items)
+    shown, totals = cache[key]
     st.caption(review.NOTE + " " + " · ".join(f"{review.KIND_LABELS[k]} {n:,}" for k, n in totals.items() if n))
+    if comparison:
+        other = comparison.doc["runs"]["b"]
+        st.caption(f"Run differences from the latest comparison: run A is this run, run B is "
+                   f"{other['run_id'][-6:]} (imgsz {other['imgsz']}).")  # fmt: skip
+    else:
+        st.caption("Compare this run with another in Compare runs to add run differences here.")
     if not shown:
         st.caption("Nothing stands out in this run.")
         return
@@ -181,9 +191,31 @@ def queue(run, derived, root, did) -> None:
     st.button(f"Add these {len(picks)} frames to review", key="qqueue-add", on_click=_select, args=(root, did, picks))
 
 
+def _latest_comparison(root, run) -> disagree.Result | None:
+    """The most recent intact comparison made from this run (it is run A), for the review queue."""
+    found = []
+    for p in (root.path / "disagreements").glob("dg_*/disagreement.json"):
+        try:
+            a = json.loads(p.read_text(encoding="utf-8"))["runs"]["a"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if a.get("run_id") == run.run_id and a.get("records_sha256") == run.records_sha256:
+            found.append((p.stat().st_mtime, p.parent.name))
+    for _, did in sorted(found, reverse=True):
+        try:
+            return disagree.load(root, did)
+        except disagree.DisagreeError:
+            continue  # damaged: fall back to an older one
+    return None
+
+
 def commit_bar(root, did, draft) -> None:
     revs = datasets.list_revisions(root, did)
-    last = datasets.load_revision(root, f"{did}@r{revs[-1]['revision']}") if revs else None
+    try:
+        last = datasets.load_revision(root, f"{did}@r{revs[-1]['revision']}") if revs else None
+    except datasets.DatasetError as e:  # a damaged revision must not take the review page down with it
+        st.error(str(e), icon=":material/error:")
+        last = None
     changed = last is None or (last["frames"], last["annotations"]) != (draft["frames"], draft["annotations"])
     ready = any(f["status"] == "reviewed" for f in draft["frames"])
     with st.container(horizontal=True):
@@ -381,7 +413,7 @@ def evaluate_section(run, root) -> None:
             with st.spinner("Scoring against the reviewed frames…"):
                 evaluate.evaluate(run, ref, root, conf=conf, iou_threshold=iou_t)
             st.rerun()
-        except evaluate.EvaluationError as e:
+        except MotionManError as e:  # also a damaged revision or record, not only a refused evaluation
             st.error(str(e), icon=":material/error:")
     if done:
         evaluation_results(run, evaluate.load(root, run.run_id, eid).doc)

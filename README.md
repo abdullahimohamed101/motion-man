@@ -255,8 +255,8 @@ and a run's records are never changed.
 In the UI, open a run and choose **Quality lab**:
 - **Review**: make a dataset (every Nth frame), then per frame name the classes you fully checked, accept the
   correct predictions, add or fix missed boxes, mark areas too hard to judge as *ignored*, or exclude the frame.
-  A review queue suggests frames worth a look (low confidence, a box that jumped, a track that came back, runs that
-  disagree); they are candidates, not errors. **Commit** freezes a read-only revision (`eval` or `tuning`).
+  A review queue suggests frames worth a look (low confidence, a box that jumped, a track that came back, and,
+  once this run has been compared with another, where the two disagree); they are candidates, not errors. **Commit** freezes a read-only revision (`eval` or `tuning`).
 - **Evaluate**: score this run against a frozen `eval` revision. Every result names the revision and its hash, the
   thresholds and the evaluator version; each false positive and miss links to its frame.
 - **Compare runs**: count where two runs of the same video agree and differ, frame by frame, and send the most
@@ -278,7 +278,8 @@ revisions of the same video and frame size are accepted.
 
 **Measured on the crosswalk clip** (`crosswak-eval@r2`, sha `eb8a9411c5b3…`: 46 frames, every 30th, all reviewed for
 *person*; one ignored band over the far-sidewalk crowd, y 500–630 px, on every frame; 289 person boxes scored,
-149 inside the band). How it was made matters: the reviewer accepted the 640 run's person boxes and added none, so
+149 inside the band). How it was made matters: the reviewer accepted every box the 640 run drew on those frames (all classes; only
+*person* is scored) and added none, so
 **this is an agreement check, not an absolute accuracy measurement.**
 
 | Run | imgsz | TP | FP | Missed | Precision | Recall | Matched IoU p50 |

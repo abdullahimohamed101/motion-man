@@ -8,6 +8,7 @@ with its hash in ``revisions/index.json``. A revision is either ``eval`` (frozen
 
 from __future__ import annotations
 
+import fcntl
 import json
 import math
 import os
@@ -24,7 +25,8 @@ REF = re.compile(r"([a-z0-9-]{1,40})@r([1-9][0-9]*)")
 SPLITS = ("eval", "tuning")
 ORIGINS = ("accepted", "added", "corrected", "imported")
 STATUSES = ("reviewed", "excluded")
-DEFAULT_STEP = 30  # D4: every 30th frame (45 of the crosswalk clip's 1,356)
+ANNOTATION_ID = re.compile(r"a[1-9][0-9]*")
+DEFAULT_STEP = 30  # D4: every 30th frame (46 of the crosswalk clip's 1,356: 0, 30, …, 1350)
 DRAFT, INDEX = "draft.json", "index.json"
 
 
@@ -141,8 +143,19 @@ def commit(root: store.DataRoot, dataset_id: str, split: str, now: datetime | No
     draft = load_draft(root, dataset_id)
     if not any(f["status"] == "reviewed" for f in draft["frames"]):
         raise DatasetError("nothing to commit: no frame has been reviewed yet")
-    index = _index(root, dataset_id)
     base = folder(root, dataset_id) / "revisions"
+    base.mkdir(parents=True, exist_ok=True)
+    # Two commits at once (two tabs, UI + CLI) would each save an index missing the other's revision, orphaning it.
+    lock = os.open(base / ".commit.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _commit_locked(root, dataset_id, split, draft, base, now)
+    finally:
+        os.close(lock)  # closing the descriptor releases the lock
+
+
+def _commit_locked(root, dataset_id, split, draft, base, now) -> tuple[int, Path]:
+    index = _index(root, dataset_id)
     # Skip any revision file already on disk, so a commit interrupted before the index update can't block the next
     # one; such an orphan is never in the index, so load_revision refuses it.
     on_disk = [int(m.group(1)) for p in base.glob("r*.json") if (m := re.fullmatch(r"r(\d+)\.json", p.name))]
@@ -153,7 +166,6 @@ def commit(root: store.DataRoot, dataset_id: str, split: str, now: datetime | No
                 "frames": draft["frames"], "annotations": draft["annotations"],
                 "committed_at_utc": (now or datetime.now(UTC)).isoformat(timespec="seconds")}  # fmt: skip
     validate(revision, kind="revision")
-    base.mkdir(parents=True, exist_ok=True)
     path = base / f"r{number}.json"
     body = (json.dumps(revision, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
     try:
@@ -270,13 +282,17 @@ def _check_frame(f: object, size: list[int]) -> None:
         raise DatasetError(f"{where}: classes_complete must be a list of class names")
     if f["status"] == "reviewed" and not classes:
         raise DatasetError(f"{where}: a reviewed frame must name at least one class it fully covers")
-    for box in f.get("ignored", []):
+    if not isinstance(f.get("ignored"), list):
+        raise DatasetError(f"{where}: ignored must be a list of boxes (empty if none)")
+    for box in f["ignored"]:
         _check_box(box, size, f"{where} ignored area")
 
 
 def _check_annotation(a: object, size: list[int], frames: dict) -> None:
     if not isinstance(a, dict) or not isinstance(a.get("annotation_id"), str):
         raise DatasetError("each annotation needs an annotation_id")
+    if not ANNOTATION_ID.fullmatch(a["annotation_id"]):
+        raise DatasetError(f"annotation id {a['annotation_id']!r} must be a1, a2, …")
     where = f"annotation {a['annotation_id']}"
     entry = frames.get(a.get("frame"))
     if entry is None or entry["status"] != "reviewed":

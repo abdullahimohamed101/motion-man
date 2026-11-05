@@ -178,3 +178,17 @@ def test_compare_runs_counts_differences_and_sends_frames_to_review_without_labe
     assert len(after["selected"]) > len(before["selected"]) and after["annotations"] == before["annotations"]
     assert any(c.value.startswith("Added 10 frames to crosswalk-eval") for c in at.caption)
     assert world["fake"].starts == []
+
+
+def test_the_review_queue_includes_differences_from_the_latest_comparison(world):
+    committed(world)
+    at = section(world, "Review")
+    assert any(c.value.startswith("Compare this run with another") for c in at.caption)
+    at = section(world, "Compare runs")
+    at.button(key="qcmp-go").click()
+    at = render(at)
+    at.segmented_control(key="qsection").set_value("Review")
+    at = render(at)
+    assert any(c.value.startswith("Run differences from the latest comparison: run A is this run, run B is "
+                                  + world["b"][-6:]) for c in at.caption)  # fmt: skip
+    assert any("Runs disagree 40" in c.value for c in at.caption) and world["fake"].starts == []
