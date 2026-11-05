@@ -1,5 +1,5 @@
 # Architecture
-Status: MVP (CLI + UI), Release A P0–P2 (contracts, inspection, measurement) and Release B P3 (events & zones).
+Status: MVP (CLI + UI), Release A P0–P2 (contracts, inspection, measurement) and Release B P3–P4 (events & zones; review and evaluation).
 Contracts: `docs/spec.md` §4–§8, `docs/spec-a.md`, `docs/spec-b.md`; plans in `docs/plans/` and `docs/plans/done/`.
 
 ## Flow (one synchronous loop, spec §4)
@@ -21,7 +21,9 @@ Tools beside the run (P1/P2): `runs`, `inspection`, `presets` (inspect published
 `benchmark` → `pipeline`, `compare`, `doctor`, `bundle` (measure and diagnose), all reached from `cli` subcommands
 (`benchmark`, `compare`, `doctor`, `bundle`) or the UI. Events & zones (P3): `analysis` → `analytics`, `regions`,
 `records`, `runs`, `store` (reads verified runs only; never infers), reached from the `analyze` subcommand and
-`ui/zones`. `analytics` is pure (no I/O). Leaf modules never import `pipeline`.
+`ui/zones`. `analytics` is pure (no I/O). Review and evaluation (P4): `evaluate`, `disagree` → `datasets`,
+`records`, `runs`, `store`; `review` → `evaluate` (IoU only); reached from the `dataset`, `evaluate` and `disagree`
+subcommands and `ui/quality`. `evaluate.score` is pure. Leaf modules never import `pipeline`.
 Only `tracking.py` imports Ultralytics (and `doctor`'s device probe imports torch lazily); OpenCV is used by
 `video_io`, `render`, `inspection` and `doctor`.
 
@@ -33,9 +35,11 @@ OpenCV-written clip: no weights, network or GPU (INV-8).
 ```text
 motionman/  __init__ __main__ cli pipeline video_io tracking render metrics types records store
             runs inspection presets telemetry benchmark compare doctor bundle regions analytics analysis
+            datasets evaluate disagree review
   ui/      app (Streamlit layout) runner (worker thread) view (display rules) workspace (per-run context) style (CSS)
-           zones (Events & zones tab)
+           zones (Events & zones tab) quality (Quality lab tab)
 tests/      unit tests per module + test_pipeline (synthetic video, fake tracker); conftest enforces INV-8
 scripts/    check.sh ui.sh
-data/       inputs/ staging/ runs/ derived/ exports/ presets/ benchmarks/ comparisons/ regions/ analyses/ (gitignored)
+data/       inputs/ staging/ runs/ derived/ exports/ presets/ benchmarks/ comparisons/ regions/ analyses/
+            datasets/ evaluations/ disagreements/ (gitignored)
 ```

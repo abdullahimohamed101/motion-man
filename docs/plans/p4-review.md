@@ -1,5 +1,5 @@
 # P4 Review and evaluation: reviewed datasets, detection metrics, run disagreement
-Status: Active · Branch: `feat/p4-review` · Spec: B§2, B§7–B§9 (MD§13, MD§18 fixtures 7 and 10, MD§22)
+Status: Done · Branch: `feat/p4-review` · Spec: B§2, B§7–B§9 (MD§13, MD§18 fixtures 7 and 10, MD§22)
 
 ## Outcome
 Some quality statements become measurable. A person reviews a small set of crosswalk frames in a compact form
@@ -79,7 +79,7 @@ differences offered as review candidates. Predictions are never changed and the 
    committed without a complete class.
 7. [x] UI part 2: Evaluate and Compare runs, with revision/thresholds/version on screen, example frames to
    Inspect, Send to review. AppTests for each, and that nothing writes without its button.
-8. [ ] **Owner review session (blocking):** the owner reviews the 45 evenly spaced frames (about an hour), then
+8. [x] **Owner review session (blocking):** the owner reviews the 45 evenly spaced frames (about an hour), then
    commits `crosswalk-eval@r1` as `eval`. Then: evaluate runs `ed3f02` (imgsz 640) and `6057dc` (imgsz 480);
    disagreement between them; a synthetic regression on the real revision (drop one reviewed box → recall
    falls by exactly one TP); trace one FP and one FN to their frames. README, ARCHITECTURE, demo script,
@@ -88,15 +88,15 @@ differences offered as review candidates. Predictions are never changed and the 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| P4-1 | Offline gate passes; no weights, GPU or network in new tests | `scripts/check.sh`; CI | |
-| P4-2 | Partially reviewed frames are excluded unless their class scope is complete | `.venv/bin/pytest -q tests/test_evaluate.py -k scope` | |
-| P4-3 | An injected FP or missed object changes the metric exactly as expected | `.venv/bin/pytest -q tests/test_evaluate.py -k injected` | |
-| P4-4 | Swapped track IDs with the same boxes still match spatially (fixture 7) | `.venv/bin/pytest -q tests/test_disagree.py -k swapped` | |
-| P4-5 | Committing a correction leaves raw prediction hashes unchanged (fixture 10) | `.venv/bin/pytest -q tests/test_datasets.py tests/test_quality_ui.py -k unchanged` | |
-| P4-6 | Every score names revision, thresholds and evaluator version; null with reason when undefined | `.venv/bin/pytest -q tests/test_evaluate.py -k "names or undefined"` | |
-| P4-7 | Only frozen eval revisions are scored; tuning or incompatible revisions are refused | `.venv/bin/pytest -q tests/test_evaluate.py -k refused` | |
-| P4-8 | Review, evaluation and comparison never call the model | `.venv/bin/pytest -q tests/test_quality_ui.py -k never_infers` | |
-| P4-9 | Real: owner-reviewed revision, two runs evaluated, disagreement, synthetic regression, numbers traced | real run (Log) | |
+| P4-1 | Offline gate passes; no weights, GPU or network in new tests | `scripts/check.sh`; CI | ruff ok, 520 passed (CI on the PR) |
+| P4-2 | Partially reviewed frames are excluded unless their class scope is complete | `.venv/bin/pytest -q tests/test_evaluate.py -k scope` | 1 passed |
+| P4-3 | An injected FP or missed object changes the metric exactly as expected | `.venv/bin/pytest -q tests/test_evaluate.py -k injected` | 1 passed |
+| P4-4 | Swapped track IDs with the same boxes still match spatially (fixture 7) | `.venv/bin/pytest -q tests/test_disagree.py -k swapped` | 1 passed |
+| P4-5 | Committing a correction leaves raw prediction hashes unchanged (fixture 10) | `.venv/bin/pytest -q tests/test_datasets.py tests/test_quality_ui.py -k unchanged` | 2 passed |
+| P4-6 | Every score names revision, thresholds and evaluator version; null with reason when undefined | `.venv/bin/pytest -q tests/test_evaluate.py -k "names or undefined"` | 2 passed |
+| P4-7 | Only frozen eval revisions are scored; tuning or incompatible revisions are refused | `.venv/bin/pytest -q tests/test_evaluate.py -k refused` | 1 passed |
+| P4-8 | Review, evaluation and comparison never call the model | `.venv/bin/pytest -q tests/test_quality_ui.py -k never_infers` | 1 passed |
+| P4-9 | Real: owner-reviewed revision, two runs evaluated, disagreement, synthetic regression, numbers traced | real run (Log) | `crosswak-eval@r2` (46 frames, owner-reviewed); 640: 289/0/0, 480: P 0.962 R 0.785; disagreement 18,215 same; regression ±1 count; frames 480, 870, 60 traced (Log) |
 
 ## Risks
 - The owner's review is the critical path: without it P4-9 can't pass, and no number may be invented (INV-7).
@@ -115,3 +115,4 @@ differences offered as review candidates. Predictions are never changed and the 
 - 2026-11-01 step 5: CLI `dataset import FILE [--as ID]` (a draft, labels marked imported) and `dataset show ID|ID@rN` (selection, revisions, reviewed/excluded frames, labels by class); `evaluate --run --dataset ID@rN [--conf] [--iou] [--json]` (metric name, revision, thresholds and evaluator version on the first line, then TP/FP/FN and precision/recall per class and total, null rates with their reason, frames scored/excluded/not in this run); `disagree RUN_A RUN_B [--iou]` (counts, top frames, the track-ID note). MotionManError → exit 2 (tuning revision, unknown revision, malformed ref, unknown run, confidence below the run's own, existing import id, unknown dataset). Real smoke: disagree 640 vs 480 reused the saved comparison (exit 0); frames 268 and 499 differ most (15 boxes each). 4 tests, 510 total.
 - 2026-11-01 step 6: Quality lab tab (between Events & zones and Performance) in ui/quality.py, Review section: create a dataset (name, every Nth frame), pick a dataset for this video, frame picker with progress counts and Next to review; render.draw_review (ignored areas shaded, predictions thin grey with class and confidence, accepted ones dimmed, reviewed boxes in mist with ids, a typed box in lime); per-frame form: classes fully reviewed, Accept / Accept all (accepting marks the frame reviewed with those classes), reviewed boxes with remove, add a missed object or fix a box (numeric px, fixing replaces it as corrected), ignored areas, Mark reviewed, Exclude; review queue table with Add these frames; split + Commit revision (primary only while there are reviewed changes). Every edit reloads, changes, validates and saves the draft. Browser check on run ed3f02 with a throwaway dataset (deleted afterwards) found and fixed: a typed-box preview always drawn (fields now start at zero), the frame label going stale after a status change (plain labels; counts and the status line are current), a 21-prediction form too long (scrolling list), and multiselect chips with white text on bone at about 1.2:1 across the whole app (now void text, 17.3:1). 6 AppTests (new dataset, accept/add/exclude/commit with run hashes unchanged, no review without complete classes, fix as corrected, queue adds frames only, never infers), 516 total.
 - 2026-11-01 step 7: Quality lab gets a section switch (Review / Evaluate / Compare runs). Evaluate: eval revisions of this video only (tuning never offered), confidence (not below the run's own) and IoU, Evaluate primary only until an identical result exists (evaluate.evaluation_id / published), then the metric line with revision, its sha, thresholds and evaluator version on screen, precision/recall cards (— with the reason as help), TP and FP/missed, frames scored/excluded/not in run, per-class table, and up to 6 FP and missed examples that move Inspect to their frame. Compare runs: other runs of this video read from manifests only (no video re-hash until Compare), IoU, Compare primary until up to date (disagree.disagreement_id / published), four count cards, per-class table, top frames, Send top 10 frames to a dataset (frames only). Browser on run ed3f02: Compare with the 480 run 6057dc showed Up to date (reused) with 18,215 / 97 / 7,049 / 1,557 and the class table; Evaluate showed the no-eval-revision note (none exists yet: the owner reviews in step 8). 3 AppTests (evaluate with tuning not offered, nothing written until clicked, on-screen revision/thresholds/version, example to Inspect; no-revision note; compare counts, send frames without labels), 519 total.
+- 2026-11-04 step 8: owner reviewed 46 frames (`crosswak-eval@r2`, eval, every box accepted from the 640 run, none added; ignore band y 500–630 on every frame); real data showed ignored areas still graded reviewed boxes, fixed (detection-v2, aa4bd71); 640 1.000/1.000 by construction, 480 P 0.962 R 0.785 (227/9/62); disagree ed3f02 vs 6057dc 18,215 / 97 / 7,049 / 1,557; regression on frame 480 moves exactly one count; traced: frame 480 four genuine misses, frame 870 merged box, frame 60 answer-key error.

@@ -1,36 +1,37 @@
 # State
 <!-- Rewritten (not appended) at the end of every session. Cap: 60 lines. History lives in git log and done plans. -->
 
-Updated: 2026-11-01
+Updated: 2026-11-04
 
 ## Now
 - Release A complete (`docs/spec-a.md`), merged (PRs #6–#9). UI redesign merged (PRs #10, #11); rules in
-  `docs/design/ui.md`.
-- **Release B part 1** (`docs/spec-b.md`). **P3 zones and events done**, merged PR #12
-  (`docs/plans/done/p3-zones.md`, P3-1..P3-10 pass): `regions`, `analytics`, `analysis`, `ui/zones`, `analyze` CLI.
-- **P4 review and evaluation**: `docs/plans/p4-review.md` (Active) on `feat/p4-review`; steps 1–7 built and
-  committed (datasets, evaluator, run comparison, review queue, CLI, Quality lab Review / Evaluate / Compare runs).
-  P4-2..P4-8 pass. Not pushed. **Step 8 is blocked on the owner's review** of 45 crosswalk frames.
-- Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored. psutil 7.2.2 pinned.
+  `docs/design/ui.md`. P3 zones and events merged (PR #12, `docs/plans/done/p3-zones.md`).
+- **P4 review and evaluation: built, all 8 steps done** on `feat/p4-review` (`docs/plans/p4-review.md`, Done;
+  P4-2..P4-9 pass, P4-1 needs CI on the PR). Not pushed. Reviewer pass not yet run.
+- Real eval set: `crosswak-eval@r2` (name has the owner's typo; kept). 46 frames, every box accepted from the 640
+  run, none added, ignore band y 500–630 on every frame. So scores are agreement with 640, not true accuracy;
+  README Limitations says so. Frame 60 has a known wrong accepted box (merges two people and a car).
+- Results: 640 run 1.000/1.000 by construction; 480 run P 0.962, R 0.785 (227/9/62). Evaluator now `detection-v2`
+  (reviewed boxes in ignored areas aren't graded).
+- Env: `.venv` (py3.11.17); `yolo11n.pt`, `clips/`, `data/` local and gitignored. UI: `scripts/ui.sh`.
 - Known: `data/runs/r_20261101T060711Z_a0b0a2` is an early-P0 run; listed but refused on open. Safe to delete locally.
 
 ## Next step (exact)
-1. Owner: `scripts/ui.sh` → open the latest crosswalk run → Quality lab → Review → New dataset `crosswalk-eval`
-   (every 30th frame) → review each frame (classes complete, Accept / add / fix / ignore / exclude) → Commit as eval.
-2. Then step 8: evaluate runs `ed3f02` (640) and `6057dc` (480), disagreement, synthetic regression, docs, acceptance.
+1. Reviewer subagent on `feat/p4-review`, fix findings, then PR when the owner asks.
+2. Optional, owner: fix the frame 60 box in the draft (Replaces a53) and commit `r3`; rerun the evaluations.
+3. After P4 merges: Release C G0 (`docs/plans/native-g0-g1.md` on `feat/native-plan`, approved).
+
+## After P4: Release C (approved 2026-11-04)
+- Native C++/CUDA/TensorRT/RT-DETR engine on the owner's NVIDIA PC. Branch `feat/native-plan` (worktree
+  `.worktrees/native-plan`, off `main`, not pushed): `docs/spec-c.md`, ADR-001/002 Accepted, ADR-003/004 Proposed,
+  `docs/plans/native-g0-g1.md` (Approved), source `docs/reference/native-architecture.md`.
+- Needs owner: PC inventory output (`nvidia-smi`, `nvcc --version`, `cmake --version`, OS, disk) and SSH access;
+  yes to `brew install cmake` on the Mac.
 
 ## Blocked / needs owner
-- The 45-frame review session (step 8): only a person can create ground truth (INV-7).
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
-## After P4: new direction (2026-11-04)
-- Release C, native C++/CUDA/TensorRT/RT-DETR engine on the owner's NVIDIA PC. Drafted on branch
-  `feat/native-plan` (worktree `.worktrees/native-plan`, off `main`, not pushed): `docs/spec-c.md`,
-  ADR-001..004 (Proposed), `docs/plans/native-g0-g1.md` (Draft), source `docs/reference/native-architecture.md`.
-- Needs owner: approve spec-c and the G0–G1 plan; PC inventory output (`nvidia-smi`, `nvcc --version`,
-  `cmake --version`, OS, disk) and SSH access; `brew install cmake` on the Mac.
-
 ## Last check
-- `scripts/check.sh` on `feat/p4-review`: ruff ok, 519 passed.
+- `scripts/check.sh` on `feat/p4-review`: ruff ok, 520 passed.
 - Crosswalk P3 demo (run ed3f02): 22 crossings, 7 entries, peak 9, analyzed in 0.46 s.
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).
