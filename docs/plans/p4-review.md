@@ -41,7 +41,7 @@ differences offered as review candidates. Predictions are never changed and the 
 - D7 Evaluator v1 (B§8): drop predictions with confidence below the threshold (default: the run's recorded
   conf); per class, sort predictions by confidence (ties: lower observation index first); match each to the
   unmatched eligible ground-truth box with the highest IoU ≥ threshold (default 0.5; ties: lower annotation_id).
-  Predictions whose centre is in an ignored box are neither TP nor FP. A frame counts for a class only if that
+  Predictions and reviewed boxes whose centre is in an ignored box are neither TP, FP nor FN. A frame counts for a class only if that
   class is in its `classes_complete`; excluded frames count for nothing. Precision = TP/(TP+FP), recall =
   TP/(TP+FN), each null with a reason when the denominator is 0. Output per class and micro-total, matched IoU
   p10/p50/p90, and up to 12 example frames per error kind (FP, FN). Named "fixed-threshold detection

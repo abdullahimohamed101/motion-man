@@ -78,6 +78,12 @@ def test_predictions_centred_in_an_ignored_area_are_neither_true_nor_false():
     assert counts(r) == (0, 0, 0) and r["frames"]["ignored_predictions"] == 1
 
 
+def test_reviewed_boxes_centred_in_an_ignored_area_are_not_counted_as_missed():
+    box = [50, 0, 60, 10]
+    r = run_score([rec(obj(0, "person", box))], [reviewed(ignored=[[45, 0, 64, 20]])], [ann(1, "person", box)])
+    assert counts(r) == (0, 0, 0) and r["frames"]["ignored_annotations"] == 1
+
+
 def test_injected_false_positive_and_missed_object_move_the_counts_exactly():
     gts = [ann(1, "person", BOX), ann(2, "person", [40, 10, 60, 40])]
     preds = [obj(0, "person", BOX), obj(1, "person", [40, 10, 60, 40])]
@@ -145,7 +151,7 @@ def test_an_evaluation_names_its_revision_thresholds_and_evaluator(run, root):
     assert (
         d["dataset"]["ref"] == ref and d["dataset"]["sha256"].startswith("sha256:") and d["dataset"]["split"] == "eval"
     )
-    assert d["thresholds"] == {"confidence": 0.25, "iou": 0.5} and d["evaluator_version"] == "detection-v1"
+    assert d["thresholds"] == {"confidence": 0.25, "iou": 0.5} and d["evaluator_version"] == "detection-v2"
     assert d["metric"] == "fixed-threshold detection precision/recall" and "Not mAP" in d["scope"]
     assert counts(d) == (2, 0, 1) and d["total"]["recall"] == round(2 / 3, 4) and d["total"]["precision"] == 1.0
     assert d["examples"]["false_negatives"][0]["frame"] == 10  # traceable to the frame

@@ -24,7 +24,7 @@ from motionman import datasets, records, runs, store
 from motionman.types import MotionManError
 
 SCHEMA_VERSION = "1.0"
-EVALUATOR_VERSION = "detection-v1"
+EVALUATOR_VERSION = "detection-v2"
 METRIC_NAME = "fixed-threshold detection precision/recall"
 DEFAULT_IOU = 0.5
 MAX_EXAMPLES = 12
@@ -71,7 +71,7 @@ def score(by_frame: dict[int, dict], revision: dict, conf: float, iou_threshold:
     fps_ex: list[dict] = []
     fns_ex: list[dict] = []
     counts = {"reviewed": 0, "excluded": 0, "scored": 0, "not_evaluated": [], "ignored_predictions": 0,
-              "unscored_predictions": 0, "unscored_annotations": 0}  # fmt: skip
+              "ignored_annotations": 0, "unscored_predictions": 0, "unscored_annotations": 0}  # fmt: skip
     anns_by_frame: dict[int, list[dict]] = {}
     for a in revision["annotations"]:
         anns_by_frame.setdefault(a["frame"], []).append(a)
@@ -94,7 +94,13 @@ def score(by_frame: dict[int, dict], revision: dict, conf: float, iou_threshold:
         for cls in sorted(complete):
             c = per_class.setdefault(cls, {"tp": 0, "fp": 0, "fn": 0, "frames": 0})
             c["frames"] += 1
-            gts = sorted((a for a in gts_all if a["class_name"] == cls), key=_ann_order)
+            gts = []
+            for a in sorted((a for a in gts_all if a["class_name"] == cls), key=_ann_order):
+                x1, y1, x2, y2 = a["bbox_xyxy"]
+                if any(_inside(box, (x1 + x2) / 2, (y1 + y2) / 2) for box in f["ignored"]):
+                    counts["ignored_annotations"] += 1  # not eligible: an ignored area is not graded either way
+                    continue
+                gts.append(a)
             preds = []
             for o in kept:
                 if o["class_name"] != cls:

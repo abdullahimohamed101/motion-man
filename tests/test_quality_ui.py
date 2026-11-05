@@ -147,7 +147,7 @@ def test_evaluate_scores_the_run_and_names_revision_thresholds_and_version_on_sc
     go = next(b for b in at.button if b.key == "qeval-go")
     assert go.label == "Up to date" and go.disabled
     assert any(c.value.startswith(f"fixed-threshold detection precision/recall · {ref} (sha ") and
-               "confidence ≥ 0.25 · IoU ≥ 0.5 · detection-v1" in c.value for c in at.caption)  # fmt: skip
+               "confidence ≥ 0.25 · IoU ≥ 0.5 · detection-v2" in c.value for c in at.caption)  # fmt: skip
     m = {x.label: x.value for x in at.metric}
     assert m["Precision"] == "1.000" and m["Recall"] == "0.667" and m["False pos. / missed"] == "0 / 1"
     at.button(key="qex-false_negatives-0").click()  # the missed object, traced to its frame

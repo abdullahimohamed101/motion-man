@@ -399,7 +399,8 @@ def evaluation_results(run, d: dict) -> None:
     cols[3].metric("False pos. / missed", f"{tot['fp']:,} / {tot['fn']:,}", border=True)
     f = d["frames"]
     st.caption(f"{f['scored']} frames scored, {f['excluded']} excluded, {len(f['not_evaluated'])} not in this run, "
-               f"{f['ignored_predictions']} predictions in ignored areas. {d['scope']}")  # fmt: skip
+               f"{f['ignored_predictions']} predictions and {f.get('ignored_annotations', 0)} reviewed boxes "
+               f"in ignored areas. {d['scope']}")  # fmt: skip
     rows = [{"Class": cls, "TP": c["tp"], "FP": c["fp"], "FN": c["fn"], "Frames": c["frames"],
              "Precision": c["precision"], "Recall": c["recall"]} for cls, c in d["classes"].items()]  # fmt: skip
     st.dataframe(rows, hide_index=True, width="stretch", key=f"qeval-classes-{d['evaluation_id']}")
