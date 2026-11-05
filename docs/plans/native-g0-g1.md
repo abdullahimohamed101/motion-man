@@ -28,7 +28,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 1. [x] **[Mac]** Portable C++ skeleton: `native/CMakeLists.txt`, `CMakePresets.json` (`mac-cpu` without CUDA
    discovery; `linux-cuda-release` that fails if CUDA/TensorRT are missing), `native/include/motionman/` frame
    key and detection types, `native/tests/unit/` with a CTest target. Needs `brew install cmake` (owner's yes).
-2. [ ] **[Mac]** Reference fixtures: `configs/reference/inputs.json` (clip SHA-256s, golden frame indices),
+2. [x] **[Mac]** Reference fixtures: `configs/reference/inputs.json` (clip SHA-256s, golden frame indices),
    `tests/fixtures/source_time.json` shared by a pytest and a C++ unit test so both languages round `source_t_us`
    identically (C§8). Record H0: the validated Python run `ed3f02` id, records hash and settings.
 3. [ ] **[PC]** Inventory into `docs/environment.md`: GPU, compute capability, VRAM, OS/WSL, driver, `nvcc`,
@@ -55,7 +55,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 |---|-----------|---------|--------|
 | NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | 1/1 passed (Apple clang 21, CMake 4.4.5) |
 | NG-2 | Python gate unchanged | `scripts/check.sh` | |
-| NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | |
+| NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | 2 passed; 149 cases passed |
 | NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | |
 | NG-5 | Real CUDA smoke test passes on the PC | `ctest --preset linux-cuda-release -L gpu -R cuda_smoke` | |
 | NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | |
@@ -75,3 +75,4 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
 - 2026-11-05 step 1: root `CMakeLists.txt` + `CMakePresets.json` (`mac-cpu` OFF, `linux-cuda-release` ON), `native/` with header-only `motionman_core` (FrameKey, Detection, TrackedObject, valid_box), CTest `types` (label unit, -Wall -Wextra -Werror, no framework). Mac: configure, build, 1/1 pass, no CUDA compiler probed. `linux-cuda-release` on the Mac fails at configure (no CUDA toolkit), as intended; its TensorRT check is UNVERIFIED until the PC. `build/` gitignored. Python gate 523 passed.
+- 2026-11-05 step 2: `tests/fixtures/source_time.json` (149 cases: NTSC and integer rates, indices to 10^7, five exact .5 ties) checked by `tests/test_source_time.py` and C++ `source_time` (new header `motionman/source_time.hpp`, nearbyint ties-to-even); a mutation to round-half-away fails the C++ test (index 5 fps 400000: 13 vs 12). `configs/reference/inputs.json`: crosswalk input hash re-verified, 8 golden frames, H0 = run ed3f02 (manifest verified, records hash, settings, commit). Gate 525 passed, ctest 2/2.
