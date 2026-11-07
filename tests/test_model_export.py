@@ -19,6 +19,27 @@ def _load(name):
 
 common = _load("common")
 parity = _load("parity")
+build_engine = _load("build_engine")
+
+
+def test_engine_identity_refuses_any_difference():
+    expected = {"onnx_sha256": "sha256:aa", "tensorrt": "11.2.1.2", "gpu": "RTX", "precision": "fp32"}
+    assert build_engine.compare_identity(expected, {"identity": dict(expected)}) == []
+    for key, other in [
+        ("onnx_sha256", "sha256:bb"),
+        ("tensorrt", "11.4.0.106"),
+        ("gpu", "RTX 4090"),
+        ("precision", "fp16"),
+    ]:
+        problems = build_engine.compare_identity(expected, {"identity": {**expected, key: other}})
+        assert len(problems) == 1 and problems[0].startswith(key), problems
+    assert build_engine.compare_identity(expected, {}) != []  # no identity at all is refused
+
+
+def test_engine_shape_spec_matches_trtexec_syntax():
+    spec = build_engine.shape_spec({"images": [1, 3, 640, 640], "orig_target_sizes": [1, 2]})
+    assert spec == "images:1x3x640x640,orig_target_sizes:1x2"
+    assert build_engine.PRECISION_FLAGS["fp32"] == ["--noTF32"]
 
 
 def _det(label, score, box):
