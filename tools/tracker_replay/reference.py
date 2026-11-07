@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -23,6 +24,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "tracker"
+LAPJV_FIXTURE = ROOT / "tests" / "fixtures" / "lapjv.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(1, str(ROOT))  # motionman, when run as a script
 
@@ -122,6 +124,31 @@ def build_fixture(scenario: scenarios.Scenario, config: dict) -> dict:
     }
 
 
+def lapjv_cases() -> dict:
+    """lap.lapjv as Ultralytics calls it (float32 costs, extend_cost, cost_limit), on seeded shapes and costs
+    with many exact ties, so the native solver can be checked against lap's own choices."""
+    import lap
+
+    rng = np.random.default_rng(20261108)
+    cases = []
+    for k in range(400):
+        rows, cols = int(rng.integers(1, 9)), int(rng.integers(1, 9))
+        kind = k % 4
+        if kind == 0:  # continuous costs like 1 - IoU
+            cost = rng.uniform(0, 1, (rows, cols))
+        elif kind == 1:  # coarse grid: frequent exact ties
+            cost = rng.integers(0, 6, (rows, cols)) / 8
+        elif kind == 2:  # all equal
+            cost = np.full((rows, cols), float(rng.integers(0, 8)) / 8)
+        else:  # mostly unmatched (1.0) with a few close pairs
+            cost = np.where(rng.random((rows, cols)) < 0.3, rng.integers(0, 4, (rows, cols)) / 8, 1.0)
+        cost = cost.astype(np.float32)
+        limit = [0.8, 0.5, 0.7][k % 3]
+        _, x, y = lap.lapjv(cost, extend_cost=True, cost_limit=limit)
+        cases.append({"cost": cost.astype(float).tolist(), "limit": limit, "x": x.tolist(), "y": y.tolist()})
+    return {"schema": "motionman.lapjv/1", "lap": metadata.version("lap"), "cases": cases}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     mode = ap.add_mutually_exclusive_group()
@@ -150,8 +177,16 @@ def main() -> int:
             line += " ok" if not problems else " DIFFERS: " + "; ".join(problems[:3])
             failed += bool(problems)
         print(line)
+    lap_doc = lapjv_cases()
+    if args.write:
+        LAPJV_FIXTURE.write_text(json.dumps(lap_doc, separators=(",", ":")) + "\n", encoding="utf-8")
+    elif args.check:
+        same = json.loads(LAPJV_FIXTURE.read_text(encoding="utf-8")) == lap_doc
+        print(f"lapjv: {len(lap_doc['cases'])} cases {'ok' if same else 'DIFFER'}")
+        failed += not same
     if args.check:
-        print(f"{len(scenarios.ALL) - failed}/{len(scenarios.ALL)} fixtures reproduced by {reference_identity()}")
+        total = len(scenarios.ALL) + 1
+        print(f"{total - failed}/{total} fixtures reproduced by {reference_identity()}")
     return 1 if failed else 0
 
 

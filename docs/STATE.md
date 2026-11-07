@@ -13,7 +13,7 @@ Updated: 2026-11-07
   G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
 - One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
   (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–2 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–3 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
   ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
@@ -28,8 +28,9 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. G2 step 3 [Mac]: native ByteTrack in `native/src/track/` + CTest `tracker_replay` against
-   `tests/fixtures/tracker/` (reference check: `tools/tracker_replay/reference.py --check`). Step 7 needs the owner's yes to install the Python app env on the PC (download).
+1. G2 step 4 [Mac]: portable native record and timing writers (schema 1.0, Python rounding, null IDs, the
+   empty-output rule) with a fixture shared by pytest and CTest; trails logic (INV-4) in C++.
+   Native ByteTrack (step 3) reproduces all 15 replay fixtures; reference check: `reference.py --check`. Step 7 needs the owner's yes to install the Python app env on the PC (download).
 
 ## Blocked / needs owner
 - Merging PRs #14 → #15 → #16.
@@ -39,5 +40,5 @@ Updated: 2026-11-07
 
 ## Last check
 - PC `ctest --preset linux-cuda-release`: 9/9 (unit, golden, cuda_smoke, trt_infer, trt_parity, trt_refuse_tampered).
-- Mac `scripts/check.sh`: ruff ok, 563 passed (G2 step 2); `ctest --preset mac-cpu` 4/4 (2026-11-07, step 10).
+- Mac `scripts/check.sh`: ruff ok, 564 passed (G2 step 3); `ctest --preset mac-cpu` 6/6 (G2 step 3).
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

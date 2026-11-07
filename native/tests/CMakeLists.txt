@@ -23,6 +23,18 @@ target_compile_options(test_json_sha256 PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,Ap
 add_test(NAME json_sha256 COMMAND test_json_sha256 ${PROJECT_SOURCE_DIR}/configs/native/rtdetr_r18_640.json)
 set_tests_properties(json_sha256 PROPERTIES LABELS unit)
 
+add_executable(test_lapjv unit/test_lapjv.cpp)
+target_link_libraries(test_lapjv PRIVATE motionman_cpu)
+target_compile_options(test_lapjv PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME lapjv COMMAND test_lapjv ${PROJECT_SOURCE_DIR}/tests/fixtures/lapjv.json)
+set_tests_properties(lapjv PROPERTIES LABELS unit)
+
+add_executable(test_tracker_replay unit/test_tracker_replay.cpp)
+target_link_libraries(test_tracker_replay PRIVATE motionman_cpu)
+target_compile_options(test_tracker_replay PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME tracker_replay COMMAND test_tracker_replay ${PROJECT_SOURCE_DIR}/tests/fixtures/tracker)
+set_tests_properties(tracker_replay PROPERTIES LABELS unit)
+
 # Golden-tensor check against the Python reference: needs OpenCV (PNG decode, found in native/) and the PC's cache.
 set(MOTIONMAN_CACHE "$ENV{HOME}/.cache/motionman" CACHE PATH "PC cache with golden PNGs and model artifacts")
 if(OpenCV_FOUND)

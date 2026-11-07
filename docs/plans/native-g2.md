@@ -73,7 +73,7 @@ replayed detections.
      buffer, crossing, overlap, low-confidence recovery, empty frames, class conflict, assignment ties and two
      trackers with identical inputs.
    - pytest checks that the reference output is reproduced.
-3. [ ] **[Mac]** `native/src/track/` ByteTrack (D4, D5): Kalman, IoU, LAPJV, lifecycle, ID allocator,
+3. [x] **[Mac]** `native/src/track/` ByteTrack (D4, D5): Kalman, IoU, LAPJV, lifecycle, ID allocator,
    `class_policy`. CTest `tracker_replay` compares tracks with the fixtures after canonical ID renaming:
    association exact, boxes within 1e-3 px. Aware-mode fixtures stop cross-class updates. NOTICE file.
 4. [ ] **[Mac]** Native record and timing writers (portable): schema 1.0 lines with Python's rounding,
@@ -103,10 +103,10 @@ replayed detections.
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed; step 2: 563 |
+| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed; step 2: 563; step 3: 564 |
 | N2-2 | Old (1.0) and new (1.1) reports and runspecs both open | `.venv/bin/pytest -q tests/test_runs.py tests/test_store.py` | step 1: passed incl. a run rewritten to 1.0 that still opens |
-| N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/python tools/tracker_replay/reference.py --check` (imports Ultralytics, so outside pytest, INV-8) and `.venv/bin/pytest -q tests/test_tracker_replay.py` | step 2: 14/14 reproduced exactly; pytest 20 passed; a swapped ID is caught |
-| N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R tracker_replay` | |
+| N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/python tools/tracker_replay/reference.py --check` (imports Ultralytics, so outside pytest, INV-8) and `.venv/bin/pytest -q tests/test_tracker_replay.py` | step 2: 14/14 reproduced exactly; pytest 20 passed; a swapped ID is caught. Step 3: 16/16 (15 scenarios + lapjv) |
+| N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R 'tracker_replay\|lapjv'` | step 3 (Mac): 15/15 fixtures with raw IDs equal and max box error 0 px; LAPJV 400/400 vs lap incl. ties; aware checks pass; 6 mutations caught |
 | N2-5 | Native records equal Python's for the shared fixture | `ctest --preset mac-cpu -R records` and `.venv/bin/pytest -q tests/test_native_records.py` | |
 | N2-6 | Controller publishes only verified runs (fake native, 6 failure cases) | `.venv/bin/pytest -q tests/test_native_controller.py` | |
 | N2-7 | Native run smoke passes on the PC GPU | `ctest --preset linux-cuda-release -L gpu -R native_run_smoke` | |
@@ -130,3 +130,4 @@ replayed detections.
 <!-- One line per step: date, step, commit, result. No pasted output. -->
 - 2026-11-07 step 1: `settings.backend` (legacy default `ultralytics`/fp32 in `types.LEGACY_BACKEND`) and an optional `tracking` override in `resolve_runspec` (runspec 1.1); `build_report` takes `backend` and `tracker` (report 1.1 with `schema_version`, `backend`); `runspec_backend`/`report_backend` read 1.0 as legacy. compare gains a `backend` factor; bundle README names the backend. Legacy runs' config hash changes once (new key). Native stage timings deferred to step 6. Gate 543 passed.
 - 2026-11-07 step 2: `tools/tracker_replay/` (`scenarios.py` 14 seeded scenarios on a float32-exact grid, `reference.py` drives Ultralytics `BYTETracker` directly with `--write`/`--check`, `fixtures.py` load/dump/compare with canonical ID renaming, no Ultralytics import). `tests/fixtures/tracker/` 14 fixtures (180 KB, one frame per line). Found in the reference: a 0.30 track never confirms under `fuse_score` and burns an ID per frame; later starts confirm one frame late; class conflict relabels the car track. D6 corrected: an empty tracker output records nothing while an unconfirmed track is pending. `--check` 14/14 exact; gate 563 passed.
+- 2026-11-07 step 3: `native/src/track/` (portable, in `motionman_cpu`, `-ffp-contract=off`): `lapjv` (Jonker-Volgenant with lap's phases and scan order, `extend_cost`/`cost_limit` wrapper), `kalman` (XYAH, double, 4x4 partial-pivot solve), `bytetrack` (float32 box/IoU/fusion steps, unconfirmed not predicted, lost height velocity zeroed, stale-removed track kept one frame, removed-ID history of 1000, per-instance IDs from 1, `ClassPolicy` agnostic/aware with aware also gating duplicate suppression). Fixtures: `tests/fixtures/lapjv.json` (400 lap cases) and a 15th scenario `low_conf_jump` added after the 0.4 second-stage mutation survived the first 14. CTest `lapjv` 400/400, `tracker_replay` 15/15 (boxes bit-equal after the float32 cast), mutations caught: predicting unconfirmed, dropping removed at once, no fusion, second stage 0.4, keeping lost velocity. `native/third_party/NOTICE.md` (ByteTrack MIT, lap BSD-2; Ultralytics only as behaviour). Mac ctest 6/6, gate 564. PC GCC build waits for step 5.

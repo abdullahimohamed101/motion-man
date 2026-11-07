@@ -100,6 +100,14 @@ def low_conf_below_floor():
     return _walker(30, (100, 360), (10, 0), score_at=lambda f: 0.05 if 10 <= f < 16 else 0.85)
 
 
+def low_conf_jump():
+    # At frame 10 a low-band detection lands 17 px ahead of the prediction (IoU about 0.56, cost 0.44): the
+    # second stage (threshold 0.5) still matches it. A stricter threshold would drop the frame.
+    out = _walker(20, (100, 360), (10, 0))
+    out[10] = [box(100 + 10 * 10 + 17, 360, 60, 160, 0.15, PERSON)]
+    return out
+
+
 def empty_frames():
     a = _walker(30, (100, 300), (10, 0), visible=lambda f: f % 7 != 3)
     b = _walker(30, (900, 400), (-6, 2), size=(120, 80), cls=CAR, visible=lambda f: f % 7 != 3)
@@ -172,6 +180,8 @@ ALL = [
     Scenario("low_conf_recovery", "score dips into the low band; second-stage association keeps it",
              low_conf_recovery),
     Scenario("low_conf_below_floor", "score drops below track_low_thresh, then returns", low_conf_below_floor),
+    Scenario("low_conf_jump", "a low-band detection off the prediction, matched only by the 0.5 second stage",
+             low_conf_jump),
     Scenario("empty_frames", "every 7th frame has no detections", empty_frames),
     Scenario("class_conflict", "a person detection lands on a car track (agnostic reference)", class_conflict),
     Scenario("assignment_ties", "two identical detections each frame: exact assignment ties", assignment_ties),

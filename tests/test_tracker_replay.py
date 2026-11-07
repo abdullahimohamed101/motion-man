@@ -67,6 +67,7 @@ def test_fixtures_show_the_behaviour_their_names_claim():
     assert all(i == [] for i in ids("new_track_threshold")[:7]) and ids("new_track_threshold")[7] == [5]
     assert all(len(f["tracks"]) == 1 for f in doc("degenerate_boxes")["frames"])  # zero-width box dropped
     assert len({i for f in ids("crowd") for i in f}) == 8
+    assert ids("low_conf_jump")[10] == [1] and doc("low_conf_jump")["frames"][10]["tracks"][0][5] < 0.25
 
 
 def test_canonical_ids_follow_first_appearance():
