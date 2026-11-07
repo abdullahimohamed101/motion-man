@@ -33,8 +33,8 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
    identically (C§8). Record H0: the validated Python run `ed3f02` id, records hash and settings.
 3. [x] **[PC]** Inventory into `docs/environment.md`: GPU, compute capability, VRAM, OS/WSL, driver, `nvcc`,
    TensorRT, compiler, CMake, OpenCV, disk, power. Choose Linux or WSL2 and the version set; ADR-005.
-4. [ ] **[PC]** Owner installs the pinned stack (D5). Checkout via `git clone` over SSH; record commit.
-5. [ ] **[PC]** CUDA smoke test `native/tests/gpu/cuda_smoke.cu`: device query plus a vector add on a non-default
+4. [x] **[PC]** Owner installs the pinned stack (D5). Checkout via `git clone` over SSH; record commit.
+5. [x] **[PC]** CUDA smoke test `native/tests/gpu/cuda_smoke.cu`: device query plus a vector add on a non-default
    stream, every return code checked, label `gpu`. `ctest --preset linux-cuda-release -L gpu` passes and its
    output plus host summary go to `docs/environment.md`. **G0 gate: stop for the owner.**
 6. [ ] **[PC]** `tools/model_export/`: pinned RT-DETR clone and checkpoint (D5), upstream ONNX export with deploy
@@ -54,10 +54,10 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
 | NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | 1/1 passed (Apple clang 21, CMake 4.4.5) |
-| NG-2 | Python gate unchanged | `scripts/check.sh` | |
+| NG-2 | Python gate unchanged | `scripts/check.sh` | 525 passed, ruff ok (2026-11-07) |
 | NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | 2 passed; 149 cases passed |
-| NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | |
-| NG-5 | Real CUDA smoke test passes on the PC | `ctest --preset linux-cuda-release -L gpu -R cuda_smoke` | |
+| NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | `docs/environment.md`: nvidia-smi, nvcc V13.3.73, TensorRT 11.2.1.2 read back over SSH |
+| NG-5 | Real CUDA smoke test passes on the PC | `ctest --preset linux-cuda-release -L gpu -R cuda_smoke` | 3/3 passed on the PC (RTX 3060 Ti, CC 8.6, runtime 13030; 1,048,576 adds, 0 wrong) |
 | NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | |
 | NG-7 | Preprocessing matches the reference within C§6 | `ctest --preset linux-cuda-release -R preprocess_golden` | |
 | NG-8 | ONNX Runtime matches R0 | `python tools/model_export/parity.py --ref r0 --cand onnx` | |
@@ -77,3 +77,5 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 - 2026-11-05 step 1: root `CMakeLists.txt` + `CMakePresets.json` (`mac-cpu` OFF, `linux-cuda-release` ON), `native/` with header-only `motionman_core` (FrameKey, Detection, TrackedObject, valid_box), CTest `types` (label unit, -Wall -Wextra -Werror, no framework). Mac: configure, build, 1/1 pass, no CUDA compiler probed. `linux-cuda-release` on the Mac fails at configure (no CUDA toolkit), as intended; its TensorRT check is UNVERIFIED until the PC. `build/` gitignored. Python gate 523 passed.
 - 2026-11-05 step 2: `tests/fixtures/source_time.json` (149 cases: NTSC and integer rates, indices to 10^7, five exact .5 ties) checked by `tests/test_source_time.py` and C++ `source_time` (new header `motionman/source_time.hpp`, nearbyint ties-to-even); a mutation to round-half-away fails the C++ test (index 5 fps 400000: 13 vs 12). `configs/reference/inputs.json`: crosswalk input hash re-verified, 8 golden frames, H0 = run ed3f02 (manifest verified, records hash, settings, commit). Gate 525 passed, ctest 2/2.
 - 2026-11-07 step 3: Mac→PC SSH (`motionman-pc`, Windows OpenSSH, key auth) after the owner freed C: (0.1 → 86.9 GB). Inventory over SSH in `docs/environment.md`: Win 11 26200, WSL2 Ubuntu 24.04.4 with the GPU visible, driver 610.88 (CUDA ≤ 13.3), gcc 13.3, no nvcc/CMake/TensorRT. Versions from NVIDIA's apt indexes: ADR-005 (Proposed) CUDA 13.3.1 + TensorRT 11.2.1.2+cuda13.3. NG-4 completes after step 4 (nvcc, TensorRT captured).
+- 2026-11-07 step 4: installed over SSH with the owner's yes (D5 amended in practice: WSL runs as root, Claude ran the commands). CUDA 13.3.1 (nvcc V13.3.73) from the wsl-ubuntu repo, TensorRT 11.2.1.2+cuda13.3 from ubuntu2404, CMake 3.28.3, OpenCV 4.6; 85 packages held, NVIDIA driver packages pinned −1, 0 Linux drivers. Paused once at the owner's request (game frame drops) via `wsl --shutdown`, repaired with `dpkg --configure -a`. Code sent as a git bundle of feat/native-g0 at 4d8550a.
+- 2026-11-07 step 5: `native/tests/gpu/cuda_smoke.cu` (device query, cudaMallocAsync + vector add on a non-blocking stream, every call checked). PC: `linux-cuda-release` configures (CUDA 13.3.73, TensorRT headers found), ctest 3/3 passed; 7126 of 8191 MiB free at run. Mac gate 525 passed. G0 gate reached.

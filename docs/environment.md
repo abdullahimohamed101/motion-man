@@ -33,6 +33,11 @@ quotes, so send the script on stdin).
 | Driver safety | apt pin −1 on NVIDIA-origin driver packages; Linux GPU drivers installed: 0 | `/etc/apt/preferences.d/`, `dpkg -l` |
 | WSL root disk | 31 GB used after install | `df` |
 
+## CUDA smoke test (2026-11-07, step 5, commit 4d8550a)
+`ctest --preset linux-cuda-release`: 3/3 passed (`types`, `source_time`, `cuda_smoke` 0.19 s). `cuda_smoke` printed:
+RTX 3060 Ti, compute capability 8.6, 38 SMs; 8191 MiB total, 7126 MiB free; CUDA driver API 13030, runtime 13030;
+vector add on a non-blocking stream, 1,048,576 elements, 0 wrong. No game was running (checked with `tasklist`).
+
 ## Consequences
 - Windows host → the execution environment is WSL2 + Ubuntu 24.04 with the Windows NVIDIA driver (C§4; NVIDIA CUDA
   on WSL guide). Never install a Linux GPU driver inside WSL; install the WSL-Ubuntu CUDA toolkit only.

@@ -1,5 +1,5 @@
 # ADR-005: PC toolkit: WSL2 Ubuntu 24.04, CUDA 13.3.1, TensorRT 11.2.1
-Status: Proposed (Accepted when the G0 smoke test passes on the PC)
+Status: Accepted (G0 smoke test passed on the PC, 2026-11-07)
 Date: 2026-11-07
 
 ## Context
