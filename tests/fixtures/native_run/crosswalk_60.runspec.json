@@ -81,10 +81,10 @@
     "8": "boat",
     "9": "traffic light"
   },
-  "config_sha256": "sha256:27dd74a91efd7e035203034be75ed29c8dbd49d958dcc5c9f0e49bf95967c246",
+  "config_sha256": "sha256:5d9a86c8834d9d62a1a621f78f0c90e9f2023cf60dc9a663f4098098719519ea",
   "reproducibility": {
     "code": {
-      "commit": "471bfcc5d73deeb7634acda1d140cc7994859ce9",
+      "commit": "dfcefea71d7b69cf9d47b167a7d9686155c2c489",
       "dirty": true
     },
     "platform": "macOS-26.6-arm64-arm-64bit",
@@ -107,7 +107,7 @@
     "inference": {
       "class_filter": null,
       "conf": 0.25,
-      "device_requested": "cuda:0",
+      "device_requested": "cuda",
       "device_used": "cuda:0",
       "imgsz": 640,
       "iou": 0.7,
@@ -126,7 +126,11 @@
     },
     "limits": {
       "max_duration_s": 600.0,
-      "max_frames": 36000
+      "max_file_bytes": 536870912,
+      "max_frames": 36000,
+      "max_long_side": 1920,
+      "max_short_side": 1080,
+      "output_budget_bytes": 2147483648
     },
     "model": {
       "class_map_sha256": "sha256:8751fa440569314783b98ffde9d3fb565e557ddff1269f117b5a0f3ceac64183",

@@ -30,6 +30,7 @@ TRACKS = "tracks.jsonl"
 REPORT = "report.json"
 TIMINGS = "timings.jsonl"  # one row of stage times per processed frame (plan P2 D3)
 TELEMETRY = "telemetry.jsonl"  # opt-in, about one resource sample per second (plan P2 D9)
+NATIVE_RECEIPT = "native_receipt.json"  # what motionman-native says it did (ADR-006); checked, never trusted alone
 PROGRESS_INTERVAL_S = 0.25  # keep UI redraws modest (spec §9)
 MANIFEST_STATUS = {"success": "SUCCEEDED", "error": "FAILED", "interrupted": "INTERRUPTED"}
 
@@ -273,8 +274,9 @@ def _run(
 
 
 def _finish(out, root, run_id, status, error, config, info, m, device_used, decoded,
-            input_id, runspec, records_sha, validation, started_at, final_dir):  # fmt: skip
-    """Write report and manifest; publish a SUCCEEDED canonical run. Never masks the run's own error."""
+            input_id, runspec, records_sha, validation, started_at, final_dir, **report_args):  # fmt: skip
+    """Write report and manifest; publish a SUCCEEDED canonical run. Never masks the run's own error.
+    ``report_args`` (backend, tracker, gpu) describe a native run (motionman/native.py)."""
     m.finish()  # finalize ends here: the report records it, so the rename below is excluded (plan P2 D2)
     report: dict = {"status": status, "error": error}
     budget_breach = False
@@ -287,6 +289,7 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
             metrics=m,
             device_used=device_used,
             output_frames_decoded=decoded,
+            **report_args,
         )
         report.update(
             run_id=run_id,
@@ -296,7 +299,10 @@ def _finish(out, root, run_id, status, error, config, info, m, device_used, deco
             config_sha256=runspec["config_sha256"] if runspec else None,
         )
         metrics.write_report(out / REPORT, report)
-        names = [n for n in (ANNOTATED, TRACKS, TIMINGS, TELEMETRY, REPORT, store.RUNSPEC) if (out / n).is_file()]
+        names = [
+            n for n in (ANNOTATED, TRACKS, TIMINGS, TELEMETRY, NATIVE_RECEIPT, REPORT, store.RUNSPEC)
+            if (out / n).is_file()
+        ]  # fmt: skip
         artifacts = store.artifact_entries(out, names)
         if status == "success" and sum(a["bytes"] for a in artifacts) > config.limits.output_budget_bytes:
             status, error = "error", "OutputBudgetError: outputs exceed the configured budget"

@@ -56,21 +56,49 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="canonical mode data folder (default: $MOTIONMAN_DATA_ROOT or ./data)",
     )
-    p.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu", help="default: cpu")
-    p.add_argument("--model", default="yolo11n.pt", help="Ultralytics weights (default: yolo11n.pt)")
+    p.add_argument("--device", choices=("cpu", "cuda", "auto"), default=None,
+                   help="default: cpu (legacy), cuda (native)")  # fmt: skip
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Ultralytics weights (legacy, default: yolo11n.pt) or native profile (default: rtdetr_r18_640)",
+    )
     p.add_argument("--imgsz", type=_imgsz, default=640, help="inference size in pixels (default: 640)")
     p.add_argument("--max-frames", type=_positive_int, default=None, help="stop after this many frames")
     p.add_argument("--telemetry", action="store_true", help="sample process memory about once a second")
+    p.add_argument(
+        "--backend",
+        choices=("legacy", "native"),
+        default="legacy",
+        help="legacy: Ultralytics in this process; native: motionman-native (TensorRT) on an NVIDIA GPU",
+    )
+    p.add_argument("--class-policy", choices=("aware", "agnostic"), default="aware",
+                   help="native tracker: match only within a class (default) or across classes (parity)")  # fmt: skip
     return p
 
 
-def parse_args(argv: list[str] | None = None) -> RunConfig:
+def parse(argv: list[str] | None = None) -> tuple[RunConfig, str, str]:
+    """(config, backend, class policy)."""
     parser = build_parser()
     a = parser.parse_args(argv)
     if a.output_dir is not None and a.data_root is not None:
         parser.error("--data-root applies to canonical runs; leave it out when using --output-dir")
-    return RunConfig(a.source, a.output_dir, a.device, a.model, a.imgsz, a.max_frames, data_root=a.data_root,
-                     telemetry=a.telemetry)  # fmt: skip
+    native = a.backend == "native"
+    if native and a.device == "cpu":
+        parser.error("--backend native runs on the NVIDIA GPU; leave out --device or use cuda")
+    if native and a.telemetry:
+        parser.error("--telemetry samples the Python process; it is not available with --backend native")
+    if not native and a.class_policy != "aware":
+        parser.error("--class-policy applies to --backend native")
+    device = a.device or ("cuda" if native else "cpu")
+    model = a.model or ("rtdetr_r18_640" if native else "yolo11n.pt")
+    config = RunConfig(a.source, a.output_dir, device, model, a.imgsz, a.max_frames, data_root=a.data_root,
+                       telemetry=a.telemetry)  # fmt: skip
+    return config, a.backend, a.class_policy
+
+
+def parse_args(argv: list[str] | None = None) -> RunConfig:
+    return parse(argv)[0]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] in SUBCOMMANDS:
         return SUBCOMMANDS[argv[0]](argv[1:])
-    config = parse_args(argv)  # argparse exits with 2 on bad flags
+    config, backend, class_policy = parse(argv)  # argparse exits with 2 on bad flags
     out = config.output_dir
     # Only point at a report this run wrote, never at an earlier run's results in a refused directory.
     # Canonical runs log where their unpublished diagnostics are kept.
@@ -89,7 +117,12 @@ def main(argv: list[str] | None = None) -> int:
         return f"partial results and report (status: {status}) in {out}" if ours else ""
 
     try:
-        report = pipeline.run(config)
+        if backend == "native":
+            from motionman import native
+
+            report = native.run(config, native.NativeConfig(profile=config.model, class_policy=class_policy))
+        else:
+            report = pipeline.run(config)
     except MotionManError as e:
         print(f"error: {e}", file=sys.stderr)
         if note := partial_note("error"):

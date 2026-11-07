@@ -59,6 +59,9 @@ class Metrics:
         self._start: float | None = None
         self._stopped: float | None = None
         self.telemetry: dict = {"enabled": False}
+        # A native run (ADR-006) also reports its finer stages and says what its numbers cover.
+        self.native_stages: dict[str, list[float]] = {}
+        self.scopes: dict[str, str] = {}
 
     def begin_job(self) -> None:
         self._job = perf_counter()
@@ -80,6 +83,13 @@ class Metrics:
         if self._start is not None and self.processing_wall_s is None:
             self._stopped = perf_counter()
             self.processing_wall_s = self._stopped - self._start
+
+    def record_external(self, *, setup_s: float, processing_wall_s: float, stopped_at: float) -> None:
+        """Phase times measured by another process (a native run): setup and processing as it reports them;
+        finalize runs from ``stopped_at`` (perf_counter) in this process."""
+        self.setup_s = setup_s
+        self.processing_wall_s = processing_wall_s
+        self._stopped = stopped_at
 
     def finish(self) -> None:
         """Idempotent: fixes finalize (from stop) and the whole job's wall time."""
@@ -123,6 +133,7 @@ def stage_summary(samples_ms: list[float], warmup: int = WARMUP_FRAMES) -> dict:
 
 def timing_section(metrics: Metrics) -> dict:
     wall = metrics.processing_wall_s
+    scope = metrics.scopes.get
     stages = {name: stage_summary(getattr(metrics, name)) for name in STAGES}
     unattributed = None
     if wall and metrics.processed_frames:
@@ -130,31 +141,37 @@ def timing_section(metrics: Metrics) -> dict:
         unattributed = {
             "total_s": round(wall - attributed, 3),
             "share_of_wall": round((wall - attributed) / wall, 4),
-            "scope": "processing wall outside the four stages: record building, timing rows, progress updates, "
+            "scope": scope("unattributed")
+            or "processing wall outside the four stages: record building, timing rows, progress updates, "
             "the final next() that ends the loop, writer release and closing the JSONL and timings files",
         }
-    return {
+    detect_track_scope = scope("detect_track_ms") or DETECT_TRACK_SCOPE
+    section = {
         "model_load_s": _round(metrics.model_load_s, 3),
         "setup_s": _round(metrics.setup_s, 3),
-        "setup_scope": SETUP_SCOPE,
+        "setup_scope": scope("setup") or SETUP_SCOPE,
         "processing_wall_s": _round(wall, 3),
-        "processing_wall_scope": "perf_counter from before the first decode to after the writer is released",
+        "processing_wall_scope": scope("processing_wall")
+        or "perf_counter from before the first decode to after the writer is released",
         "finalize_s": _round(metrics.finalize_s, 3),
         "finalize_scope": FINALIZE_SCOPE,
         "job_wall_s": _round(metrics.job_wall_s, 3),
         "end_to_end_fps": _round(metrics.end_to_end_fps, 2),
         "detect_track_ms": latency_summary(metrics.detect_track_ms),
-        "detect_track_scope": DETECT_TRACK_SCOPE,
+        "detect_track_scope": detect_track_scope,
         "stages": stages,
-        "stage_scopes": {"detect_track_ms": DETECT_TRACK_SCOPE, **STAGE_SCOPES},
+        "stage_scopes": {"detect_track_ms": detect_track_scope, **{k: scope(k) or v for k, v in STAGE_SCOPES.items()}},
         "unattributed": unattributed,
         "warmup": {
             "policy": WARMUP_POLICY,
             "frames": WARMUP_FRAMES,
             "samples": max(0, metrics.processed_frames - WARMUP_FRAMES),
         },  # fmt: skip
-        "instrumentation": "wall clock (perf_counter) per stage; no device synchronization",
+        "instrumentation": scope("instrumentation") or "wall clock (perf_counter) per stage; no device synchronization",
     }
+    if metrics.native_stages:
+        section["native_stages"] = {name: stage_summary(v) for name, v in metrics.native_stages.items()}
+    return section
 
 
 def build_report(
@@ -168,7 +185,9 @@ def build_report(
     output_frames_decoded: int | None = None,
     backend: dict | None = None,
     tracker: str = "bytetrack.yaml",
+    gpu: str | None = None,
 ) -> dict:
+    """``gpu`` names the GPU a native run reports, so the report never imports torch to find it."""
     backend = dict(backend or LEGACY_BACKEND)
     return {
         "schema_version": REPORT_SCHEMA,
@@ -199,7 +218,7 @@ def build_report(
         "device": {"requested": config.device, "used": device_used},
         "timing": timing_section(metrics),
         "telemetry": metrics.telemetry,
-        "environment": environment(device_used),
+        "environment": environment(device_used, gpu),
     }
 
 
@@ -215,16 +234,16 @@ def report_backend(report: dict) -> dict:
     return {**LEGACY_BACKEND, "precision": (report.get("model") or {}).get("precision") or LEGACY_BACKEND["precision"]}
 
 
-def environment(device_used: str | None) -> dict:
+def environment(device_used: str | None, gpu: str | None = None) -> dict:
     env = {
         "python": platform.python_version(),
         "platform": platform.platform(),
         "machine": platform.machine(),
         "cpu": _cpu_name(),
-        "gpu": None,
+        "gpu": gpu,
         "packages": {name: _version(name) for name in PACKAGES},
     }
-    if device_used and device_used.startswith("cuda"):
+    if gpu is None and device_used and device_used.startswith("cuda"):
         import torch
 
         env["gpu"] = torch.cuda.get_device_name(0)

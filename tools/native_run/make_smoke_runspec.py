@@ -1,7 +1,7 @@
 """Runspec for the GPU smoke test `native_run_smoke` (plan native-g2 step 5).
 
-Built by Python's own ``store.resolve_runspec`` on the crosswalk clip, as the step 6 controller will, with a
-``tensorrt`` backend block taken from the PC's model and engine manifests, ``class_policy`` aware, codec mp4v and a
+Built by the controller's own ``native.native_runspec`` (``store.resolve_runspec`` plus the ``tensorrt`` backend
+block, ``class_policy`` aware and codec mp4v) on the crosswalk clip with the PC's model and engine manifests and a
 60-frame range. The smoke test runs ``motionman-native run`` on these exact bytes.
 
 Usage (on the Mac, with the PC's manifests copied locally):
@@ -20,40 +20,20 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests" / "fixtures" / "native_run" / "crosswalk_60.runspec.json"
 sys.path.insert(0, str(ROOT))
 
-from motionman import store, video_io  # noqa: E402
+from motionman import native, store, video_io  # noqa: E402
 from motionman.types import RunConfig  # noqa: E402
 
 FRAMES = 60
-CODEC = "mp4v"  # Ubuntu's OpenCV 4.6 has no H.264 writer (plan Risks)
 
 
 def build(source: Path, model_manifest: dict, engine_manifest: dict) -> dict:
-    config = RunConfig(source=source, output_dir=None, device="cuda:0", model="rtdetr_r18_640", max_frames=FRAMES)
+    config = RunConfig(source=source, output_dir=None, device="cuda", model="rtdetr_r18_640", max_frames=FRAMES)
     cap, info = video_io.open_reader(source, config.limits)
     cap.release()
-    identity = engine_manifest["identity"]
-    backend = {
-        "name": "tensorrt",
-        "precision": identity["precision"],
-        "profile": identity["profile"],
-        "onnx_sha256": identity["onnx_sha256"],
-        "engine_sha256": engine_manifest["engine"]["sha256"],
-        "gpu": identity["gpu"],
-        "tensorrt": identity["tensorrt"],
-    }
-    tracking = {"type": "bytetrack", "config": store.tracker_config(), "class_policy": "aware"}
-    names = dict(enumerate(model_manifest["classes"]["names"]))
-    return store.resolve_runspec(
-        config,
-        info,
-        input_id=store.sha256_file(source),
-        device_used="cuda:0",
-        class_names=names,
-        codec=CODEC,
-        limits={"max_frames": config.limits.max_frames, "max_duration_s": config.limits.max_duration_s},
-        backend=backend,
-        tracking=tracking,
-    )
+    return native.native_runspec(
+        config, info, input_id=store.sha256_file(source), engine_manifest=engine_manifest,
+        model_manifest=model_manifest, class_policy="aware",
+    )  # fmt: skip
 
 
 def main() -> int:

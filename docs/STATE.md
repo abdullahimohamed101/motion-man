@@ -13,8 +13,10 @@ Updated: 2026-11-07
   G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
 - One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
   (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–5 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–6 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
   `motionman-native run` works on the PC GPU (crosswalk 60 frames, deterministic; refusal, no-overwrite, SIGINT).
+  `python -m motionman --backend native` (controller `motionman/native.py`) is tested on the Mac with a fake engine;
+  it has not yet run against the real engine (needs the Python app env on the PC, step 7).
   ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
@@ -31,10 +33,10 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. G2 step 6 [Mac]: `motionman/native.py` controller and `--backend native` (plan step 6), pytest with a fake
-   native executable for the six failure cases. Contract to honour is in the plan's step 5 log line (runspec
-   `tracking.class_policy`, `backend.{profile, engine_sha256}`, codec `mp4v`; receipt fields; exit codes).
-   Step 7 needs the owner's yes to install the Python app env on the PC (download).
+1. G2 step 7 [PC]: **needs the owner's yes first** to install the Python app env on the PC (a download:
+   `uv venv -p 3.11` + `requirements.txt` with CPU torch, D10). Then real replay parity: dump the crosswalk
+   clip's admitted detections from native, replay through the Python reference and native ByteTrack in
+   `agnostic` mode, compare as in step 3 (N2-8). Check Valorant before GPU work.
 
 ## Blocked / needs owner
 - Merging PRs #14 → #15 → #16.
@@ -44,6 +46,6 @@ Updated: 2026-11-07
 
 ## Last check
 - PC `ctest --preset linux-cuda-release`: 13/13 (7 unit, golden, cuda_smoke, trt_infer, trt_parity,
-  trt_refuse_tampered, native_run_smoke) (G2 step 5).
-- Mac `scripts/check.sh`: ruff ok, 568 passed; `ctest --preset mac-cpu` 7/7 (G2 step 5).
+  trt_refuse_tampered, native_run_smoke) (G2 step 6).
+- Mac `scripts/check.sh`: ruff ok, 582 passed; `ctest --preset mac-cpu` 7/7 (G2 step 6).
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

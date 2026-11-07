@@ -219,6 +219,7 @@ struct Receipt {
   std::int64_t decoded = 0, processed = 0, records = 0, timing_rows = 0, admitted = 0, recorded_objects = 0;
   std::int64_t dropped_no_extent = 0, max_track_id = 0;
   double model_load_s = 0, wall_s = 0;
+  double processing_wall_s = 0;  // before the first decode to after the writer and files are closed
   std::array<std::pair<std::string, double>, 6> stage_total_ms{{{"decode_ms", 0},
                                                                  {"preprocess_ms", 0},
                                                                  {"infer_ms", 0},
@@ -246,7 +247,9 @@ struct Receipt {
            ", \"gpu\": " + opt_str(gpu) + ", \"driver\": " + opt_str(driver) + "}" +
            ",\n \"video\": {\"codec\": " + opt_str(codec) + ", \"decode_backend\": " + opt_str(video_backend) + "}" +
            ",\n \"timing\": {\"model_load_s\": " + records::py_round(model_load_s, 3) +
-           ", \"wall_s\": " + records::py_round(wall_s, 3) + ", \"stage_total_ms\": {" + stages + "}}" +
+           ", \"wall_s\": " + records::py_round(wall_s, 3) +
+           ", \"processing_wall_s\": " + records::py_round(processing_wall_s, 3) + ", \"stage_total_ms\": {" + stages +
+           "}}" +
            ",\n \"host\": " + j::quote(hostname()) + ", \"started_at\": " + opt_str(started_at) +
            ", \"finished_at\": " + opt_str(finished_at) + "}\n";
   }
@@ -415,7 +418,9 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
   writer.release();
   close_checked(tracks, kTracks);
   close_checked(timings, kTimings);
-  rc.wall_s = ms_between(t_start, Clock::now()) / 1000;
+  const auto t_end = Clock::now();
+  rc.processing_wall_s = ms_between(t_loop, t_end) / 1000;
+  rc.wall_s = ms_between(t_start, t_end) / 1000;
   if (g_stop) {
     rc.status = "interrupted";
     rc.error = std::string("stopped by ") + (g_stop == SIGTERM ? "SIGTERM" : "SIGINT") + " after frame " +
