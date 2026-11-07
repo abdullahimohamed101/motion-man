@@ -26,19 +26,20 @@ if(MOTIONMAN_CUDA)
 endif()
 
 # OpenCV decodes images and video on the PC; the portable core never needs it.
-find_package(OpenCV QUIET COMPONENTS core imgcodecs)
+find_package(OpenCV QUIET COMPONENTS core imgcodecs imgproc videoio)
 if(MOTIONMAN_CUDA)
   if(NOT OpenCV_FOUND)
-    message(FATAL_ERROR "MOTIONMAN_CUDA=ON but OpenCV (core, imgcodecs) was not found; see docs/environment.md.")
+    message(FATAL_ERROR "MOTIONMAN_CUDA=ON but OpenCV (core, imgcodecs, imgproc, videoio) was not found; "
+                        "see docs/environment.md.")
   endif()
   # GPU detector (TensorRT + CUDA RAII) and the motionman-native executable (spec C§3, C§7).
   add_library(motionman_gpu STATIC src/gpu/trt_detector.cpp)
   target_include_directories(motionman_gpu PUBLIC src ${TENSORRT_INCLUDE_DIR})
   target_link_libraries(motionman_gpu PUBLIC motionman_cpu CUDA::cudart CUDA::nvml ${TENSORRT_NVINFER})
   target_compile_options(motionman_gpu PRIVATE -Wall -Wextra -Werror)
-  add_executable(motionman-native src/app/main.cpp)
+  add_executable(motionman-native src/app/main.cpp src/app/run.cpp src/app/annotate.cpp)
   target_link_libraries(motionman-native PRIVATE motionman_gpu ${OpenCV_LIBS})
-  target_include_directories(motionman-native PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_include_directories(motionman-native PRIVATE src ${OpenCV_INCLUDE_DIRS})
   target_compile_options(motionman-native PRIVATE -Wall -Wextra -Werror)
 endif()
 

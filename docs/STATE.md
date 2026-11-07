@@ -13,25 +13,28 @@ Updated: 2026-11-07
   G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
 - One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
   (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–4 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–5 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+  `motionman-native run` works on the PC GPU (crosswalk 60 frames, deterministic; refusal, no-overwrite, SIGINT).
   ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
 - Access: `ssh motionman-pc` from the Mac on the home LAN only (key auth, Windows OpenSSH); Linux via
   `ssh motionman-pc "wsl -d Ubuntu-24.04 -u root -- bash -s" < script`. Use `</dev/null` for child scripts
   inside that heredoc; copy files with `COPYFILE_DISABLE=1 tar --no-xattrs` (no `._*` files).
-- Code on the PC: `~/motion-man` in WSL, synced from a git bundle of `feat/native-g0` (not GitHub).
+- Code on the PC: `~/motion-man` in WSL on `feat/native-g2`, synced from a git bundle sent over ssh stdin (not
+  GitHub). WSL clears `/tmp` when it restarts between calls.
 - PC caches: venv `~/.cache/motionman/venv`, upstream `~/.cache/motionman/src/RT-DETR`, golden PNGs
   `~/.cache/motionman/golden`, model dir `~/.cache/motionman/models/rtdetr_r18_640` (checkpoint, ONNX,
-  manifests, r0, FP32 engine, trt_fp32).
+  manifests, r0, FP32 engine, trt_fp32), clip `~/.cache/motionman/clips/crosswalk.mp4` (same sha256 as the Mac's).
+  No ffmpeg and no Python OpenCV on the PC yet.
 - The owner games on this PC: check `tasklist` for Valorant before GPU work; stop at once if asked
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. G2 step 5 [PC]: `motionman-native run` (decode, preprocess, TensorRT, admission, ByteTrack, records,
-   render, timings, receipt, status lines, signals) + CTest gpu `native_run_smoke`. First PC build of the
-   step 3–4 code with GCC 13. Check Valorant before GPU work.
-   Done on the Mac: ByteTrack (15/15 replay fixtures), record/timing/trail writers (byte-identical to Python). Step 7 needs the owner's yes to install the Python app env on the PC (download).
+1. G2 step 6 [Mac]: `motionman/native.py` controller and `--backend native` (plan step 6), pytest with a fake
+   native executable for the six failure cases. Contract to honour is in the plan's step 5 log line (runspec
+   `tracking.class_policy`, `backend.{profile, engine_sha256}`, codec `mp4v`; receipt fields; exit codes).
+   Step 7 needs the owner's yes to install the Python app env on the PC (download).
 
 ## Blocked / needs owner
 - Merging PRs #14 → #15 → #16.
@@ -40,6 +43,7 @@ Updated: 2026-11-07
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
 ## Last check
-- PC `ctest --preset linux-cuda-release`: 9/9 (unit, golden, cuda_smoke, trt_infer, trt_parity, trt_refuse_tampered).
-- Mac `scripts/check.sh`: ruff ok, 568 passed (G2 step 4); `ctest --preset mac-cpu` 7/7 (G2 step 4).
+- PC `ctest --preset linux-cuda-release`: 13/13 (7 unit, golden, cuda_smoke, trt_infer, trt_parity,
+  trt_refuse_tampered, native_run_smoke) (G2 step 5).
+- Mac `scripts/check.sh`: ruff ok, 568 passed; `ctest --preset mac-cpu` 7/7 (G2 step 5).
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

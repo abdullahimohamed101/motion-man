@@ -74,4 +74,11 @@ if(MOTIONMAN_CUDA)
            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/gpu/refuse_tampered.sh $<TARGET_FILE:motionman-native>
                    ${MOTIONMAN_PYTHON} ${mm_profile} ${mm_model} ${MOTIONMAN_CACHE}/golden)
   set_tests_properties(trt_refuse_tampered PROPERTIES LABELS gpu)
+
+  # G2 step 5 (N2-7): `run` on 60 frames of the crosswalk clip, plus no-overwrite, wrong-engine and SIGINT cases.
+  add_test(NAME native_run_smoke
+           COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/gpu/run_smoke.sh $<TARGET_FILE:motionman-native>
+                   ${PROJECT_SOURCE_DIR}/tests/fixtures/native_run/crosswalk_60.runspec.json
+                   ${MOTIONMAN_CACHE}/clips/crosswalk.mp4 ${mm_profile} ${mm_model})
+  set_tests_properties(native_run_smoke PROPERTIES LABELS gpu TIMEOUT 300)
 endif()

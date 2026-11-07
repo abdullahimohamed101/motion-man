@@ -55,7 +55,7 @@ struct FrameObjects {
 // What a frame records (ADR-006, as Ultralytics 8.4.196 track mode):
 //   - tracker output non-empty: its tracks in order, boxes clamped to the image in float32, with IDs;
 //   - empty and an unconfirmed track pending: nothing;
-//   - empty otherwise: the admitted detections with score >= conf, in detection order, with null IDs.
+//   - empty otherwise: the admitted detections with score > conf (strict), in detection order, with null IDs.
 FrameObjects frame_objects(std::span<const track::TrackOutput> outputs, bool has_unconfirmed,
                            std::span<const track::Detection> detections, float conf, int width, int height,
                            const std::vector<std::string>& class_names);
