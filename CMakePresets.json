@@ -12,7 +12,12 @@
       "name": "linux-cuda-release",
       "displayName": "NVIDIA PC: CUDA + TensorRT, release",
       "binaryDir": "${sourceDir}/build/linux-cuda-release",
-      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "MOTIONMAN_CUDA": "ON"}
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOTIONMAN_CUDA": "ON",
+        "CMAKE_CUDA_COMPILER": "/usr/local/cuda-13.3/bin/nvcc",
+        "CMAKE_CUDA_ARCHITECTURES": "86"
+      }
     }
   ],
   "buildPresets": [

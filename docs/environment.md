@@ -20,8 +20,18 @@ quotes, so send the script on stdin).
 | WSL | WSL2, kernel 6.18.33.2-microsoft-standard-WSL2; distro Ubuntu-24.04 (24.04.4 LTS) | `wsl -l -v`, `uname` |
 | WSL default user | root (no Linux user created yet) | `whoami` |
 | Compiler | gcc 13.3.0 | `gcc --version` |
-| `nvcc`, CMake, OpenCV, TensorRT | not installed | `command not found` |
+| `nvcc`, CMake, OpenCV, TensorRT | not installed at inventory; installed in step 4 (below) | `command not found` |
 | Disk free | C: 86.9 GB (after the owner removed a game; was 0.1 GB); D: 123.2 GB; WSL root VHD 941 GB free | `Get-PSDrive`, `df` |
+
+## Installed stack (2026-11-07, step 4, ADR-005; read back from the PC)
+| Item | Value | Source |
+|------|-------|--------|
+| CUDA toolkit | `cuda-toolkit-13-3` 13.3.1-1; nvcc V13.3.73 at `/usr/local/cuda-13.3/bin` | `dpkg-query`, `nvcc --version` |
+| TensorRT | 11.2.1.2-1+cuda13.3 (`libnvinfer11`, `-dev`, ONNX parser, plugins, `libnvinfer-bin` → `/usr/bin/trtexec`) | `dpkg-query`, `NvInferVersion.h` |
+| Compiler / CMake / OpenCV | g++ 13.3.0; CMake 3.28.3; `libopencv-dev` 4.6.0 | `--version`, `dpkg-query` |
+| Pinning | 85 packages `apt-mark hold` (all `cuda-*`, `*-13-3`, TensorRT); `apt-get -s upgrade` touches none | `apt-mark showhold` |
+| Driver safety | apt pin −1 on NVIDIA-origin driver packages; Linux GPU drivers installed: 0 | `/etc/apt/preferences.d/`, `dpkg -l` |
+| WSL root disk | 31 GB used after install | `df` |
 
 ## Consequences
 - Windows host → the execution environment is WSL2 + Ubuntu 24.04 with the Windows NVIDIA driver (C§4; NVIDIA CUDA
