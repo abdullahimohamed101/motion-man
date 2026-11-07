@@ -69,7 +69,7 @@ def test_success_is_verified_and_published_with_the_backend(setup):
     assert set(t["native_stages"]) == {"preprocess_ms", "infer_ms", "track_ms"}
     assert t["detect_track_scope"].startswith("motionman-native") and t["model_load_s"] == 0.5
     spec = json.loads((run_dir / store.RUNSPEC).read_text())
-    assert spec["settings"]["tracking"]["class_policy"] == "aware" and spec["settings"]["rendering"]["codec"] == "mp4v"
+    assert spec["settings"]["tracking"]["class_policy"] == "aware" and spec["settings"]["rendering"]["codec"] == "avc1"
     assert spec["class_names"] == {"0": "person", "1": "bicycle", "2": "car"}
     data = store.data_root(root)
     (summary,) = runs.list_runs(data)

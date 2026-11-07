@@ -81,10 +81,10 @@
     "8": "boat",
     "9": "traffic light"
   },
-  "config_sha256": "sha256:5d9a86c8834d9d62a1a621f78f0c90e9f2023cf60dc9a663f4098098719519ea",
+  "config_sha256": "sha256:4953ff81866304cf5bae4d3b00ff57961e1ca33ff2f148a498be909294c83cf9",
   "reproducibility": {
     "code": {
-      "commit": "dfcefea71d7b69cf9d47b167a7d9686155c2c489",
+      "commit": "1c676e6169d2677a468f61f630d3288dd88d866d",
       "dirty": true
     },
     "platform": "macOS-26.6-arm64-arm-64bit",
@@ -141,7 +141,7 @@
     },
     "rendering": {
       "audio": "dropped",
-      "codec": "mp4v",
+      "codec": "avc1",
       "enabled": true,
       "trail_expiry_frames": 60,
       "trail_points": 30

@@ -13,10 +13,10 @@ Updated: 2026-11-07
   G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
 - One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
   (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–7 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–8 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
   `motionman-native run` works on the PC GPU (crosswalk 60 frames, deterministic; refusal, no-overwrite, SIGINT).
-  `python -m motionman --backend native` (controller `motionman/native.py`) is tested on the Mac with a fake engine;
-  it has not yet run against the real engine (step 8). Real replay parity on the full crosswalk clip: exact.
+  `python -m motionman --backend native` publishes on the PC (crosswalk, 1356 frames, H.264; analyze, evaluate
+  and the Mac UI read it; Ctrl-C leaves it unpublished). Real replay parity on the full crosswalk clip: exact.
   ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
@@ -34,10 +34,10 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. G2 step 8 [PC→Mac]: on the PC, `.venv/bin/python -m motionman --backend native --source <crosswalk>`
-   publishes; `analyze` and `evaluate --dataset crosswak-eval@r2` read it (the dataset must be copied to the PC
-   data root first); SIGINT run stays unpublished (`INTERRUPTED`); copy the run folder and its input to the Mac
-   and open it in the UI; record observed fps as an observation. Check Valorant before GPU work.
+1. G2 step 9 [Mac]: write-up (acceptance N2-1..N2-12 incl. N2-12's `git ls-files` check), ADR-006 Accepted or
+   changed (add: drained-tail timestamps, avc1, D3 timing mapping), G3–G6 re-estimate, STATE, push
+   `feat/native-g2` and open the G2 PR stacked on #16. **G2 gate: stop for the owner.** Gate notes to raise:
+   low-score clutter in native video (D6), UI does not show the backend.
 
 ## Blocked / needs owner
 - Merging PRs #14 → #15 → #16.
@@ -47,6 +47,6 @@ Updated: 2026-11-07
 
 ## Last check
 - PC `ctest --preset linux-cuda-release`: 13/13 (7 unit, golden, cuda_smoke, trt_infer, trt_parity,
-  trt_refuse_tampered, native_run_smoke) (G2 step 7).
-- Mac `scripts/check.sh`: ruff ok, 583 passed; `ctest --preset mac-cpu` 7/7 (G2 step 7).
+  trt_refuse_tampered, native_run_smoke) (G2 step 8).
+- Mac `scripts/check.sh`: ruff ok, 583 passed; `ctest --preset mac-cpu` 7/7 (G2 step 8).
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

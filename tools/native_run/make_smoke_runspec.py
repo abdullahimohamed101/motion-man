@@ -1,7 +1,7 @@
 """Runspec for the GPU smoke test `native_run_smoke` (plan native-g2 step 5).
 
 Built by the controller's own ``native.native_runspec`` (``store.resolve_runspec`` plus the ``tensorrt`` backend
-block, ``class_policy`` aware and codec mp4v) on the crosswalk clip with the PC's model and engine manifests and a
+block, ``class_policy`` aware and codec avc1) on the crosswalk clip with the PC's model and engine manifests and a
 60-frame range. The smoke test runs ``motionman-native run`` on these exact bytes.
 
 Usage (on the Mac, with the PC's manifests copied locally):

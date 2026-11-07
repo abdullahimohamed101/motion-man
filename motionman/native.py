@@ -28,7 +28,7 @@ from motionman.types import MotionManError, RunConfig
 DEFAULT_PROFILE = "rtdetr_r18_640"
 DEFAULT_BINARY = store.REPO_ROOT / "build" / "linux-cuda-release" / "native" / "motionman-native"
 BINARY_ENV = "MOTIONMAN_NATIVE_BIN"
-CODEC = "mp4v"  # Ubuntu's OpenCV 4.6 has no H.264 writer (plan native-g2 step 5)
+CODEC = "avc1"  # H.264, as Python writes first; Ubuntu's OpenCV 4.6 encodes it with libx264 (plan native-g2 step 8)
 DEVICE = "cuda:0"
 NATIVE_STAGES = ("preprocess_ms", "infer_ms", "track_ms")  # together they are the report's detect_track_ms
 TIMING_KEYS = ["source_frame_index", "decode_ms", *NATIVE_STAGES, "render_ms", "write_ms"]
