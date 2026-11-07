@@ -47,7 +47,8 @@ bool read_npy_f32(const fs::path& path, std::vector<long>& shape, std::vector<fl
   shape.clear();
   std::size_t n = 1;
   const std::string dims = m[1];
-  for (std::sregex_iterator it(dims.begin(), dims.end(), std::regex("[0-9]+")), end; it != end; ++it) {
+  const std::regex number("[0-9]+");  // the iterator keeps a pointer: no temporary regex
+  for (std::sregex_iterator it(dims.begin(), dims.end(), number), end; it != end; ++it) {
     shape.push_back(std::stol(it->str()));
     n *= static_cast<std::size_t>(shape.back());
   }
