@@ -29,5 +29,5 @@ quotes, so send the script on stdin).
 - 8 GB VRAM bounds engine size, batch and stream count; G4 admission must measure real free memory (C§7).
 - Benchmarks must record competing GPU workloads; desktop apps and games used 4–5 GB at capture (C§10).
 - WSL's 7 GB RAM default may be tight for TensorRT engine builds; raise it in `.wslconfig` only if a build fails.
-- Toolkit versions (CUDA, TensorRT, compiler) are chosen against NVIDIA's support matrix for Ampere + driver 610.88
-  and recorded in ADR-005 before step 4 installs them.
+- Toolkit versions: ADR-005 (CUDA 13.3.1, TensorRT 11.2.1.2+cuda13.3, gcc 13.3, CMake 3.28, OpenCV 4.6), pending
+  the step 4 install and the step 5 smoke test.
