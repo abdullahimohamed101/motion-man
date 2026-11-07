@@ -12,6 +12,9 @@
 
 namespace motionman {
 
+// The preprocessing this binary implements; an engine manifest naming another revision is refused (C§5).
+inline constexpr const char* kPreprocessingRevision = "pillow-bilinear-v1";
+
 struct Bgr8View {
   const std::uint8_t* data = nullptr;
   int width = 0;

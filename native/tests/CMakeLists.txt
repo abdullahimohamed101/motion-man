@@ -17,8 +17,13 @@ target_compile_options(test_preprocess PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,App
 add_test(NAME preprocess COMMAND test_preprocess)
 set_tests_properties(preprocess PROPERTIES LABELS unit)
 
-# Golden-tensor check against the Python reference: needs OpenCV (PNG decode) and the PC's cached tensors.
-find_package(OpenCV QUIET COMPONENTS core imgcodecs)
+add_executable(test_json_sha256 unit/test_json_sha256.cpp)
+target_link_libraries(test_json_sha256 PRIVATE motionman_cpu)
+target_compile_options(test_json_sha256 PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME json_sha256 COMMAND test_json_sha256 ${PROJECT_SOURCE_DIR}/configs/native/rtdetr_r18_640.json)
+set_tests_properties(json_sha256 PROPERTIES LABELS unit)
+
+# Golden-tensor check against the Python reference: needs OpenCV (PNG decode, found in native/) and the PC's cache.
 set(MOTIONMAN_CACHE "$ENV{HOME}/.cache/motionman" CACHE PATH "PC cache with golden PNGs and model artifacts")
 if(OpenCV_FOUND)
   add_executable(test_preprocess_golden golden/test_preprocess_golden.cpp)
@@ -36,4 +41,19 @@ if(MOTIONMAN_CUDA)
   target_link_libraries(test_cuda_smoke PRIVATE motionman_core CUDA::cudart)
   add_test(NAME cuda_smoke COMMAND test_cuda_smoke)
   set_tests_properties(cuda_smoke PROPERTIES LABELS gpu)
+
+  # G1 parity (NG-10): C++ preprocessing + TensorRT FP32 on the golden images vs the PyTorch reference R0.
+  set(MOTIONMAN_PYTHON "$ENV{HOME}/.cache/motionman/venv/bin/python" CACHE FILEPATH "Export venv with parity.py deps")
+  set(mm_profile ${PROJECT_SOURCE_DIR}/configs/native/rtdetr_r18_640.json)
+  set(mm_model ${MOTIONMAN_CACHE}/models/rtdetr_r18_640)
+  add_test(NAME trt_infer COMMAND motionman-native infer --profile ${mm_profile} --model-dir ${mm_model}
+                                  --images ${MOTIONMAN_CACHE}/golden --out ${mm_model}/trt_fp32.json)
+  set_tests_properties(trt_infer PROPERTIES LABELS gpu FIXTURES_SETUP trt_fp32)
+  add_test(NAME trt_parity COMMAND ${MOTIONMAN_PYTHON} ${PROJECT_SOURCE_DIR}/tools/model_export/parity.py rtdetr_r18_640
+                                   --ref r0 --cand trt_fp32 --gate fp32)
+  set_tests_properties(trt_parity PROPERTIES LABELS gpu FIXTURES_REQUIRED trt_fp32)
+  add_test(NAME trt_refuse_tampered
+           COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/gpu/refuse_tampered.sh $<TARGET_FILE:motionman-native>
+                   ${MOTIONMAN_PYTHON} ${mm_profile} ${mm_model} ${MOTIONMAN_CACHE}/golden)
+  set_tests_properties(trt_refuse_tampered PROPERTIES LABELS gpu)
 endif()

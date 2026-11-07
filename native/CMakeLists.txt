@@ -4,7 +4,7 @@ target_include_directories(motionman_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_features(motionman_core INTERFACE cxx_std_20)
 
 # Portable CPU code (no OpenCV, no CUDA): preprocessing shared by the engine and its tests.
-add_library(motionman_cpu STATIC src/preprocess.cpp)
+add_library(motionman_cpu STATIC src/preprocess.cpp src/json.cpp src/sha256.cpp)
 target_link_libraries(motionman_cpu PUBLIC motionman_core)
 target_compile_options(motionman_cpu PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
 
@@ -19,6 +19,23 @@ if(MOTIONMAN_CUDA)
                         "Install it or set TENSORRT_ROOT; see docs/environment.md.")
   endif()
   message(STATUS "CUDA ${CUDAToolkit_VERSION}, TensorRT headers in ${TENSORRT_INCLUDE_DIR}")
+endif()
+
+# OpenCV decodes images and video on the PC; the portable core never needs it.
+find_package(OpenCV QUIET COMPONENTS core imgcodecs)
+if(MOTIONMAN_CUDA)
+  if(NOT OpenCV_FOUND)
+    message(FATAL_ERROR "MOTIONMAN_CUDA=ON but OpenCV (core, imgcodecs) was not found; see docs/environment.md.")
+  endif()
+  # GPU detector (TensorRT + CUDA RAII) and the motionman-native executable (spec C§3, C§7).
+  add_library(motionman_gpu STATIC src/gpu/trt_detector.cpp)
+  target_include_directories(motionman_gpu PUBLIC src ${TENSORRT_INCLUDE_DIR})
+  target_link_libraries(motionman_gpu PUBLIC motionman_cpu CUDA::cudart CUDA::nvml ${TENSORRT_NVINFER})
+  target_compile_options(motionman_gpu PRIVATE -Wall -Wextra -Werror)
+  add_executable(motionman-native src/app/main.cpp)
+  target_link_libraries(motionman-native PRIVATE motionman_gpu ${OpenCV_LIBS})
+  target_include_directories(motionman-native PRIVATE ${OpenCV_INCLUDE_DIRS})
+  target_compile_options(motionman-native PRIVATE -Wall -Wextra -Werror)
 endif()
 
 add_subdirectory(tests)
