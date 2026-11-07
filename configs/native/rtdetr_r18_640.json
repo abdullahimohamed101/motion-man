@@ -35,6 +35,36 @@
     "vocabulary": "coco80",
     "label_index": "0..79 in COCO category order (deploy mode skips the 91-id remap)"
   },
+  "preprocessing": {
+    "revision": "pillow-bilinear-v1",
+    "source": "upstream val_dataloader: torchvision v2 Resize([640, 640]) on a PIL image, then ConvertPILImage(float32, scale)",
+    "decode": "8-bit RGB (Python: PIL convert('RGB'); C++: OpenCV BGR, channels swapped at layout)",
+    "resize": {
+      "size": [640, 640],
+      "keep_aspect": false,
+      "letterbox": false,
+      "algorithm": "Pillow 13 Image.resize BILINEAR: separable antialiased triangle filter (support 1 x scale), 22-bit fixed point, horizontal pass then vertical, uint8 rounding after each pass",
+      "cpp": "native/src/preprocess.cpp resize_bilinear_pillow"
+    },
+    "scale": "float32(value) / 255.0f, no mean/std normalisation",
+    "layout": "NCHW, RGB plane order, batch 1",
+    "orig_target_sizes": "source width, height before resize"
+  },
+  "parity": {
+    "frozen": "2026-11-07, before any candidate was evaluated (C§6)",
+    "score_threshold": 0.25,
+    "near_threshold": 0.02,
+    "tiny_area_px": 1024,
+    "preprocess_gates": {
+      "layout_max_error": 1e-6,
+      "resize_mae": 0.00392156862745098,
+      "resize_p99": 0.011764705882352941
+    },
+    "gates": {
+      "fp32": {"min_iou": 0.99, "max_score_error": 0.005, "min_match_rate": 0.99},
+      "mixed": {"min_iou": 0.95, "max_score_error": 0.02, "min_match_rate": 0.99}
+    }
+  },
   "reference": {
     "name": "R0",
     "device": "cuda",

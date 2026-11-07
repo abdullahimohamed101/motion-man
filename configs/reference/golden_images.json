@@ -68,6 +68,12 @@
       "width": 1000,
       "height": 1000,
       "sha256": "sha256:6bbca69cdca3f447e17e4149937f74aad96ef09117753719f3b12c2ffeb5ee61"
+    },
+    "synthetic_noise_640": {
+      "file": "synthetic_noise_640.png",
+      "width": 640,
+      "height": 640,
+      "sha256": "sha256:c3a6c5c878b1c12d87b85c3761b6f6c7113531981778ac6338827d122baa4af9"
     }
   }
 }

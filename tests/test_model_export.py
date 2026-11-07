@@ -6,9 +6,60 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("model_export_common", ROOT / "tools" / "model_export" / "common.py")
-common = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(common)
+
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(
+        f"model_export_{name}", ROOT / "tools" / "model_export" / f"{name}.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+common = _load("common")
+parity = _load("parity")
+
+
+def _det(label, score, box):
+    return {"label": label, "class_name": f"c{label}", "score": score, "box_xyxy": box}
+
+
+def _doc(dets):
+    return {"images": {"img": {"non_finite": 0, "detections": dets}}}
+
+
+def _cmp(ref, cand):
+    return parity.compare(_doc(ref), _doc(cand), 0.25, 0.99, 0.005, 0.02, 1024)
+
+
+def test_parity_matches_by_class_and_geometry_not_position():
+    ref = [_det(0, 0.9, [0, 0, 100, 100]), _det(2, 0.8, [200, 200, 300, 260]), _det(0, 0.1, [5, 5, 9, 9])]
+    cand = [_det(2, 0.801, [200, 200, 300, 260.1]), _det(0, 0.899, [0, 0, 100, 100])]  # reordered, tiny drift
+    res = _cmp(ref, cand)
+    assert (res["ref_matched"], res["ref_detections"]) == (2, 2)  # the 0.1 detection is below the threshold
+    assert res["cand_match_rate"] == 1.0 and res["max_score_error"] < 0.0011
+
+
+def test_parity_rejects_wrong_class_moved_box_and_extra_boxes():
+    ref = [_det(0, 0.9, [0, 0, 100, 100])]
+    assert _cmp(ref, [_det(1, 0.9, [0, 0, 100, 100])])["ref_matched"] == 0  # same box, other class
+    assert _cmp(ref, [_det(0, 0.9, [0, 0, 100, 102])])["ref_matched"] == 0  # IoU 0.98 < 0.99
+    extra = _cmp(ref, [_det(0, 0.9, [0, 0, 100, 100]), _det(0, 0.7, [400, 400, 450, 450])])
+    assert extra["ref_match_rate"] == 1.0 and extra["cand_match_rate"] == 0.5
+
+
+def test_parity_notes_near_threshold_and_tiny_misses():
+    res = _cmp([_det(0, 0.26, [0, 0, 20, 20])], [])
+    assert res["ref_match_rate"] == 0.0
+    assert "near-threshold" in res["notes"][0] and "tiny" in res["notes"][0]
+
+
+def test_profile_freezes_parity_gates_from_spec():
+    par = common.load_profile("rtdetr_r18_640")["parity"]
+    assert par["gates"]["fp32"] == {"min_iou": 0.99, "max_score_error": 0.005, "min_match_rate": 0.99}
+    assert par["gates"]["mixed"] == {"min_iou": 0.95, "max_score_error": 0.02, "min_match_rate": 0.99}
+    assert par["preprocess_gates"]["resize_mae"] == 1 / 255 and par["preprocess_gates"]["resize_p99"] == 3 / 255
 
 
 def _consistent_manifest(profile):

@@ -20,7 +20,8 @@ OUT_JSON = ROOT / "configs" / "reference" / "golden_images.json"
 
 
 def synthetic() -> dict[str, np.ndarray]:
-    """Deterministic images that stress resize and channel order: portrait, landscape and a fine pattern (BGR)."""
+    """Deterministic BGR images that stress resize and channel order: portrait, landscape, a fine pattern, and
+    640×640 noise that takes the no-resize path."""
     y, x = np.mgrid[0:1280, 0:720]
     portrait = np.stack([(x * 255 // 719), (y * 255 // 1279), ((x + y) % 256)], axis=-1).astype(np.uint8)
     cv2.rectangle(portrait, (100, 300), (600, 900), (0, 0, 255), -1)  # pure red block: catches BGR/RGB swaps
@@ -29,7 +30,13 @@ def synthetic() -> dict[str, np.ndarray]:
     cv2.rectangle(landscape, (800, 150), (1150, 600), (255, 0, 0), -1)
     pattern = (((np.indices((1000, 1000)).sum(axis=0) // 1) % 2) * 255).astype(np.uint8)  # 1-px checkerboard
     checker = cv2.merge([pattern] * 3)
-    return {"synthetic_portrait": portrait, "synthetic_landscape": landscape, "synthetic_pattern": checker}
+    noise = np.random.default_rng(640).integers(0, 256, (640, 640, 3), dtype=np.uint8)  # no resize: layout gate
+    return {
+        "synthetic_portrait": portrait,
+        "synthetic_landscape": landscape,
+        "synthetic_pattern": checker,
+        "synthetic_noise_640": noise,
+    }
 
 
 def frames(source: Path, indices: list[int]) -> dict[str, np.ndarray]:
