@@ -1,5 +1,5 @@
 # Native G0–G1: hardware baseline and RT-DETR TensorRT feasibility
-Status: Active (P4 merged, PR #13) · Branch: `feat/native-g0` · Spec: C§2–C§6, ADR-001..003
+Status: G1 gate reached, waiting for the owner (2026-11-07) · Branch: `feat/native-g0` · Spec: C§2–C§6, ADR-001..003
 
 ## Outcome
 The owner's NVIDIA PC has one pinned, supported CUDA/TensorRT stack proven by a real CUDA smoke test (G0). A
@@ -37,33 +37,58 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 5. [x] **[PC]** CUDA smoke test `native/tests/gpu/cuda_smoke.cu`: device query plus a vector add on a non-default
    stream, every return code checked, label `gpu`. `ctest --preset linux-cuda-release -L gpu` passes and its
    output plus host summary go to `docs/environment.md`. **G0 gate: stop for the owner.**
-6. [ ] **[PC]** `tools/model_export/`: pinned RT-DETR clone and checkpoint (D5), upstream ONNX export with deploy
+6. [x] **[PC]** `tools/model_export/`: pinned RT-DETR clone and checkpoint (D5), upstream ONNX export with deploy
    postprocessor, generated `manifest.json` (hashes, commit, opset, actual tensor names/dtypes/shapes, classes,
    licence). R0: PyTorch FP32 detections on the golden images with the TF32 policy recorded.
-7. [ ] **[PC]** Preprocessing contract `configs/native/rtdetr_r18_640.json` and golden-tensor check: C++ OpenCV
+7. [x] **[PC]** Preprocessing contract `configs/native/rtdetr_r18_640.json` and golden-tensor check: C++ OpenCV
    preprocessing vs the Python reference transform (C§6 layout and resize gates). ONNX Runtime vs R0 parity.
-8. [ ] **[PC]** `build_engine.py` (D6): TensorRT FP32 engine, `engine_manifest.json` with full identity (C§5),
+8. [x] **[PC]** `build_engine.py` (D6): TensorRT FP32 engine, `engine_manifest.json` with full identity (C§5),
    build log and build time. A mismatched manifest refuses to load.
-9. [ ] **[PC]** `native/src/gpu/`: RAII engine, context, stream, device/pinned buffers and events;
+9. [x] **[PC]** `native/src/gpu/`: RAII engine, context, stream, device/pinned buffers and events;
    `motionman-native infer --profile … --images …` writes detections JSON. Parity test (label `gpu`) vs R0:
    ≥ 99% same-class matches at IoU 0.99, score error ≤ 0.005, zero non-finite outputs.
-10. [ ] **[Mac]** G1 write-up: acceptance results, ADR-003 Accepted or superseded, G2–G6 re-estimate, STATE.
+10. [x] **[Mac]** G1 write-up: acceptance results, ADR-003 Accepted or superseded, G2–G6 re-estimate, STATE.
    **G1 gate: stop for the owner.**
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | 1/1 passed (Apple clang 21, CMake 4.4.5) |
-| NG-2 | Python gate unchanged | `scripts/check.sh` | 525 passed, ruff ok (2026-11-07) |
+| NG-1 | Portable C++ builds and tests on the Mac with no CUDA | `cmake --preset mac-cpu && cmake --build --preset mac-cpu && ctest --preset mac-cpu` | 4/4 passed at G1 (types, source_time, preprocess, json_sha256; Apple clang 21, CMake 4.4.5) |
+| NG-2 | Python gate unchanged | `scripts/check.sh` | ruff ok, 535 passed (2026-11-07, step 10; the 10 new ones are `tests/test_model_export.py`) |
 | NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | 2 passed; 149 cases passed |
 | NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | `docs/environment.md`: nvidia-smi, nvcc V13.3.73, TensorRT 11.2.1.2 read back over SSH |
 | NG-5 | Real CUDA smoke test passes on the PC | `ctest --preset linux-cuda-release -L gpu -R cuda_smoke` | 3/3 passed on the PC (RTX 3060 Ti, CC 8.6, runtime 13030; 1,048,576 adds, 0 wrong) |
-| NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | |
-| NG-7 | Preprocessing matches the reference within C§6 | `ctest --preset linux-cuda-release -R preprocess_golden` | |
-| NG-8 | ONNX Runtime matches R0 | `python tools/model_export/parity.py --ref r0 --cand onnx` | |
-| NG-9 | TensorRT FP32 engine built with full manifest; mismatch refused | `python tools/model_export/build_engine.py <profile>` then the refusal test | |
-| NG-10 | C++ TensorRT FP32 matches R0 (≥ 99% at IoU 0.99, Δscore ≤ 0.005, no non-finite) | `ctest --preset linux-cuda-release -L gpu -R trt_parity` | |
-| NG-11 | No weights, ONNX, engines or footage in git | `git ls-files \| grep -E '\.(pth\|onnx\|engine\|plan\|mp4)$'` is empty | |
+| NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | `manifest ok` on the PC (exit 0); a wrong declared shape was caught first, then fixed by recording observed shapes |
+| NG-7 | Preprocessing matches the reference within C§6 | `ctest --preset linux-cuda-release -R preprocess_golden` | PC 5/5 ctest; all 12 golden images bit-exact (max error 0; gates MAE ≤ 1/255, p99 ≤ 3/255, layout ≤ 1e-6) |
+| NG-8 | ONNX Runtime matches R0 | `python tools/model_export/parity.py rtdetr_r18_640 --ref r0 --cand onnx --gate fp32` | PASS: 852/852 both directions at IoU ≥ 0.99, max |Δscore| 5.6e-5, 0 non-finite (`--gate fp32`) |
+| NG-9 | TensorRT FP32 engine built with full manifest; mismatch refused | `build_engine.py rtdetr_r18_640 --precision fp32`, then `--check` and `--check --manifest <tampered>` | built 154 MB FP32 engine in 30 s (`--noTF32`, 551 Float / 0 Half tensors); `--check` ok; tampered ONNX hash + TensorRT version and tampered engine bytes refused (exit 1) |
+| NG-10 | C++ TensorRT FP32 matches R0 (≥ 99% at IoU 0.99, Δscore ≤ 0.005, no non-finite) | `ctest --preset linux-cuda-release -L gpu -R trt_parity` | PASS: 852/852 both directions at IoU ≥ 0.99, max |Δscore| 1.54e-4, 0 non-finite (C++ preprocessing → TensorRT 11.2.1 FP32); `ctest -L gpu` 4/4 incl. `trt_refuse_tampered` (exit 3) |
+| NG-11 | No weights, ONNX, engines or footage in git | `git ls-files \| grep -E '\.(pth\|onnx\|engine\|plan\|mp4)$'` is empty | empty (grep exit 1) on the Mac at step 10; the only tracked image is the UI favicon |
+
+## G1 result and re-estimate
+- G1 met: NG-1..NG-11 all have a command and a result above. ADR-003 Accepted (no plugin, parity PASS, fits 8 GB).
+- Retired risks: supported stack (ADR-005), export without plugins, preprocessing drift (bit-exact), FP32
+  parity, engine identity. Calendar time for G0+G1 was 2026-11-05..07; focused hours were not timed (no claim).
+- Open risks found in G1:
+  - TensorRT 11 builds strongly typed networks by default (step 8 log), so FP16 likely needs an FP16/mixed ONNX
+    (a new export tool, a download) rather than a builder flag. RT-DETR decoder attention and score heads are
+    the usual FP16-sensitive parts. G3 checks this first.
+  - WSL2: pinned memory and NVML telemetry limits are not yet measured; they matter for G4.
+  - Off-network PC access (G5) is open: SSH works on the home LAN only.
+  - G2 must port ByteTrack and prove replay parity against the Python tracker (C§8). That is the largest new
+    piece of code so far.
+- Re-estimate in focused days (NA§16 → now):
+
+  | Gate | Before | Now | Why |
+  |---|---|---|---|
+  | G2 | 3–5 | 4–6 | ByteTrack port and replay parity, plus decode, records and the report schema ADR |
+  | G3 | 2–4 | 3–5 | Strongly typed FP16 path and a new export step |
+  | G4 | 4–7 | 4–7 | Unchanged; WSL2 limits are the unknown |
+  | G5 | 2–4 | 2–4 | SSH proven; durable agent and remote access still to build |
+  | G6 | 3–6 | 3–6 | Unchanged; owner labelling time not included |
+
+  The remaining G2–G6 total is 16–28 days (was 14–26), or 20–35 with the 25% contingency. These are estimates,
+  not a deadline.
 
 ## Risks
 - GPU, driver or OS outside TensorRT's support matrix: G0 fails; choose another version set or host (C§4).
@@ -79,3 +104,9 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 - 2026-11-07 step 3: Mac→PC SSH (`motionman-pc`, Windows OpenSSH, key auth) after the owner freed C: (0.1 → 86.9 GB). Inventory over SSH in `docs/environment.md`: Win 11 26200, WSL2 Ubuntu 24.04.4 with the GPU visible, driver 610.88 (CUDA ≤ 13.3), gcc 13.3, no nvcc/CMake/TensorRT. Versions from NVIDIA's apt indexes: ADR-005 (Proposed) CUDA 13.3.1 + TensorRT 11.2.1.2+cuda13.3. NG-4 completes after step 4 (nvcc, TensorRT captured).
 - 2026-11-07 step 4: installed over SSH with the owner's yes (D5 amended in practice: WSL runs as root, Claude ran the commands). CUDA 13.3.1 (nvcc V13.3.73) from the wsl-ubuntu repo, TensorRT 11.2.1.2+cuda13.3 from ubuntu2404, CMake 3.28.3, OpenCV 4.6; 85 packages held, NVIDIA driver packages pinned −1, 0 Linux drivers. Paused once at the owner's request (game frame drops) via `wsl --shutdown`, repaired with `dpkg --configure -a`. Code sent as a git bundle of feat/native-g0 at 4d8550a.
 - 2026-11-07 step 5: `native/tests/gpu/cuda_smoke.cu` (device query, cudaMallocAsync + vector add on a non-blocking stream, every call checked). PC: `linux-cuda-release` configures (CUDA 13.3.73, TensorRT headers found), ctest 3/3 passed; 7126 of 8191 MiB free at run. Mac gate 525 passed. G0 gate reached.
+- 2026-11-07 step 6: RT-DETRv2-S (`rtdetrv2_pytorch`, r18vd 120e COCO, ckpt sha256:2ace5218…) at upstream df2a96c, since v1 pins torch 2.0.1 with no Python 3.12 wheels (ADR-003 amended). Export venv: Python 3.12, torch 2.15.0+cu132, onnx 1.23.2, onnxruntime 1.31.1. `PResNet.pretrained=False` avoids an extra ImageNet download. ONNX opset 16, 80.6 MB, sha256:a14a2c99…, identical on re-export; outputs labels int64 [N,300], boxes f32 [N,300,4], scores f32 [N,300] (observed via onnxruntime; declared dims are symbolic). `check_manifest.py` ok. 11 golden PNGs (8 crosswalk + 3 synthetic, hashes in `configs/reference/golden_images.json`). R0 on the RTX 3060 Ti, FP32, TF32 off: 0 non-finite; crosswalk frames 13–17 persons ≥ 0.5. Input tensors saved for step 7. Mac gate 529 passed.
+- 2026-11-07 step 7: profile gains a frozen `preprocessing` contract (revision pillow-bilinear-v1) and `parity` section (score threshold 0.25, near ±0.02, tiny < 32², C§6 gates) before any candidate ran. `native/src/preprocess.cpp` ports Pillow 13's BILINEAR resample (22-bit fixed point, uint8 between passes) with no OpenCV; OpenCV's own resize would not antialias. The golden test first showed 1403 one-step differences on the portrait: Pillow 13 runs the vertical pass first when height shrinks > 2× width (read from 13.0.0 Resample.c); ported, now all 12 images (8 crosswalk, 3 synthetic resize, 1 640² layout) are bit-exact. `run_onnx.py` (ORT 1.31.1 CPU on R0's tensors) + `parity.py` (class + IoU greedy matching both ways): 852/852, max |Δscore| 5.6e-5. Unit `preprocess` test also runs on the Mac; Mac gate 533 passed.
+- 2026-11-07 step 8: `build_engine.py` wraps trtexec (TensorRT 11.2.1, strongly typed by default; `--noTF32`, batch-1 static profile, `--skipInference`, detailed layer export). `engine_manifest.fp32.json` identity: profile, precision, ONNX + checkpoint hashes, upstream commit, exporter sha, preprocessing revision, shape profile, flags, plugins (none), GPU/CC/driver/TensorRT/CUDA. Engine 154,249,292 bytes, sha256:50378763…, build 30.1 s, peak GPU 146 MiB. Log warnings (2): `orig_target_sizes` and `labels` need Int64 bindings — step 9 must bind int64. Refusal test: wrong ONNX hash + TensorRT version → 2 mismatches, exit 1; wrong engine hash → exit 1; real manifest → ok. pytest covers `compare_identity` and trtexec shape syntax; Mac gate 535 passed.
+- 2026-11-07 step 9: `native/src/gpu/cuda_raii.hpp` (move-only owners for device/pinned buffers, stream, event; every CUDA call checked → exception), `trt_detector.{hpp,cpp}` (opens only after the engine manifest identity matches profile, ONNX + checkpoint hashes, compiled preprocessing revision, TensorRT headers = library, GPU name/CC, NVML driver, CUDA major.minor, no plugins, and the engine bytes' SHA-256 — hashed from the same buffer it deserializes; checks the 5-tensor deploy contract incl. Int64 `orig_target_sizes`/`labels`; batch-1 shapes; one non-blocking stream), `src/app/main.cpp` (`motionman-native infer`, exit 3 on refusal). Portable `json` reader and `sha256` (FIPS vectors) with a unit test on both hosts. CTest gpu: `trt_infer` → `trt_parity` (fixture) and `trt_refuse_tampered`. First run hit macOS `._*` files copied to the PC golden dir (removed; copies now use `COPYFILE_DISABLE`). Result: TensorRT FP32 vs R0 852/852, max |Δscore| 1.54e-4. PC ctest 9/9; Mac ctest 4/4, gate 535 passed.
+- 2026-11-07 step 10: NG-11 empty; NG-1 and NG-2 rerun on the Mac (4/4, 535 passed). ADR-003 Accepted. G2–G6
+  re-estimated at 16–28 focused days (FP16 typing and the ByteTrack port raised). G1 gate reached.

@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "description": "G1 parity images (D7). PNGs stay out of git; these hashes identify them. Crosswalk frames are decoded once on the Mac with OpenCV seeking, so the PNG, not the video, is the input.",
+  "source_input_id": "sha256:99bfaab5577392e905d632b3260aa9796342425f4d74f257278dae576bccd45e",
+  "images": {
+    "crosswalk_00000": {
+      "file": "crosswalk_00000.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:6730d58693648d114b8acdfb99dcb72052bb01f7c095bb176391dfe8d02acbbc"
+    },
+    "crosswalk_00180": {
+      "file": "crosswalk_00180.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:2cf74f15fdfcc8f88221562ce961d09cfb1889edbee702e3ed270ad945f96ba0"
+    },
+    "crosswalk_00360": {
+      "file": "crosswalk_00360.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:6a0da49ca35a58d0f415cf0180955e16c1049cbf25a55facb605258f8728ce17"
+    },
+    "crosswalk_00480": {
+      "file": "crosswalk_00480.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:7071dffcd56044d56b8609cc4ec6a2cb411ab5b1e4b17c1ee8345bd022b22842"
+    },
+    "crosswalk_00720": {
+      "file": "crosswalk_00720.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:8fa51fd194ac26dc1acf1646b2bc9310ad889dfa2ecabbd483bee5891e4d6f77"
+    },
+    "crosswalk_00900": {
+      "file": "crosswalk_00900.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:ef609cfb0e1e83e97a2c33e4c93bd85065a5cfadc7f1711f3f11862f6bf13e26"
+    },
+    "crosswalk_01170": {
+      "file": "crosswalk_01170.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:73791591adcb71d52757e658913027395a6c044a27a07076e2f08e6e631d7a88"
+    },
+    "crosswalk_01350": {
+      "file": "crosswalk_01350.png",
+      "width": 1920,
+      "height": 1080,
+      "sha256": "sha256:712d2b71fb1a5a38ec36dd62c06baa9f935a63cb1d0a4663884528822214e8c5"
+    },
+    "synthetic_portrait": {
+      "file": "synthetic_portrait.png",
+      "width": 720,
+      "height": 1280,
+      "sha256": "sha256:c36c1807be13f7512ce8aba648049c6ee6000c591c0e03491d771d3e372d27e9"
+    },
+    "synthetic_landscape": {
+      "file": "synthetic_landscape.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "sha256:98f44ef7cc31105b3294bd5fc8d6db943c30172e4b4c7b2b4f71c37352ebff7e"
+    },
+    "synthetic_pattern": {
+      "file": "synthetic_pattern.png",
+      "width": 1000,
+      "height": 1000,
+      "sha256": "sha256:6bbca69cdca3f447e17e4149937f74aad96ef09117753719f3b12c2ffeb5ee61"
+    },
+    "synthetic_noise_640": {
+      "file": "synthetic_noise_640.png",
+      "width": 640,
+      "height": 640,
+      "sha256": "sha256:c3a6c5c878b1c12d87b85c3761b6f6c7113531981778ac6338827d122baa4af9"
+    }
+  }
+}
