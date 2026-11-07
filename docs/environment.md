@@ -13,7 +13,7 @@ Missing values are listed as unknown, not guessed.
 | OS | Windows (edition and build unknown) | prompt `PS C:\Users\…` |
 | WSL | `wsl` not recognised: not installed or unavailable | owner |
 | `nvcc`, CMake, OpenCV, TensorRT | not installed in any Linux environment yet | owner |
-| Disk free | unknown | |
+| Disk free (2026-11-07) | C: 0.1 GB free of ~465 GB (full: OpenSSH Server install failed "not enough space"); D: 60.9 GB free of ~932 GB | `Get-PSDrive` |
 
 ## Consequences
 - Windows host → the execution environment will be WSL2 + Ubuntu with the Windows NVIDIA driver (C§4; NVIDIA CUDA
@@ -22,6 +22,9 @@ Missing values are listed as unknown, not guessed.
 - Benchmarks must record competing GPU workloads; games and overlays were using ~4.4 GB at capture (C§10).
 - Toolkit versions (CUDA, TensorRT, compiler) are chosen against NVIDIA's support matrix for Ampere + this driver
   once WSL is in place, and recorded in ADR-005.
+
+- C: must be freed (≥10 GB) before Windows features (OpenSSH Server, WSL) install; the Ubuntu distro and the
+  CUDA/TensorRT stack go on D: (`wsl --install --location`), which needs ~30–40 GB.
 
 ## Still needed
 WSL2 + Ubuntu installed; then inside Ubuntu: `nvidia-smi`, `nvcc --version`, `cmake --version`,
