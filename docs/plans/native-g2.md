@@ -44,7 +44,8 @@ replayed detections.
     association stage gets its low-confidence inputs (NA§5).
   - Records hold the tracker's output, as the reference does.
   - When the tracker returns nothing for a frame, the detections with score ≥ `conf` are recorded with null
-    IDs. This matches the reference behaviour and INV-2.
+    IDs, unless an unconfirmed track is pending; then the frame records no objects. This matches Ultralytics
+    8.4.196 `on_predict_postprocess_end` and INV-2.
   - Records keep schema 1.0 exactly.
 - D7 Native runtime for G2:
   - One TensorRT context and one non-blocking stream.
@@ -65,7 +66,7 @@ replayed detections.
 1. [x] **[Mac]** ADR-006 Proposed → reviewed. Python adds backend metadata to runspec and report (D2, D3):
    `store.resolve_runspec(backend=…)` and `metrics.build_report` stop hardcoding Ultralytics and FP32. Report
    1.1 is readable next to 1.0. pytest for both versions; legacy runs are unchanged apart from the new fields.
-2. [ ] **[Mac]** Tracker replay fixtures:
+2. [x] **[Mac]** Tracker replay fixtures:
    - `tools/tracker_replay/`: scenario generator and a reference runner that drives Ultralytics `BYTETracker`
      directly with cached detections.
    - `tests/fixtures/tracker/*.json` (small, committed) cover: entry, exit, reappearance inside and past the
@@ -102,9 +103,9 @@ replayed detections.
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed |
+| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed; step 2: 563 |
 | N2-2 | Old (1.0) and new (1.1) reports and runspecs both open | `.venv/bin/pytest -q tests/test_runs.py tests/test_store.py` | step 1: passed incl. a run rewritten to 1.0 that still opens |
-| N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/pytest -q tests/test_tracker_replay.py` | |
+| N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/python tools/tracker_replay/reference.py --check` (imports Ultralytics, so outside pytest, INV-8) and `.venv/bin/pytest -q tests/test_tracker_replay.py` | step 2: 14/14 reproduced exactly; pytest 20 passed; a swapped ID is caught |
 | N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R tracker_replay` | |
 | N2-5 | Native records equal Python's for the shared fixture | `ctest --preset mac-cpu -R records` and `.venv/bin/pytest -q tests/test_native_records.py` | |
 | N2-6 | Controller publishes only verified runs (fake native, 6 failure cases) | `.venv/bin/pytest -q tests/test_native_controller.py` | |
@@ -128,3 +129,4 @@ replayed detections.
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
 - 2026-11-07 step 1: `settings.backend` (legacy default `ultralytics`/fp32 in `types.LEGACY_BACKEND`) and an optional `tracking` override in `resolve_runspec` (runspec 1.1); `build_report` takes `backend` and `tracker` (report 1.1 with `schema_version`, `backend`); `runspec_backend`/`report_backend` read 1.0 as legacy. compare gains a `backend` factor; bundle README names the backend. Legacy runs' config hash changes once (new key). Native stage timings deferred to step 6. Gate 543 passed.
+- 2026-11-07 step 2: `tools/tracker_replay/` (`scenarios.py` 14 seeded scenarios on a float32-exact grid, `reference.py` drives Ultralytics `BYTETracker` directly with `--write`/`--check`, `fixtures.py` load/dump/compare with canonical ID renaming, no Ultralytics import). `tests/fixtures/tracker/` 14 fixtures (180 KB, one frame per line). Found in the reference: a 0.30 track never confirms under `fuse_score` and burns an ID per frame; later starts confirm one frame late; class conflict relabels the car track. D6 corrected: an empty tracker output records nothing while an unconfirmed track is pending. `--check` 14/14 exact; gate 563 passed.

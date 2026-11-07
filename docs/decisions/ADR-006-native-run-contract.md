@@ -33,7 +33,8 @@ the tracker. When the tracker returns no tracks, Ultralytics keeps the raw boxes
 - **Admission:**
   - Detections with score ≥ `track_low_thresh` reach the tracker.
   - Records hold the tracker's output.
-  - A frame where the tracker returns nothing records its detections with score ≥ `conf`, with null IDs (INV-2).
+  - A frame where the tracker returns nothing records its detections with score ≥ `conf`, with null IDs (INV-2),
+    unless an unconfirmed track is pending; then it records no objects (Ultralytics 8.4.196 behaviour).
 
 ## Alternatives
 - Native writes report and manifest itself: duplicates validation and lets an exit code claim success. Rejected.
