@@ -58,7 +58,7 @@ def test_success_is_verified_and_published_with_the_backend(setup):
     m = json.loads((run_dir / store.MANIFEST).read_text())
     assert m["status"] == "SUCCEEDED" and list((root / "staging").iterdir()) == []
     assert m["validation"] == {"native_receipt": "PASS", "source_complete": "PASS", "records": "PASS",
-                               "video_decode": "PASS", "timings": "PASS"}  # fmt: skip
+                               "video_decode": "PASS", "timings": "PASS", "timestamps": "PASS"}  # fmt: skip
     assert "native_receipt.json" in {a["path"] for a in m["artifacts"]}
     saved = json.loads((run_dir / "report.json").read_text())
     assert metrics.report_schema(saved) == "1.1"
@@ -75,6 +75,13 @@ def test_success_is_verified_and_published_with_the_backend(setup):
     (summary,) = runs.list_runs(data)
     opened = runs.open_run(summary, data)  # existing readers accept a native run
     assert opened is not None
+
+
+def test_a_tail_without_decoder_timestamps_publishes_as_unverified(setup):
+    go, root = setup
+    report = go("drained_tail")
+    m = json.loads((root / "runs" / report["run_id"] / store.MANIFEST).read_text())
+    assert m["status"] == "SUCCEEDED" and m["validation"]["timestamps"] == "UNVERIFIED"
 
 
 @pytest.mark.parametrize(

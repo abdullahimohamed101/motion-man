@@ -4,6 +4,7 @@ receipt and exit codes, with no GPU. ``FAKE_NATIVE_MODE`` picks a behaviour:
 success · crash (dies mid-run, no receipt) · missing_records · short_records (receipt claims a frame the file lacks)
 · short_video · bad_receipt (exit 0, receipt for another run) · status_error (exit 0, receipt says error)
 · refused (exit 3) · interrupted (stops itself, as on SIGTERM) · slow (one frame per 50 ms, honours SIGINT)
+· drained_tail (success, but the decoder gave the last 3 frames no timestamp)
 """
 
 from __future__ import annotations
@@ -48,7 +49,8 @@ def main(argv: list[str]) -> int:
     receipt = {
         "schema_version": "1.0", "status": "error", "error": None, "run_id": run_id,
         "runspec_sha256": store.sha256_file(Path(a["--runspec"])), "source_sha256": store.sha256_file(source),
-        "frames": {"decoded": 0, "processed": 0, "records": 0, "timing_rows": 0, "video_written": 0},
+        "frames": {"decoded": 0, "processed": 0, "records": 0, "timing_rows": 0, "video_written": 0,
+                   "timestamps_missing": 3 if mode == "drained_tail" else 0},
         "engine": {"runtime": "tensorrt", "profile": s["backend"]["profile"], "precision": s["backend"]["precision"],
                    "engine_sha256": s["backend"]["engine_sha256"], "gpu": "Fake GPU 9000"},
         "timing": {"model_load_s": 0.5, "wall_s": 0.0, "processing_wall_s": 0.0},

@@ -148,11 +148,31 @@ bool any_track_changes_class(const Run& r) {
 
 }  // namespace
 
+// One replay file (plan native-g2 step 7, N2-8: real detections dumped by `motionman-native run`): agnostic
+// native tracking must reproduce the reference exactly, as for the committed fixtures.
+int check_one(const fs::path& path) {
+  const Fixture f = load(path);
+  const Run r = run(f, f.config.class_policy);
+  const auto problems = compare(f, r);
+  std::set<std::int64_t> ids;
+  std::size_t outputs = 0, dets = 0;
+  for (std::size_t n = 0; n < f.frames.size(); ++n) {
+    dets += f.frames[n].size();
+    outputs += r.outputs[n].size();
+    for (const auto& o : r.outputs[n]) ids.insert(o.track_id);
+  }
+  for (std::size_t i = 0; i < problems.size() && i < 10; ++i) std::fprintf(stderr, "  %s\n", problems[i].c_str());
+  std::printf("%s: %zu frames, %zu detections, %zu track outputs, %zu IDs; %zu problems\n", f.name.c_str(),
+              f.frames.size(), dets, outputs, ids.size(), problems.size());
+  return problems.empty() ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
   if (argc != 2) {
-    std::fprintf(stderr, "usage: test_tracker_replay <fixtures/tracker dir>\n");
+    std::fprintf(stderr, "usage: test_tracker_replay <fixtures/tracker dir | one replay .json>\n");
     return 2;
   }
+  if (fs::is_regular_file(argv[1])) return check_one(argv[1]);
   std::vector<fs::path> paths;
   for (const auto& e : fs::directory_iterator(argv[1])) {
     if (e.path().extension() == ".json") paths.push_back(e.path());

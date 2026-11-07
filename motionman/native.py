@@ -168,7 +168,7 @@ def _run(config: RunConfig, root: store.DataRoot | None, native: NativeConfig,
     input_id = runspec = records_sha = receipt = None
     out: Path | None = None
     validation = {"native_receipt": "NOT_RUN", "source_complete": "NOT_RUN", "records": "NOT_RUN",
-                  "video_decode": "NOT_RUN", "timings": "NOT_RUN"}  # fmt: skip
+                  "video_decode": "NOT_RUN", "timings": "NOT_RUN", "timestamps": "NOT_RUN"}  # fmt: skip
     try:
         if root is not None:
             root.ensure()
@@ -212,6 +212,8 @@ def _run(config: RunConfig, root: store.DataRoot | None, native: NativeConfig,
         validation["native_receipt"] = "FAIL"
         _check_receipt(receipt, run_id, out, input_id, backend)
         validation["native_receipt"] = "PASS"
+        # The engine's decoder may give no timestamp for a drained tail of frames; those are counted, not checked.
+        validation["timestamps"] = "PASS" if receipt["frames"]["timestamps_missing"] == 0 else "UNVERIFIED"
         processed = m.processed_frames
         if processed == 0:
             raise video_io.VideoError(f"no decodable frames in {config.source}")
@@ -380,5 +382,8 @@ def _check_receipt(receipt: dict, run_id: str, out: Path, input_id: str, backend
     counts = [frames.get(k) for k in ("processed", "records", "timing_rows", "video_written")]
     if len(set(counts)) != 1 or not isinstance(counts[0], int) or (frames.get("decoded") or 0) < counts[0]:
         problems.append(f"frame counts disagree: {frames}")
+    missing = frames.get("timestamps_missing")
+    if not isinstance(missing, int) or not 0 <= missing <= (frames.get("decoded") or 0):
+        problems.append(f"timestamps_missing {missing!r} is not a frame count")
     if problems:
         raise NativeError(f"{pipeline.NATIVE_RECEIPT} does not match this run: " + "; ".join(problems))

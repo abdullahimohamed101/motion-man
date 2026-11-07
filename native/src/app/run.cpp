@@ -211,6 +211,19 @@ void close_checked(File& f, const char* what) {
   if (std::fclose(f.release()) != 0) throw std::runtime_error(std::string("closing ") + what + " failed");
 }
 
+// {"frame": n, "dets": [[x1, y1, x2, y2, score, class], ...]}; %.9g round-trips every float32 exactly.
+std::string detections_line(std::int64_t frame, const std::vector<track::Detection>& dets) {
+  std::string s = "{\"frame\": " + std::to_string(frame) + ", \"dets\": [";
+  char buf[160];
+  for (std::size_t i = 0; i < dets.size(); ++i) {
+    const auto& d = dets[i];
+    std::snprintf(buf, sizeof buf, "%s[%.9g, %.9g, %.9g, %.9g, %.9g, %d]", i ? ", " : "", d.x1, d.y1, d.x2, d.y2,
+                  d.score, d.class_id);
+    s += buf;
+  }
+  return s + "]}";
+}
+
 struct Receipt {
   std::string status = "error";
   std::string error;
@@ -218,6 +231,7 @@ struct Receipt {
   std::string video_backend, class_policy, started_at, finished_at;
   std::int64_t decoded = 0, processed = 0, records = 0, timing_rows = 0, admitted = 0, recorded_objects = 0;
   std::int64_t dropped_no_extent = 0, max_track_id = 0;
+  std::int64_t timestamps_missing = 0;  // trailing frames the decoder gave no timestamp for (not checked)
   double model_load_s = 0, wall_s = 0;
   double processing_wall_s = 0;  // before the first decode to after the writer and files are closed
   std::array<std::pair<std::string, double>, 6> stage_total_ms{{{"decode_ms", 0},
@@ -237,7 +251,8 @@ struct Receipt {
            ", \"runspec_sha256\": " + opt_str(runspec_sha256) + ", \"source_sha256\": " + opt_str(source_sha256) +
            ",\n \"frames\": {\"decoded\": " + std::to_string(decoded) + ", \"processed\": " +
            std::to_string(processed) + ", \"records\": " + std::to_string(records) + ", \"timing_rows\": " +
-           std::to_string(timing_rows) + ", \"video_written\": " + std::to_string(processed) + "}" +
+           std::to_string(timing_rows) + ", \"video_written\": " + std::to_string(processed) +
+           ", \"timestamps_missing\": " + std::to_string(timestamps_missing) + "}" +
            ",\n \"objects\": {\"admitted_detections\": " + std::to_string(admitted) + ", \"recorded\": " +
            std::to_string(recorded_objects) + ", \"dropped_no_extent\": " + std::to_string(dropped_no_extent) +
            ", \"max_track_id\": " + std::to_string(max_track_id) + ", \"class_policy\": " + opt_str(class_policy) +
@@ -325,6 +340,8 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
   if (!writer.isOpened()) throw std::runtime_error("cannot open a video writer with codec " + spec.codec);
   File tracks = create_exclusive(out / kTracks);
   File timings = create_exclusive(out / kTimings);
+  File dump;  // optional replay input (plan native-g2 step 7): each frame's admitted detections, float32-exact
+  if (a.count("--dump-detections")) dump = create_exclusive(a.at("--dump-detections"));
 
   track::ByteTracker tracker(spec.tracker);  // one tracker, this run only, frames in order (INV-1)
   records::Trails trails(spec.trail_points, spec.trail_expiry);
@@ -353,11 +370,21 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
     if (spec.max_duration_s && static_cast<double>(index) / spec.fps >= *spec.max_duration_s) {
       throw std::runtime_error("video exceeds the duration limit; nothing past it was processed");
     }
-    const double drift = std::fabs(cap.get(cv::CAP_PROP_POS_MSEC) - static_cast<double>(index) * 1000.0 / spec.fps) *
-                         spec.fps / 1000.0;
-    if (drift > kTimestampToleranceFrames) {
-      throw std::runtime_error("frame " + std::to_string(index) + " timestamp is " + records::py_round(drift, 2) +
-                               " frames from constant fps; variable frame rate is not supported");
+    // Ubuntu's OpenCV 4.6 reports 0 ms for the frames its decoder drains after the last packet (the crosswalk
+    // clip's last 20). Such a tail is counted, never checked and never fatal; a timestamp after it is.
+    const double pos_ms = cap.get(cv::CAP_PROP_POS_MSEC);
+    if (index > 0 && pos_ms == 0.0) {
+      ++rc.timestamps_missing;
+    } else {
+      if (rc.timestamps_missing > 0) {
+        throw std::runtime_error("frame " + std::to_string(index) + " has a timestamp after " +
+                                 std::to_string(rc.timestamps_missing) + " frames without one");
+      }
+      const double drift = std::fabs(pos_ms - static_cast<double>(index) * 1000.0 / spec.fps) * spec.fps / 1000.0;
+      if (drift > kTimestampToleranceFrames) {
+        throw std::runtime_error("frame " + std::to_string(index) + " timestamp is " + records::py_round(drift, 2) +
+                                 " frames from constant fps; variable frame rate is not supported");
+      }
     }
     if (frame.cols != spec.width || frame.rows != spec.height || frame.type() != CV_8UC3) {
       throw std::runtime_error("frame " + std::to_string(index) + " is not " + std::to_string(spec.width) + "x" +
@@ -383,6 +410,7 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
                           d.class_id});
     }
     rc.admitted += static_cast<std::int64_t>(admitted.size());
+    if (dump) put_line(dump, detections_line(index, admitted), "--dump-detections");
     const auto outputs = tracker.update(admitted);
     const auto fo =
         records::frame_objects(outputs, tracker.has_unconfirmed(), admitted, spec.conf, spec.width, spec.height, names);
@@ -418,6 +446,7 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
   writer.release();
   close_checked(tracks, kTracks);
   close_checked(timings, kTimings);
+  if (dump) close_checked(dump, "--dump-detections");
   const auto t_end = Clock::now();
   rc.processing_wall_s = ms_between(t_loop, t_end) / 1000;
   rc.wall_s = ms_between(t_start, t_end) / 1000;
@@ -435,7 +464,7 @@ int execute(const std::map<std::string, std::string>& a, const fs::path& out, Re
 int usage() {
   std::fprintf(stderr,
                "usage: motionman-native run --runspec <runspec.json> --run-id <id> --source <video> --out <staging dir>"
-               " --profile <configs/native/x.json> --model-dir <dir>\n");
+               " --profile <configs/native/x.json> --model-dir <dir> [--dump-detections <file.jsonl>]\n");
   return 2;
 }
 
@@ -446,7 +475,7 @@ int run(const std::map<std::string, std::string>& a) {
   for (const char* k : kArgs) {
     if (!a.count(k)) return usage();
   }
-  if (a.size() != std::size(kArgs)) return usage();
+  if (a.size() != std::size(kArgs) + (a.count("--dump-detections") ? 1 : 0)) return usage();
 
   struct sigaction sa {};
   sa.sa_handler = on_signal;
