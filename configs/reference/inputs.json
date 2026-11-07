@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "description": "Frozen reference inputs and the H0 baseline for Release C (spec C\u00a710, plan native-g0-g1 step 2, D7). Footage stays out of git; these hashes identify it.",
+  "inputs": {
+    "crosswalk": {
+      "input_id": "sha256:99bfaab5577392e905d632b3260aa9796342425f4d74f257278dae576bccd45e",
+      "display_name": "crosswalk.mp4",
+      "bytes": 81460340,
+      "width": 1920,
+      "height": 1080,
+      "fps": 23.976023976023978,
+      "frames": 1356,
+      "golden_frames": [
+        0,
+        180,
+        360,
+        480,
+        720,
+        900,
+        1170,
+        1350
+      ],
+      "golden_frames_note": "RT-DETR parity images (G1): sparse, edge-cut people (480), dense crossing (720, 900)."
+    }
+  },
+  "baselines": {
+    "H0": {
+      "description": "Existing Python YOLO11n + ByteTrack on the Mac (functional history and artifact compatibility only; never the denominator of a TensorRT speedup, ADR-002).",
+      "run_id": "r_20261101T194556Z_ed3f02",
+      "status": "SUCCEEDED",
+      "input_id": "sha256:99bfaab5577392e905d632b3260aa9796342425f4d74f257278dae576bccd45e",
+      "config_sha256": "sha256:76ffc8975400a48aad00f6c852b4a42c83aad12c13d3e6a967be97bf79ebd94a",
+      "records_sha256": "sha256:ffc0f18b1ed875e26cc3d4e71de032511d0527d2de3e578f2094ec16fd28b04c",
+      "model": {
+        "task": "detect",
+        "weights": "yolo11n.pt",
+        "weights_sha256": "sha256:0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
+        "class_map_sha256": "sha256:8751fa440569314783b98ffde9d3fb565e557ddff1269f117b5a0f3ceac64183"
+      },
+      "tracking_config_sha256": "sha256:514d5e4c30f0cebf1395a7db2fa492531809899bdf04fa4e96ec889124d77b8f",
+      "inference": {
+        "device_requested": "cpu",
+        "device_used": "cpu",
+        "imgsz": 640,
+        "conf": 0.25,
+        "iou": 0.7,
+        "class_filter": null,
+        "precision": "fp32"
+      },
+      "reproducibility": {
+        "code": {
+          "commit": "da1a60cc4c7682e4f7f33a1a5d88c877066c39f0",
+          "dirty": false
+        },
+        "requirements": {
+          "sha256": "sha256:e18a6accfd0228791da38d288377eacd399f30288cae21c033b62ced4545a08f"
+        },
+        "python": "3.11.17",
+        "platform": "macOS-26.6-arm64-arm-64bit"
+      },
+      "eval": {
+        "dataset": "crosswak-eval@r2",
+        "evaluation_id": "ev_6941c8b276b9c8b2",
+        "note": "answer key built from this run's boxes: agreement by construction, not accuracy"
+      }
+    }
+  }
+}
