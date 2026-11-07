@@ -23,8 +23,30 @@ def tensor_specs(values) -> dict:
     for v in values:
         t = v.type.tensor_type
         dims = [d.dim_param or d.dim_value for d in t.shape.dim]
-        out[v.name] = {"dtype": ONNX_DTYPES.get(t.elem_type, str(t.elem_type)), "shape": dims}
+        out[v.name] = {"dtype": ONNX_DTYPES.get(t.elem_type, str(t.elem_type)), "declared_shape": dims}
     return out
+
+
+def observed_shapes(onnx_path: Path, size: int) -> dict:
+    """Run the ONNX graph on CPU at batch 1 and 2: a dimension that follows the batch is "N", the rest are what the
+    graph really produces. The exporter leaves output dims symbolic, so the declared shapes alone prove nothing."""
+    import numpy as np
+    import onnxruntime as ort
+
+    sess = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    runs = []
+    for n in (1, 2):
+        feeds = {
+            "images": np.random.default_rng(0).random((n, 3, size, size), dtype=np.float32),
+            "orig_target_sizes": np.full((n, 2), size, dtype=np.int64),
+        }
+        outs = sess.run(None, feeds)
+        runs.append({o.name: (list(feeds[o.name].shape)) for o in sess.get_inputs()})
+        runs[-1].update({o.name: list(v.shape) for o, v in zip(sess.get_outputs(), outs, strict=True)})
+    return {
+        name: ["N" if a == 1 and b == 2 else a for a, b in zip(runs[0][name], runs[1][name], strict=True)]
+        for name in runs[0]
+    }
 
 
 def main() -> None:
@@ -59,6 +81,11 @@ def main() -> None:
         )
     m = onnx.load(str(onnx_path))
     onnx.checker.check_model(m)
+    tensors = {"inputs": tensor_specs(m.graph.input), "outputs": tensor_specs(m.graph.output)}
+    observed = observed_shapes(onnx_path, size)
+    for group in tensors.values():
+        for name, spec in group.items():
+            spec["shape"] = observed[name]
 
     manifest = {
         "schema_version": "1.0",
@@ -89,7 +116,8 @@ def main() -> None:
             "sha256": sha256_file(onnx_path),
             "bytes": onnx_path.stat().st_size,
             "opset": next(o.version for o in m.opset_import if o.domain in ("", "ai.onnx")),
-            "tensors": {"inputs": tensor_specs(m.graph.input), "outputs": tensor_specs(m.graph.output)},
+            "tensors": tensors,
+            "shape_note": "shape = observed with onnxruntime CPU at batch 1 and 2; declared_shape = as exported",
             "ops": sorted({n.op_type for n in m.graph.node}),
         },
         "classes": {"vocabulary": profile["classes"]["vocabulary"], "names": names},
