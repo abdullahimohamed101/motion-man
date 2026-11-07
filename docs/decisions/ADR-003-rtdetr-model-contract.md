@@ -8,8 +8,11 @@ names: RT-DETR. Several packages expose a model called RT-DETR with different ex
 output conventions. Mixing them silently changes results.
 
 ## Decision
-- Use the original implementation (lyuwenyu/RT-DETR, PyTorch branch) at one pinned commit, with one R18-class
-  COCO checkpoint as the first candidate. Larger variants are a G3/G4 hardware decision.
+- Use the original implementation (lyuwenyu/RT-DETR, `rtdetrv2_pytorch`) at one pinned commit, with one R18-class
+  COCO checkpoint as the first candidate: RT-DETRv2-S (`rtdetrv2_r18vd_120e_coco`), profile
+  `configs/native/rtdetr_r18_640.json`. Larger variants are a G3/G4 hardware decision.
+- Amended 2026-11-07 (G1 step 6): v2, not `rtdetr_pytorch` v1, because v1 pins torch 2.0.1, which has no wheels for
+  the PC's Python 3.12; v2 is the same author's PyTorch-native successor with the same deploy exporter contract.
 - Export with the upstream ONNX exporter and its deploy postprocessor: inputs `images`, `orig_target_sizes`
   (width, height); outputs `labels`, `boxes` (xyxy in source pixels), `scores`. The real exported names, dtypes
   and shapes are checked and recorded; nothing is assumed from YOLO.

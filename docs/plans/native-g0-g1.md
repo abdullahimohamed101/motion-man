@@ -37,7 +37,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 5. [x] **[PC]** CUDA smoke test `native/tests/gpu/cuda_smoke.cu`: device query plus a vector add on a non-default
    stream, every return code checked, label `gpu`. `ctest --preset linux-cuda-release -L gpu` passes and its
    output plus host summary go to `docs/environment.md`. **G0 gate: stop for the owner.**
-6. [ ] **[PC]** `tools/model_export/`: pinned RT-DETR clone and checkpoint (D5), upstream ONNX export with deploy
+6. [x] **[PC]** `tools/model_export/`: pinned RT-DETR clone and checkpoint (D5), upstream ONNX export with deploy
    postprocessor, generated `manifest.json` (hashes, commit, opset, actual tensor names/dtypes/shapes, classes,
    licence). R0: PyTorch FP32 detections on the golden images with the TF32 policy recorded.
 7. [ ] **[PC]** Preprocessing contract `configs/native/rtdetr_r18_640.json` and golden-tensor check: C++ OpenCV
@@ -58,7 +58,7 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 | NG-3 | Python and C++ agree on `source_t_us` rounding | `.venv/bin/pytest -q tests/test_source_time.py` and `ctest --preset mac-cpu -R source_time` | 2 passed; 149 cases passed |
 | NG-4 | PC inventory recorded from PC output | `docs/environment.md` shows `nvidia-smi`, `nvcc --version`, TensorRT version captured on the PC | `docs/environment.md`: nvidia-smi, nvcc V13.3.73, TensorRT 11.2.1.2 read back over SSH |
 | NG-5 | Real CUDA smoke test passes on the PC | `ctest --preset linux-cuda-release -L gpu -R cuda_smoke` | 3/3 passed on the PC (RTX 3060 Ti, CC 8.6, runtime 13030; 1,048,576 adds, 0 wrong) |
-| NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | |
+| NG-6 | Model manifest pins checkpoint, upstream commit and actual tensor contract | `python tools/model_export/check_manifest.py <profile>` | `manifest ok` on the PC (exit 0); a wrong declared shape was caught first, then fixed by recording observed shapes |
 | NG-7 | Preprocessing matches the reference within C§6 | `ctest --preset linux-cuda-release -R preprocess_golden` | |
 | NG-8 | ONNX Runtime matches R0 | `python tools/model_export/parity.py --ref r0 --cand onnx` | |
 | NG-9 | TensorRT FP32 engine built with full manifest; mismatch refused | `python tools/model_export/build_engine.py <profile>` then the refusal test | |
@@ -79,3 +79,4 @@ matching the FP32 PyTorch reference within C§6 gates (G1). The Mac builds and t
 - 2026-11-07 step 3: Mac→PC SSH (`motionman-pc`, Windows OpenSSH, key auth) after the owner freed C: (0.1 → 86.9 GB). Inventory over SSH in `docs/environment.md`: Win 11 26200, WSL2 Ubuntu 24.04.4 with the GPU visible, driver 610.88 (CUDA ≤ 13.3), gcc 13.3, no nvcc/CMake/TensorRT. Versions from NVIDIA's apt indexes: ADR-005 (Proposed) CUDA 13.3.1 + TensorRT 11.2.1.2+cuda13.3. NG-4 completes after step 4 (nvcc, TensorRT captured).
 - 2026-11-07 step 4: installed over SSH with the owner's yes (D5 amended in practice: WSL runs as root, Claude ran the commands). CUDA 13.3.1 (nvcc V13.3.73) from the wsl-ubuntu repo, TensorRT 11.2.1.2+cuda13.3 from ubuntu2404, CMake 3.28.3, OpenCV 4.6; 85 packages held, NVIDIA driver packages pinned −1, 0 Linux drivers. Paused once at the owner's request (game frame drops) via `wsl --shutdown`, repaired with `dpkg --configure -a`. Code sent as a git bundle of feat/native-g0 at 4d8550a.
 - 2026-11-07 step 5: `native/tests/gpu/cuda_smoke.cu` (device query, cudaMallocAsync + vector add on a non-blocking stream, every call checked). PC: `linux-cuda-release` configures (CUDA 13.3.73, TensorRT headers found), ctest 3/3 passed; 7126 of 8191 MiB free at run. Mac gate 525 passed. G0 gate reached.
+- 2026-11-07 step 6: RT-DETRv2-S (`rtdetrv2_pytorch`, r18vd 120e COCO, ckpt sha256:2ace5218…) at upstream df2a96c, since v1 pins torch 2.0.1 with no Python 3.12 wheels (ADR-003 amended). Export venv: Python 3.12, torch 2.15.0+cu132, onnx 1.23.2, onnxruntime 1.31.1. `PResNet.pretrained=False` avoids an extra ImageNet download. ONNX opset 16, 80.6 MB, sha256:a14a2c99…, identical on re-export; outputs labels int64 [N,300], boxes f32 [N,300,4], scores f32 [N,300] (observed via onnxruntime; declared dims are symbolic). `check_manifest.py` ok. 11 golden PNGs (8 crosswalk + 3 synthetic, hashes in `configs/reference/golden_images.json`). R0 on the RTX 3060 Ti, FP32, TF32 off: 0 non-finite; crosswalk frames 13–17 persons ≥ 0.5. Input tensors saved for step 7. Mac gate 529 passed.

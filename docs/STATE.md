@@ -6,8 +6,8 @@ Updated: 2026-11-07
 ## Now
 - Releases A and B part 1 (P3, P4) merged (PRs #6–#13). Release C, the native C++/CUDA/TensorRT/RT-DETR engine,
   is in progress (`docs/spec-c.md`, plan `docs/plans/native-g0-g1.md`).
-- **G0 complete, at the G0 gate (stop for the owner).** Branch `feat/native-g0` (off `feat/native-plan`; neither
-  pushed). Steps 1–5 done; NG-1..NG-5 filled.
+- G0 complete (steps 1–5). **G1 in progress: step 6 done** (RT-DETRv2-S ONNX export, manifest, R0 on the GPU).
+  Branch `feat/native-g0` (off `feat/native-plan`; neither pushed). NG-1..NG-6 filled.
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
 - Access: `ssh motionman-pc` from the Mac (key auth, Windows OpenSSH); Linux via
@@ -17,16 +17,17 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. Owner reviews G0 and says go for G1.
-2. G1 step 6: clone the pinned RT-DETR repo and checkpoint on the PC (download needs the owner's yes), ONNX export,
-   manifest, R0 reference (needs Python + PyTorch in WSL; not installed yet).
+1. G1 step 7: `configs/native/rtdetr_r18_640.json` preprocessing section; C++ OpenCV preprocessing vs the saved
+   golden tensors (`~/.cache/motionman/models/rtdetr_r18_640/golden_tensors/`); ONNX Runtime vs R0 parity.
+   Upstream resize is torchvision Resize on a PIL image (bilinear, antialiased): OpenCV must match within C§6.
+- PC caches: venv `~/.cache/motionman/venv`, upstream `~/.cache/motionman/src/RT-DETR`, golden PNGs
+  `~/.cache/motionman/golden`, model dir `~/.cache/motionman/models/rtdetr_r18_640` (checkpoint, ONNX, manifest, r0).
 
 ## Blocked / needs owner
-- G0 gate go-ahead; RT-DETR repo + checkpoint download approval.
 - Optional: fix the frame 60 box in `crosswak-eval` and commit `r3`.
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
 ## Last check
-- PC `ctest --preset linux-cuda-release`: 3/3 passed (cuda_smoke on the RTX 3060 Ti).
-- Mac `scripts/check.sh`: ruff ok, 525 passed; `ctest --preset mac-cpu` 2/2.
+- PC `ctest --preset linux-cuda-release`: 3/3 passed; `check_manifest.py rtdetr_r18_640`: manifest ok.
+- Mac `scripts/check.sh`: ruff ok, 529 passed; `ctest --preset mac-cpu` 2/2.
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).
