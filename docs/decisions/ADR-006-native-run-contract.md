@@ -31,10 +31,11 @@ the tracker. When the tracker returns no tracks, Ultralytics keeps the raw boxes
   - `class_policy` `agnostic` matches the reference; `aware` blocks matches between classes and is the default
     for native runs. The runspec records the mode.
 - **Admission:**
-  - Detections with score ≥ `track_low_thresh` reach the tracker.
-  - Records hold the tracker's output.
-  - A frame where the tracker returns nothing records its detections with score ≥ `conf`, with null IDs (INV-2),
+  - Detections with score > `track_low_thresh` reach the tracker, their boxes clamped to the image.
+  - Records hold the tracker's output, its boxes clamped to the image (as Ultralytics' `clip_boxes`).
+  - A frame where the tracker returns nothing records its detections with score > `conf`, with null IDs (INV-2),
     unless an unconfirmed track is pending; then it records no objects (Ultralytics 8.4.196 behaviour).
+  - A box with nothing left inside the image is dropped and counted in the receipt, never written.
 
 ## Alternatives
 - Native writes report and manifest itself: duplicates validation and lets an exit code claim success. Rejected.

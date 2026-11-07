@@ -35,6 +35,12 @@ target_compile_options(test_tracker_replay PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang
 add_test(NAME tracker_replay COMMAND test_tracker_replay ${PROJECT_SOURCE_DIR}/tests/fixtures/tracker)
 set_tests_properties(tracker_replay PROPERTIES LABELS unit)
 
+add_executable(test_native_records unit/test_native_records.cpp)
+target_link_libraries(test_native_records PRIVATE motionman_cpu)
+target_compile_options(test_native_records PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME native_records COMMAND test_native_records ${PROJECT_SOURCE_DIR}/tests/fixtures/native_records.json)
+set_tests_properties(native_records PROPERTIES LABELS unit)
+
 # Golden-tensor check against the Python reference: needs OpenCV (PNG decode, found in native/) and the PC's cache.
 set(MOTIONMAN_CACHE "$ENV{HOME}/.cache/motionman" CACHE PATH "PC cache with golden PNGs and model artifacts")
 if(OpenCV_FOUND)

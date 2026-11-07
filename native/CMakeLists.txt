@@ -5,7 +5,7 @@ target_compile_features(motionman_core INTERFACE cxx_std_20)
 
 # Portable CPU code (no OpenCV, no CUDA): preprocessing shared by the engine and its tests.
 add_library(motionman_cpu STATIC src/preprocess.cpp src/json.cpp src/sha256.cpp src/track/lapjv.cpp
-                                 src/track/kalman.cpp src/track/bytetrack.cpp)
+                                 src/track/kalman.cpp src/track/bytetrack.cpp src/records.cpp)
 target_link_libraries(motionman_cpu PUBLIC motionman_core)
 target_compile_options(motionman_cpu PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
 # The tracker reproduces the reference's float32 box arithmetic (ADR-006): no fused multiply-add contraction.
