@@ -1,8 +1,8 @@
 // RT-DETR preprocessing (spec C§5, C§6; contract in configs/native/rtdetr_r18_640.json "preprocessing").
 // The upstream validation transform is torchvision Resize on a PIL image, i.e. Pillow's Image.resize(BILINEAR):
-// an antialiased, separable triangle filter in 22-bit fixed point, horizontal pass first, rounding to uint8 after
-// each pass. This is a portable port of that algorithm (Pillow src/libImaging/Resample.c), so the C++ engine sees
-// the same pixels as the PyTorch reference. No OpenCV: callers pass raw interleaved 8-bit BGR (OpenCV's layout).
+// an antialiased, separable triangle filter in 22-bit fixed point, two passes (horizontal first unless the height
+// shrinks by more than twice the width, as in Pillow 13), rounding to uint8 after each pass. This is a portable port of that algorithm (Pillow src/libImaging/Resample.c),
+// so the C++ engine sees the same pixels as the PyTorch reference. No OpenCV: callers pass raw interleaved 8-bit BGR (OpenCV's layout).
 #pragma once
 
 #include <cstddef>

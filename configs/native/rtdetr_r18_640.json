@@ -43,7 +43,7 @@
       "size": [640, 640],
       "keep_aspect": false,
       "letterbox": false,
-      "algorithm": "Pillow 13 Image.resize BILINEAR: separable antialiased triangle filter (support 1 x scale), 22-bit fixed point, horizontal pass then vertical, uint8 rounding after each pass",
+      "algorithm": "Pillow 13 Image.resize BILINEAR: separable antialiased triangle filter (support 1 x scale), 22-bit fixed point, horizontal pass first unless (in_h - out_h) > 0 and (in_h - out_h) > 2 * (in_w - out_w), uint8 rounding after each pass",
       "cpp": "native/src/preprocess.cpp resize_bilinear_pillow"
     },
     "scale": "float32(value) / 255.0f, no mean/std normalisation",

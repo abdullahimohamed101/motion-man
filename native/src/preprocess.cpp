@@ -78,13 +78,20 @@ std::vector<std::uint8_t> resize_bilinear_pillow(const Bgr8View& src, int out_w,
   const int in_h = src.height;
   // Pillow returns a copy when the size is unchanged, and skips a pass whose dimension is unchanged.
   std::vector<std::uint8_t> cur(static_cast<std::size_t>(in_w) * in_h * 3);
-  for (int y = 0; y < in_h; ++y) std::memcpy(&cur[static_cast<std::size_t>(y) * in_w * 3], src.data + y * src.stride, in_w * 3);
+  for (int y = 0; y < in_h; ++y) {
+    std::memcpy(&cur[static_cast<std::size_t>(y) * in_w * 3], src.data + y * src.stride, static_cast<std::size_t>(in_w) * 3);
+  }
   int cur_w = in_w;
-  if (out_w != in_w) {  // horizontal pass first
-    const Coeffs c = precompute_coeffs(in_w, out_w);
-    std::vector<std::uint8_t> tmp(static_cast<std::size_t>(out_w) * in_h * 3);
-    for (int y = 0; y < in_h; ++y) {
-      const std::uint8_t* row = &cur[static_cast<std::size_t>(y) * in_w * 3];
+  int cur_h = in_h;
+  // Pillow 13.0.0 ImagingResampleInner: "If height is being scaled down more than twice the amount the width is,
+  // run the vertical pass first". The order changes the intermediate uint8 rounding, so it must match.
+  const bool horizontal_first = !((in_h - out_h) > 0 && (in_h - out_h) > (in_w - out_w) * 2);
+  const auto horizontal = [&] {
+    if (out_w == cur_w) return;
+    const Coeffs c = precompute_coeffs(cur_w, out_w);
+    std::vector<std::uint8_t> tmp(static_cast<std::size_t>(out_w) * cur_h * 3);
+    for (int y = 0; y < cur_h; ++y) {
+      const std::uint8_t* row = &cur[static_cast<std::size_t>(y) * cur_w * 3];
       for (int xx = 0; xx < out_w; ++xx) {
         const int xmin = c.bounds[xx * 2];
         const int xmax = c.bounds[xx * 2 + 1];
@@ -104,9 +111,10 @@ std::vector<std::uint8_t> resize_bilinear_pillow(const Bgr8View& src, int out_w,
     }
     cur.swap(tmp);
     cur_w = out_w;
-  }
-  if (out_h != in_h) {  // vertical pass
-    const Coeffs c = precompute_coeffs(in_h, out_h);
+  };
+  const auto vertical = [&] {
+    if (out_h == cur_h) return;
+    const Coeffs c = precompute_coeffs(cur_h, out_h);
     std::vector<std::uint8_t> tmp(static_cast<std::size_t>(cur_w) * out_h * 3);
     for (int yy = 0; yy < out_h; ++yy) {
       const int ymin = c.bounds[yy * 2];
@@ -119,6 +127,14 @@ std::vector<std::uint8_t> resize_bilinear_pillow(const Bgr8View& src, int out_w,
       }
     }
     cur.swap(tmp);
+    cur_h = out_h;
+  };
+  if (horizontal_first) {
+    horizontal();
+    vertical();
+  } else {
+    vertical();
+    horizontal();
   }
   return cur;
 }
