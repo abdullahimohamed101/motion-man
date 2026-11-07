@@ -1,5 +1,6 @@
 # ADR-003: RT-DETR from the original implementation, frozen by manifest
-Status: Proposed (confirmed or replaced at the end of G1)
+Status: Accepted (G1, 2026-11-07): exported with no plugin, C++ TensorRT FP32 parity PASS vs R0 (852/852,
+max |Δscore| 1.5e-4), 154 MB engine on the 8 GB RTX 3060 Ti (plan `native-g0-g1`, NG-6..NG-10)
 Date: 2026-11-04
 
 ## Context
