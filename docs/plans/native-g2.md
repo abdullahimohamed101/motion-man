@@ -1,5 +1,5 @@
 # Native G2: serial slice (one video, batch 1, one slot)
-Status: Draft (waiting for owner approval) · Branch: `feat/native-g2` (off `feat/native-g1`) · Spec: C§2, C§3,
+Status: Active (owner approved 2026-11-07) · Branch: `feat/native-g2` (off `feat/native-g1`) · Spec: C§2, C§3,
 C§7, C§8, ADR-001, ADR-003, ADR-006 (Proposed)
 
 ## Outcome
@@ -62,7 +62,7 @@ replayed detections.
   is a download that waits for the owner's yes (CPU torch is enough; GPU work stays in native).
 
 ## Steps
-1. [ ] **[Mac]** ADR-006 Proposed → reviewed. Python adds backend metadata to runspec and report (D2, D3):
+1. [x] **[Mac]** ADR-006 Proposed → reviewed. Python adds backend metadata to runspec and report (D2, D3):
    `store.resolve_runspec(backend=…)` and `metrics.build_report` stop hardcoding Ultralytics and FP32. Report
    1.1 is readable next to 1.0. pytest for both versions; legacy runs are unchanged apart from the new fields.
 2. [ ] **[Mac]** Tracker replay fixtures:
@@ -102,8 +102,8 @@ replayed detections.
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | |
-| N2-2 | Old (1.0) and new (1.1) reports and runspecs both open | `.venv/bin/pytest -q tests/test_runs.py tests/test_store.py` | |
+| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed |
+| N2-2 | Old (1.0) and new (1.1) reports and runspecs both open | `.venv/bin/pytest -q tests/test_runs.py tests/test_store.py` | step 1: passed incl. a run rewritten to 1.0 that still opens |
 | N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/pytest -q tests/test_tracker_replay.py` | |
 | N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R tracker_replay` | |
 | N2-5 | Native records equal Python's for the shared fixture | `ctest --preset mac-cpu -R records` and `.venv/bin/pytest -q tests/test_native_records.py` | |
@@ -127,3 +127,4 @@ replayed detections.
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
+- 2026-11-07 step 1: `settings.backend` (legacy default `ultralytics`/fp32 in `types.LEGACY_BACKEND`) and an optional `tracking` override in `resolve_runspec` (runspec 1.1); `build_report` takes `backend` and `tracker` (report 1.1 with `schema_version`, `backend`); `runspec_backend`/`report_backend` read 1.0 as legacy. compare gains a `backend` factor; bundle README names the backend. Legacy runs' config hash changes once (new key). Native stage timings deferred to step 6. Gate 543 passed.

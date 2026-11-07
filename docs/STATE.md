@@ -13,7 +13,7 @@ Updated: 2026-11-07
   G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
 - One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
   (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Draft)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- **Active plan: `docs/plans/native-g2.md` (Active, step 1 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
   ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
@@ -28,16 +28,16 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. Owner approves the G2 plan (and ADR-006 direction), then G2 step 1 [Mac]: backend metadata in runspec and
-   report 1.1. Step 7 needs the owner's yes to install the Python app env on the PC (download).
+1. G2 step 2 [Mac]: tracker replay fixtures + Python reference runner (`tools/tracker_replay/`,
+   `tests/fixtures/tracker/`). Step 7 needs the owner's yes to install the Python app env on the PC (download).
 
 ## Blocked / needs owner
-- G2 plan approval (above). Merging PRs #14 → #15 → #16.
+- Merging PRs #14 → #15 → #16.
 - Off-network PC access (Tailscale or not): deferred by the owner, needed by G5.
 - Optional: fix the frame 60 box in `crosswak-eval` and commit `r3`.
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
 
 ## Last check
 - PC `ctest --preset linux-cuda-release`: 9/9 (unit, golden, cuda_smoke, trt_infer, trt_parity, trt_refuse_tampered).
-- Mac `scripts/check.sh`: ruff ok, 535 passed; `ctest --preset mac-cpu` 4/4 (2026-11-07, step 10).
+- Mac `scripts/check.sh`: ruff ok, 543 passed (G2 step 1); `ctest --preset mac-cpu` 4/4 (2026-11-07, step 10).
 - Benchmarks (crosswalk, M5 Pro CPU): P2 `benchmark` on battery 45.86 fps (imgsz 640), 54.21 (imgsz 480).

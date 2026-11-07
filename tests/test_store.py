@@ -44,7 +44,8 @@ def test_tracker_config_is_read_from_the_installed_package():
 def test_runspec_resolves_everything_and_hashes_settings():
     spec = runspec(class_names={0: "person", 2: "car"}, codec="avc1", limits={"max_frames": 36000})
     s = spec["settings"]
-    assert spec["schema_version"] == "1.0" and spec["config_sha256"] == store.sha256_json(s)
+    assert spec["schema_version"] == "1.1" and spec["config_sha256"] == store.sha256_json(s)
+    assert s["backend"] == {"name": "ultralytics", "precision": "fp32"}  # the legacy default (ADR-006)
     assert s["input"]["input_id"].startswith("sha256:") and s["input"]["frame_range"] == [0, None]
     assert s["tracking"]["config"]["tracker_type"] == "bytetrack"
     assert s["tracking"]["config_sha256"] == store.sha256_json(s["tracking"]["config"])
@@ -67,6 +68,34 @@ def test_same_settings_same_hash_and_any_setting_change_changes_it():
     assert runspec(RunConfig(Path("in.mp4"), Path("out"), conf=0.4))["config_sha256"] != base
     assert runspec(device_used="cuda")["config_sha256"] != base
     assert runspec(input_id="sha256:" + "b" * 64)["config_sha256"] != base
+
+
+NATIVE = {"name": "tensorrt", "precision": "fp32", "profile": "rtdetr_r18_640", "engine_sha256": "sha256:" + "e" * 64}
+
+
+def test_a_native_backend_sets_precision_and_tracking_and_is_hashed():
+    tracking = {"type": "bytetrack", "implementation": "motionman-native", "config": {"class_policy": "aware"}}
+    spec = runspec(backend={**NATIVE, "precision": "fp16"}, tracking=tracking)
+    s = spec["settings"]
+    assert s["backend"]["name"] == "tensorrt" and s["inference"]["precision"] == "fp16"
+    assert s["tracking"]["implementation"] == "motionman-native"
+    assert s["tracking"]["config_sha256"] == store.sha256_json({"class_policy": "aware"})
+    assert runspec(backend=NATIVE)["config_sha256"] != runspec()["config_sha256"]
+    other_engine = {**NATIVE, "engine_sha256": "sha256:" + "f" * 64}
+    assert runspec(backend=other_engine)["config_sha256"] != runspec(backend=NATIVE)["config_sha256"]
+
+
+def test_a_backend_without_name_or_precision_is_refused():
+    with pytest.raises(ValueError, match="name and a precision"):
+        runspec(backend={"name": "tensorrt"})
+
+
+def test_runspec_backend_reads_both_versions():
+    assert store.runspec_backend(runspec(backend=NATIVE)) == NATIVE
+    old = runspec()
+    del old["settings"]["backend"]  # a 1.0 runspec has no block: it was the legacy backend
+    assert store.runspec_backend({**old, "schema_version": "1.0"}) == {"name": "ultralytics", "precision": "fp32"}
+    assert store.runspec_backend(None) == {"name": "ultralytics", "precision": "fp32"}
 
 
 def test_code_revision_is_recorded_but_not_hashed(monkeypatch):

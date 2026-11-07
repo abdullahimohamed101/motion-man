@@ -36,6 +36,7 @@ def _factors(doc: dict, runspec: dict, report: dict) -> dict:
         "warmup": {k: (report["timing"].get("warmup") or {}).get(k) for k in ("policy", "frames")},
         "task": s["model"]["task"],
         "model": {"weights": s["model"]["weights"], "sha256": s["model"].get("weights_sha256")},
+        "backend": store.runspec_backend(runspec),  # a 1.0 runspec means the legacy backend (ADR-006)
         "class_map": s["model"].get("class_map_sha256"),
         "tracker": s["tracking"]["config_sha256"],
         "imgsz": s["inference"]["imgsz"],
@@ -58,9 +59,9 @@ def _factors(doc: dict, runspec: dict, report: dict) -> dict:
 
 
 FACTORS = (  # the order _factors returns them in; tests check the two agree
-    "input", "frame_policy", "sampling", "output_policy", "warmup", "task", "model", "class_map", "tracker", "imgsz",
-    "conf", "iou", "class_filter", "precision", "device", "telemetry", "code", "software", "hardware", "platform",
-    "power",
+    "input", "frame_policy", "sampling", "output_policy", "warmup", "task", "model", "backend", "class_map",
+    "tracker", "imgsz", "conf", "iou", "class_filter", "precision", "device", "telemetry", "code", "software",
+    "hardware", "platform", "power",
 )  # fmt: skip
 
 

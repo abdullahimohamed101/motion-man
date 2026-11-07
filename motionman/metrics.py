@@ -14,9 +14,10 @@ from time import perf_counter
 import numpy as np
 
 import motionman
-from motionman.types import RunConfig, VideoInfo
+from motionman.types import LEGACY_BACKEND, RunConfig, VideoInfo
 
 WARMUP_FRAMES = 10
+REPORT_SCHEMA = "1.1"  # 1.1 adds schema_version and backend (ADR-006); a report without a version is 1.0
 PACKAGES = ("ultralytics", "torch", "torchvision", "opencv-python", "numpy", "lap")
 STAGES = ("decode_ms", "detect_track_ms", "render_ms", "write_ms")
 STAGE_SCOPES = {
@@ -165,8 +166,12 @@ def build_report(
     metrics: Metrics,
     device_used: str | None,
     output_frames_decoded: int | None = None,
+    backend: dict | None = None,
+    tracker: str = "bytetrack.yaml",
 ) -> dict:
+    backend = dict(backend or LEGACY_BACKEND)
     return {
+        "schema_version": REPORT_SCHEMA,
         "status": status,  # success | error | interrupted; anything but success is a partial run
         "error": error,
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -187,14 +192,27 @@ def build_report(
             "imgsz": config.imgsz,
             "conf": config.conf,
             "iou": config.iou,
-            "tracker": "bytetrack.yaml",
-            "precision": "fp32",
+            "tracker": tracker,
+            "precision": backend["precision"],
         },
+        "backend": backend,
         "device": {"requested": config.device, "used": device_used},
         "timing": timing_section(metrics),
         "telemetry": metrics.telemetry,
         "environment": environment(device_used),
     }
+
+
+def report_schema(report: dict) -> str:
+    """A report's schema version; reports written before 1.1 carry none and are 1.0."""
+    return str(report.get("schema_version") or "1.0")
+
+
+def report_backend(report: dict) -> dict:
+    """The backend a report records; a 1.0 report was produced by the legacy backend at its recorded precision."""
+    if report.get("backend"):
+        return dict(report["backend"])
+    return {**LEGACY_BACKEND, "precision": (report.get("model") or {}).get("precision") or LEGACY_BACKEND["precision"]}
 
 
 def environment(device_used: str | None) -> dict:

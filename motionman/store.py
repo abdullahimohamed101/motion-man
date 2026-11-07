@@ -24,9 +24,9 @@ from typing import Any
 import yaml
 
 from motionman import records
-from motionman.types import MotionManError, RunConfig, VideoInfo
+from motionman.types import LEGACY_BACKEND, MotionManError, RunConfig, VideoInfo
 
-RUNSPEC_SCHEMA = "1.0"
+RUNSPEC_SCHEMA = "1.1"  # 1.1 adds settings.backend (ADR-006); 1.0 runspecs have none and mean the legacy backend
 TRACKER_CONFIG = "bytetrack.yaml"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 _CHUNK = 1 << 20
@@ -69,6 +69,12 @@ def tracker_config() -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def runspec_backend(runspec: Mapping[str, Any] | None) -> dict:
+    """The backend a runspec records; a 1.0 runspec (no block) was produced by the legacy backend."""
+    settings = (runspec or {}).get("settings") or {}
+    return dict(settings.get("backend") or LEGACY_BACKEND)
+
+
 def code_revision(repo: Path = REPO_ROOT) -> dict:
     """Git commit and whether the tree had uncommitted changes; unknown outside a git checkout."""
     try:
@@ -101,11 +107,19 @@ def resolve_runspec(
     class_names: Mapping[int, str] | None = None,
     codec: str | None = None,
     limits: Mapping[str, Any] | None = None,
+    backend: Mapping[str, Any] | None = None,
+    tracking: Mapping[str, Any] | None = None,
 ) -> dict:
     """Resolve every default once and persist it (A§3). ``config_sha256`` covers the settings that determine
     the result; ``reproducibility`` (code, dependencies, machine) is recorded beside it but not hashed, so the
-    same settings on a new commit can still be compared as the same configuration."""
-    tracker = tracker_config()
+    same settings on a new commit can still be compared as the same configuration.
+
+    ``backend`` says what produced the result (ADR-006; default the legacy Ultralytics backend) and sets the
+    recorded precision. ``tracking`` replaces the installed ByteTrack configuration for a native tracker."""
+    backend = dict(backend or LEGACY_BACKEND)
+    if not isinstance(backend.get("name"), str) or not isinstance(backend.get("precision"), str):
+        raise ValueError(f"backend needs a name and a precision, got {backend!r}")
+    tracking = dict(tracking or {"type": "bytetrack", "config": tracker_config()})
     weights = weights_path or Path(config.model)
     names = {str(k): v for k, v in sorted(class_names.items())} if class_names is not None else None
     settings = {
@@ -123,7 +137,8 @@ def resolve_runspec(
             **{f"weights_{k}": v for k, v in optional_hash(weights, "weights file not present").items()},
             "class_map_sha256": sha256_json(names) if names is not None else None,
         },
-        "tracking": {"type": "bytetrack", "config": tracker, "config_sha256": sha256_json(tracker)},
+        "backend": backend,
+        "tracking": {**tracking, "config_sha256": sha256_json(tracking["config"])},
         "inference": {
             "device_requested": config.device,
             "device_used": device_used,
@@ -131,7 +146,7 @@ def resolve_runspec(
             "conf": config.conf,
             "iou": config.iou,
             "class_filter": None,
-            "precision": "fp32",
+            "precision": backend["precision"],
         },
         "sampling": {"policy": "every_frame"},
         "rendering": {
