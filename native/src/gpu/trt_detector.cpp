@@ -87,6 +87,8 @@ struct TrtDetector::Impl {
   int height = 0;
   std::vector<std::string> names;
   std::string engine_sha;
+  std::string gpu;
+  std::string driver;
 };
 
 std::unique_ptr<TrtDetector> TrtDetector::open(const DetectorPaths& paths) {
@@ -123,7 +125,8 @@ std::unique_ptr<TrtDetector> TrtDetector::open(const DetectorPaths& paths) {
   }
   expect("gpu", prop.name);
   expect("compute_capability", std::to_string(prop.major) + "." + std::to_string(prop.minor));
-  expect("driver", driver_version());
+  const std::string driver = driver_version();
+  expect("driver", driver);
   const std::string cuda = std::to_string(CUDART_VERSION / 1000) + "." + std::to_string(CUDART_VERSION % 1000 / 10);
   const json::Value* ct = id.find("cuda_toolkit");
   if (!ct || ct->kind != json::Value::Kind::String || ct->string.rfind(cuda + ".", 0) != 0) {
@@ -147,6 +150,8 @@ std::unique_ptr<TrtDetector> TrtDetector::open(const DetectorPaths& paths) {
 
   auto impl = std::make_unique<Impl>();
   impl->engine_sha = sha;
+  impl->gpu = prop.name;
+  impl->driver = driver;
   const auto& names = model.at("classes").at("names").items;
   for (const auto& n : names) impl->names.push_back(n.str());
   impl->width = impl->height = static_cast<int>(profile.at("export").at("input_size").num());
@@ -230,5 +235,8 @@ int TrtDetector::input_width() const { return impl_->width; }
 int TrtDetector::input_height() const { return impl_->height; }
 const std::vector<std::string>& TrtDetector::class_names() const { return impl_->names; }
 const std::string& TrtDetector::engine_sha256() const { return impl_->engine_sha; }
+const std::string& TrtDetector::gpu_name() const { return impl_->gpu; }
+const std::string& TrtDetector::driver() const { return impl_->driver; }
+std::string TrtDetector::tensorrt_version() { return compiled_tensorrt(); }
 
 }  // namespace motionman::gpu

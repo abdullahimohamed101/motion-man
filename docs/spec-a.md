@@ -23,6 +23,8 @@ After each phase gate, stop for the owner's go-ahead (MD§25).
   input (id, path, dims, timebase, frame range), model (weights id and hash, class-map hash), tracker (type,
   resolved config, hash), inference (device requested/actual, imgsz, conf/IoU, class filter, precision),
   rendering (codec, size/FPS, trails, audio), reproducibility (code revision, dependency lock hash, env), limits.
+  RunSpec and report 1.1 add a `backend` block (name, precision; for native also profile and hashes, ADR-006); a
+  1.0 RunSpec or report has none and means the legacy Ultralytics FP32 backend.
 - Terminal manifest: schema_version, run_id, status, input_id, config_sha256, records_sha256, UTC start/finish,
   counts (decoded, inferred, written), artifacts (path, bytes, sha256 each), validation (records, video_decode),
   capabilities. Unknown schema versions fail clearly. Missing measurements are null with a reason, never 0.

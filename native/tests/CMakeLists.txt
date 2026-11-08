@@ -23,6 +23,24 @@ target_compile_options(test_json_sha256 PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,Ap
 add_test(NAME json_sha256 COMMAND test_json_sha256 ${PROJECT_SOURCE_DIR}/configs/native/rtdetr_r18_640.json)
 set_tests_properties(json_sha256 PROPERTIES LABELS unit)
 
+add_executable(test_lapjv unit/test_lapjv.cpp)
+target_link_libraries(test_lapjv PRIVATE motionman_cpu)
+target_compile_options(test_lapjv PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME lapjv COMMAND test_lapjv ${PROJECT_SOURCE_DIR}/tests/fixtures/lapjv.json)
+set_tests_properties(lapjv PROPERTIES LABELS unit)
+
+add_executable(test_tracker_replay unit/test_tracker_replay.cpp)
+target_link_libraries(test_tracker_replay PRIVATE motionman_cpu)
+target_compile_options(test_tracker_replay PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME tracker_replay COMMAND test_tracker_replay ${PROJECT_SOURCE_DIR}/tests/fixtures/tracker)
+set_tests_properties(tracker_replay PROPERTIES LABELS unit)
+
+add_executable(test_native_records unit/test_native_records.cpp)
+target_link_libraries(test_native_records PRIVATE motionman_cpu)
+target_compile_options(test_native_records PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Werror>)
+add_test(NAME native_records COMMAND test_native_records ${PROJECT_SOURCE_DIR}/tests/fixtures/native_records.json)
+set_tests_properties(native_records PROPERTIES LABELS unit)
+
 # Golden-tensor check against the Python reference: needs OpenCV (PNG decode, found in native/) and the PC's cache.
 set(MOTIONMAN_CACHE "$ENV{HOME}/.cache/motionman" CACHE PATH "PC cache with golden PNGs and model artifacts")
 if(OpenCV_FOUND)
@@ -56,4 +74,11 @@ if(MOTIONMAN_CUDA)
            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/gpu/refuse_tampered.sh $<TARGET_FILE:motionman-native>
                    ${MOTIONMAN_PYTHON} ${mm_profile} ${mm_model} ${MOTIONMAN_CACHE}/golden)
   set_tests_properties(trt_refuse_tampered PROPERTIES LABELS gpu)
+
+  # G2 step 5 (N2-7): `run` on 60 frames of the crosswalk clip, plus no-overwrite, wrong-engine and SIGINT cases.
+  add_test(NAME native_run_smoke
+           COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/gpu/run_smoke.sh $<TARGET_FILE:motionman-native>
+                   ${PROJECT_SOURCE_DIR}/tests/fixtures/native_run/crosswalk_60.runspec.json
+                   ${MOTIONMAN_CACHE}/clips/crosswalk.mp4 ${mm_profile} ${mm_model})
+  set_tests_properties(native_run_smoke PROPERTIES LABELS gpu TIMEOUT 300)
 endif()

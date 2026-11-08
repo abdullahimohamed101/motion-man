@@ -1,0 +1,167 @@
+{
+  "class_names": {
+    "0": "person",
+    "1": "bicycle",
+    "10": "fire hydrant",
+    "11": "stop sign",
+    "12": "parking meter",
+    "13": "bench",
+    "14": "bird",
+    "15": "cat",
+    "16": "dog",
+    "17": "horse",
+    "18": "sheep",
+    "19": "cow",
+    "2": "car",
+    "20": "elephant",
+    "21": "bear",
+    "22": "zebra",
+    "23": "giraffe",
+    "24": "backpack",
+    "25": "umbrella",
+    "26": "handbag",
+    "27": "tie",
+    "28": "suitcase",
+    "29": "frisbee",
+    "3": "motorcycle",
+    "30": "skis",
+    "31": "snowboard",
+    "32": "sports ball",
+    "33": "kite",
+    "34": "baseball bat",
+    "35": "baseball glove",
+    "36": "skateboard",
+    "37": "surfboard",
+    "38": "tennis racket",
+    "39": "bottle",
+    "4": "airplane",
+    "40": "wine glass",
+    "41": "cup",
+    "42": "fork",
+    "43": "knife",
+    "44": "spoon",
+    "45": "bowl",
+    "46": "banana",
+    "47": "apple",
+    "48": "sandwich",
+    "49": "orange",
+    "5": "bus",
+    "50": "broccoli",
+    "51": "carrot",
+    "52": "hot dog",
+    "53": "pizza",
+    "54": "donut",
+    "55": "cake",
+    "56": "chair",
+    "57": "couch",
+    "58": "potted plant",
+    "59": "bed",
+    "6": "train",
+    "60": "dining table",
+    "61": "toilet",
+    "62": "tv",
+    "63": "laptop",
+    "64": "mouse",
+    "65": "remote",
+    "66": "keyboard",
+    "67": "cell phone",
+    "68": "microwave",
+    "69": "oven",
+    "7": "truck",
+    "70": "toaster",
+    "71": "sink",
+    "72": "refrigerator",
+    "73": "book",
+    "74": "clock",
+    "75": "vase",
+    "76": "scissors",
+    "77": "teddy bear",
+    "78": "hair drier",
+    "79": "toothbrush",
+    "8": "boat",
+    "9": "traffic light"
+  },
+  "config_sha256": "sha256:4953ff81866304cf5bae4d3b00ff57961e1ca33ff2f148a498be909294c83cf9",
+  "reproducibility": {
+    "code": {
+      "commit": "1c676e6169d2677a468f61f630d3288dd88d866d",
+      "dirty": true
+    },
+    "platform": "macOS-26.6-arm64-arm-64bit",
+    "python": "3.11.17",
+    "requirements": {
+      "sha256": "sha256:e18a6accfd0228791da38d288377eacd399f30288cae21c033b62ced4545a08f"
+    }
+  },
+  "schema_version": "1.1",
+  "settings": {
+    "backend": {
+      "engine_sha256": "sha256:5037876394edfbc98065fbfdfbaedeb52d9a164f91fbae1646b0cbef925ac079",
+      "gpu": "NVIDIA GeForce RTX 3060 Ti",
+      "name": "tensorrt",
+      "onnx_sha256": "sha256:a14a2c9929836c51daa86eda1beedd2f1cbc4cef2caec49b38520853c996d50a",
+      "precision": "fp32",
+      "profile": "rtdetr_r18_640",
+      "tensorrt": "11.2.1.2"
+    },
+    "inference": {
+      "class_filter": null,
+      "conf": 0.25,
+      "device_requested": "cuda",
+      "device_used": "cuda:0",
+      "imgsz": 640,
+      "iou": 0.7,
+      "precision": "fp32"
+    },
+    "input": {
+      "fps": 23.976023976023978,
+      "frame_count_reported_by_container": 1356,
+      "frame_range": [
+        0,
+        60
+      ],
+      "height": 1080,
+      "input_id": "sha256:99bfaab5577392e905d632b3260aa9796342425f4d74f257278dae576bccd45e",
+      "width": 1920
+    },
+    "limits": {
+      "max_duration_s": 600.0,
+      "max_file_bytes": 536870912,
+      "max_frames": 36000,
+      "max_long_side": 1920,
+      "max_short_side": 1080,
+      "output_budget_bytes": 2147483648
+    },
+    "model": {
+      "class_map_sha256": "sha256:8751fa440569314783b98ffde9d3fb565e557ddff1269f117b5a0f3ceac64183",
+      "task": "detect",
+      "weights": "rtdetr_r18_640",
+      "weights_reason": "weights file not present",
+      "weights_sha256": null
+    },
+    "rendering": {
+      "audio": "dropped",
+      "codec": "avc1",
+      "enabled": true,
+      "trail_expiry_frames": 60,
+      "trail_points": 30
+    },
+    "sampling": {
+      "policy": "every_frame"
+    },
+    "tracking": {
+      "class_policy": "aware",
+      "config": {
+        "fuse_score": true,
+        "match_thresh": 0.8,
+        "new_track_thresh": 0.25,
+        "track_buffer": 30,
+        "track_high_thresh": 0.25,
+        "track_low_thresh": 0.1,
+        "tracker_type": "bytetrack"
+      },
+      "config_sha256": "sha256:514d5e4c30f0cebf1395a7db2fa492531809899bdf04fa4e96ec889124d77b8f",
+      "type": "bytetrack"
+    }
+  }
+}

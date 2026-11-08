@@ -7,3 +7,4 @@
 | [003](ADR-003-rtdetr-model-contract.md) | RT-DETR from the original implementation, frozen by manifest | Accepted (G1) | model, TensorRT |
 | [004](ADR-004-tracker-ownership.md) | Shared detector, one tracker per stream (amends INV-1) | Proposed (G4) | tracking, concurrency |
 | [005](ADR-005-pc-toolkit-versions.md) | PC toolkit: WSL2 Ubuntu 24.04, CUDA 13.3.1, TensorRT 11.2.1 | Accepted | PC, toolkit |
+| [006](ADR-006-native-run-contract.md) | Native run contract, backend metadata and tracker semantics | Accepted (G2) | native, records, tracking |

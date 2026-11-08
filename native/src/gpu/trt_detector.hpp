@@ -38,6 +38,9 @@ class TrtDetector {
   int input_height() const;
   const std::vector<std::string>& class_names() const;
   const std::string& engine_sha256() const;
+  const std::string& gpu_name() const;
+  const std::string& driver() const;
+  static std::string tensorrt_version();  // the TensorRT this binary was compiled against, e.g. "11.2.1.2"
 
  private:
   struct Impl;

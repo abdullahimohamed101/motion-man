@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from motionman.metrics import Metrics, build_report, latency_summary, write_report
+from motionman.metrics import Metrics, build_report, latency_summary, report_backend, report_schema, write_report
 from motionman.types import RunConfig, VideoInfo
 
 
@@ -49,10 +49,10 @@ def test_stop_is_idempotent():
     assert m.processing_wall_s == first is not None
 
 
-def _report(m: Metrics, status="success", error=None):
+def _report(m: Metrics, status="success", error=None, **kw):
     cfg = RunConfig(Path("in.mp4"), Path("out"), max_frames=None)
     info = VideoInfo(Path("in.mp4"), 640, 480, 30.0, 90)
-    return build_report(status=status, error=error, config=cfg, info=info, metrics=m, device_used="cpu")
+    return build_report(status=status, error=error, config=cfg, info=info, metrics=m, device_used="cpu", **kw)
 
 
 def test_report_records_settings_and_timing():
@@ -83,6 +83,22 @@ def test_report_records_settings_and_timing():
     assert "not inference-only" in r["timing"]["detect_track_scope"]
     assert r["environment"]["packages"]["numpy"]
     json.dumps(r)
+
+
+def test_report_is_1_1_and_names_its_backend():
+    r = _report(Metrics())
+    assert report_schema(r) == "1.1" and r["backend"] == {"name": "ultralytics", "precision": "fp32"}
+    native = {"name": "tensorrt", "precision": "fp16", "engine_sha256": "sha256:" + "e" * 64}
+    n = _report(Metrics(), backend=native, tracker="motionman-native bytetrack")
+    assert n["backend"] == native and report_backend(n) == native
+    assert n["model"]["precision"] == "fp16" and n["model"]["tracker"] == "motionman-native bytetrack"
+
+
+def test_a_1_0_report_reads_as_the_legacy_backend_at_its_recorded_precision():
+    old = {k: v for k, v in _report(Metrics()).items() if k not in ("schema_version", "backend")}
+    assert report_schema(old) == "1.0"
+    assert report_backend(old) == {"name": "ultralytics", "precision": "fp32"}
+    assert report_backend({}) == {"name": "ultralytics", "precision": "fp32"}
 
 
 def test_partial_report_keeps_status_and_null_timing():

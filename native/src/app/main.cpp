@@ -1,6 +1,7 @@
 // motionman-native: the native engine's command line (spec C§3). G1 provides `infer`: preprocess golden images in
 // C++, run the TensorRT engine, and write every detection as JSON in the shape of r0.json for tools/model_export/
-// parity.py. Exit codes: 0 ok, 1 error, 2 usage, 3 engine refused (identity mismatch).
+// parity.py. G2 adds `run` (app/run.hpp): one video into a staging folder for Python to validate and publish.
+// Exit codes: 0 ok, 1 error, 2 usage, 3 engine refused (identity mismatch), 130 interrupted (run only).
 #include <opencv2/imgcodecs.hpp>
 
 #include <NvInferVersion.h>
@@ -14,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "app/run.hpp"
 #include "gpu/trt_detector.hpp"
 #include "motionman/json.hpp"
 #include "motionman/preprocess.hpp"
@@ -25,7 +27,9 @@ namespace {
 int usage() {
   std::fprintf(stderr,
                "usage: motionman-native infer --profile <configs/native/x.json> --model-dir <dir> --images <dir> "
-               "--out <file.json> [--precision fp32] [--name <run name>]\n");
+               "--out <file.json> [--precision fp32] [--name <run name>]\n"
+               "       motionman-native run --runspec <runspec.json> --run-id <id> --source <video> --out <staging dir>"
+               " --profile <configs/native/x.json> --model-dir <dir>\n");
   return 2;
 }
 
@@ -96,9 +100,11 @@ int infer(const std::map<std::string, std::string>& a) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc < 2 || std::string(argv[1]) != "infer" || argc % 2 != 0) return usage();
+  const std::string cmd = argc >= 2 ? argv[1] : "";
+  if ((cmd != "infer" && cmd != "run") || argc % 2 != 0) return usage();
   std::map<std::string, std::string> args;
   for (int i = 2; i + 1 < argc; i += 2) args[argv[i]] = argv[i + 1];
+  if (cmd == "run") return motionman::app::run(args);  // handles its own errors and always reports a status
   try {
     return infer(args);
   } catch (const motionman::gpu::IdentityError& e) {

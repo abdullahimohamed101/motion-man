@@ -109,3 +109,22 @@ def test_cli_compare_prints_confounders_writes_a_file_and_exits_0(make, capsys):
     (path,) = (make.root / "comparisons").glob("*/comparison.json")
     assert json.loads(path.read_text())["confounders"] == ["power"]
     assert cli.main(["compare", a, "b_missing", "--data-root", str(make.root)]) == 2
+
+
+def test_a_runspec_without_backend_compares_as_the_legacy_backend():
+    """A 1.0 runspec (before ADR-006) and a new legacy one agree on backend; a TensorRT run differs."""
+    settings = {
+        "input": {"input_id": "sha256:aa", "frame_range": [0, None]},
+        "sampling": {"policy": "every_frame"},
+        "rendering": {"enabled": True, "codec": "avc1", "trail_points": 30},
+        "model": {"task": "detect", "weights": "yolo11n.pt"},
+        "tracking": {"config_sha256": "sha256:bb"},
+        "inference": {"imgsz": 640, "conf": 0.25, "iou": 0.7, "class_filter": None, "precision": "fp32",
+                      "device_used": "cpu"},
+    }  # fmt: skip
+    doc, report = {"settings": {}, "summary": {}}, {"timing": {}}
+    old = compare._factors(doc, {"settings": settings}, report)["backend"]
+    new = compare._factors(doc, {"settings": {**settings, "backend": dict(store.LEGACY_BACKEND)}}, report)["backend"]
+    native = compare._factors(doc, {"settings": {**settings, "backend": {"name": "tensorrt", "precision": "fp32"}}},
+                              report)["backend"]  # fmt: skip
+    assert old == new == {"name": "ultralytics", "precision": "fp32"} and native != old

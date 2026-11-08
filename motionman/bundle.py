@@ -187,6 +187,7 @@ def _json_bytes(obj) -> bytes:
 def _readme(run: runs.OpenRun, names: list[str]) -> str:
     s = run.runspec["settings"]
     inf, frame_range = s["inference"], s["input"]["frame_range"]
+    backend = store.runspec_backend(run.runspec)
     flags = f"--device {inf['device_requested']} --imgsz {inf['imgsz']}"
     if frame_range[1] is not None:
         flags += f" --max-frames {frame_range[1]}"
@@ -201,6 +202,7 @@ This is an integrity check (every entry matches {BUNDLE_MANIFEST}), not proof of
 Reproduce it (needs the same input video and weights; check their hashes in runspec.json):
   input  {s["input"]["input_id"]}
   model  {s["model"]["weights"]} {s["model"].get("weights_sha256")}
+  backend {backend["name"]} ({backend["precision"]})
   python -m motionman --source <your copy of the input> {flags}
 Compare timings only within the same power state and hardware (see report.json "environment" and
 "timing", and doctor.json). Track IDs are local to this run.

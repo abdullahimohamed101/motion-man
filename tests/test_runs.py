@@ -89,6 +89,37 @@ def test_runspec_and_schema_mismatches_refuse_the_run(clip, root):
         runs.open_run(summary, root)
 
 
+def test_a_run_written_before_backend_metadata_still_opens(clip, root):
+    """Runs published with runspec and report 1.0 (no backend block) keep opening (ADR-006, plan N2-2)."""
+    canonical_run(clip, root.path)
+    (summary,) = runs.list_runs(root)
+    folder = summary.path
+    spec = json.loads((folder / store.RUNSPEC).read_text())
+    del spec["settings"]["backend"]
+    spec.update(schema_version="1.0", config_sha256=store.sha256_json(spec["settings"]))
+    report = json.loads((folder / pipeline.REPORT).read_text())
+    for key in ("schema_version", "backend"):
+        del report[key]
+    report["config_sha256"] = spec["config_sha256"]
+    (folder / store.RUNSPEC).write_text(json.dumps(spec))
+    (folder / pipeline.REPORT).write_text(json.dumps(report))
+    manifest = json.loads((folder / store.MANIFEST).read_text())
+    for a in manifest["artifacts"]:
+        a.update(bytes=(folder / a["path"]).stat().st_size, sha256=store.sha256_file(folder / a["path"]))
+    manifest["config_sha256"] = spec["config_sha256"]
+    (folder / store.MANIFEST).write_text(json.dumps(manifest))
+    run = runs.open_run(runs.list_runs(root)[0], root)
+    assert store.runspec_backend(run.runspec) == {"name": "ultralytics", "precision": "fp32"}
+    assert "schema_version" not in run.report
+
+
+def test_a_new_run_records_the_legacy_backend(clip, root):
+    report = canonical_run(clip, root.path)
+    run = runs.open_run(runs.list_runs(root)[0], root)
+    assert report["schema_version"] == "1.1" and report["backend"]["name"] == "ultralytics"
+    assert run.runspec["schema_version"] == "1.1" and run.runspec["settings"]["backend"] == report["backend"]
+
+
 def test_legacy_outputs_are_listed_read_only_and_unverified(clip, root, tmp_path):
     legacy_dir = tmp_path / "runs"
     pipeline.run(RunConfig(clip, legacy_dir / "a"), make_tracker=FakeTracker, resolve=lambda d: "cpu")
