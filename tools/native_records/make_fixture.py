@@ -88,8 +88,11 @@ def timing_cases() -> list[dict]:
     names = ["decode_ms", "preprocess_ms", "infer_ms", "track_ms", "render_ms", "write_ms"]
     fixed = [0.0005, 0.0015, 1.2345, 2.0, 1234.5675, 0.0004999, 99.9995]
     cases = []
+    # Inputs use only uniform draws and exact scaling: lognormal/normal call libm, which differs in the last bit
+    # between macOS and Linux and made the fixture platform-dependent.
+    scales = [0.01, 1.0, 100.0]
     for n in range(60):
-        values = fixed if n == 0 else [float(rng.lognormal(0, 1.5)) for _ in names[: len(fixed) - 1]] + [0.0]
+        values = fixed if n == 0 else [rng.uniform(0, 1) * float(rng.choice(scales)) for _ in range(6)] + [0.0]
         stages = dict(zip(names, values[: len(names)], strict=True))
         cases.append(
             {
@@ -114,7 +117,7 @@ def trail_cases() -> list[dict]:
         for tid in (1, 2, 3):
             hidden = (tid == 2 and 40 <= f < 70) or (tid == 3 and f >= 50)  # 2 returns after 30, 3 leaves for good
             if not hidden:
-                cx, cy = 100 + 3 * f + 50 * tid + rng.normal(0, 2), 300 + rng.normal(0, 2)
+                cx, cy = 100 + 3 * f + 50 * tid + rng.uniform(-3, 3), 300 + rng.uniform(-3, 3)
                 objs.append([tid, f32(cx - 20), f32(cy - 40), f32(cx + 20), f32(cy + 40)])
         if f % 10 == 0:
             objs.append([None, 10.0, 10.0, 20.0, 20.0])  # no ID, no trail
