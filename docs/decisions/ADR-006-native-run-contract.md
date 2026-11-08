@@ -1,5 +1,5 @@
 # ADR-006: Native run contract, backend metadata and tracker semantics
-Status: Proposed (G2; accepted or changed at the G2 gate)
+Status: Accepted (G2, 2026-11-07), with the amendments below; the owner reviews them at the G2 gate
 Date: 2026-11-07
 
 ## Context
@@ -36,6 +36,25 @@ the tracker. When the tracker returns no tracks, Ultralytics keeps the raw boxes
   - A frame where the tracker returns nothing records its detections with score > `conf`, with null IDs (INV-2),
     unless an unconfirmed track is pending; then it records no objects (Ultralytics 8.4.196 behaviour).
   - A box with nothing left inside the image is dropped and counted in the receipt, never written.
+
+## Amendments from building G2
+- **Runspec for native:** `settings.backend` carries `profile`, `onnx_sha256`, `engine_sha256`, `gpu` and
+  `tensorrt`; `settings.tracking.class_policy` is required; `rendering.codec` is `avc1` (H.264). Native refuses
+  (exit 3) a runspec whose source hash, engine hash, profile, GPU or class list differs from what it loads.
+- **Receipt** (`native_receipt.json`, schema 1.0): status `success | error | refused | interrupted`, the run ID,
+  the runspec and source hashes, frame counts (decoded, processed, records, timing rows, video), object counts,
+  engine identity and phase times. Written atomically on every exit once the output folder is checked. Python
+  publishes only when the receipt matches the run and its own checks pass. Exit codes 0, 1, 2, 3, 130.
+- **Timestamps:** a decoder may report no timestamp (0 ms) for the frames it drains after the last packet
+  (Ubuntu's OpenCV 4.6 does on the crosswalk clip). An unbroken run of such frames at the end is counted in
+  `frames.timestamps_missing`, and the manifest marks `validation.timestamps` `UNVERIFIED`. A timestamp after a
+  missing one, or any other drift, still fails the run.
+- **Report 1.1 timing for a serial native run:** `detect_track_ms` is preprocess + infer + track per frame, so
+  existing views stay correct; `timing.native_stages` keeps the three apart and scope strings say what each
+  covers. This sum is valid only while frames run one at a time; G4 must not reuse it for overlapped stages
+  (C§8).
+- **Replay input:** `motionman-native run --dump-detections` writes each frame's admitted detections, exact in
+  float32, for parity checks against the Python reference.
 
 ## Alternatives
 - Native writes report and manifest itself: duplicates validation and lets an exit code claim success. Rejected.

@@ -1,6 +1,6 @@
 # Native G2: serial slice (one video, batch 1, one slot)
-Status: Active (owner approved 2026-11-07) · Branch: `feat/native-g2` (off `feat/native-g1`) · Spec: C§2, C§3,
-C§7, C§8, ADR-001, ADR-003, ADR-006 (Proposed)
+Status: G2 gate reached 2026-11-07, awaiting the owner (approved 2026-11-07) · Branch: `feat/native-g2` (off `feat/native-g1`) · Spec: C§2, C§3,
+C§7, C§8, ADR-001, ADR-003, ADR-006 (Accepted at G2)
 
 ## Outcome
 On the PC, `python -m motionman --backend native --source <clip>` runs one video through `motionman-native`:
@@ -100,24 +100,55 @@ replayed detections.
    - The run folder and source are copied to the Mac and opened in the UI.
    - An interrupted native run (SIGINT) stays unpublished and is reported as `INTERRUPTED`.
    - Observed fps is recorded as an observation.
-9. [ ] **[Mac]** G2 write-up: acceptance, ADR-006 Accepted or changed, G3–G6 re-estimate, STATE, PR.
+9. [x] **[Mac]** G2 write-up: acceptance, ADR-006 Accepted or changed, G3–G6 re-estimate, STATE, PR.
    **G2 gate: stop for the owner.**
 
 ## Acceptance
 | # | Criterion | Command | Result |
 |---|-----------|---------|--------|
-| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed; step 2: 563; step 3: 564; step 4: 568 |
+| N2-1 | Python gate passes; legacy runs unchanged except new metadata | `scripts/check.sh` | step 1: ruff ok, 543 passed; step 2: 563; step 3: 564; step 4: 568; step 6: 582; steps 7–9: 583. Legacy runs only gain `backend` and report `schema_version` |
 | N2-2 | Old (1.0) and new (1.1) reports and runspecs both open | `.venv/bin/pytest -q tests/test_runs.py tests/test_store.py` | step 1: passed incl. a run rewritten to 1.0 that still opens |
 | N2-3 | Python reference reproduces the committed tracker fixtures | `.venv/bin/python tools/tracker_replay/reference.py --check` (imports Ultralytics, so outside pytest, INV-8) and `.venv/bin/pytest -q tests/test_tracker_replay.py` | step 2: 14/14 reproduced exactly; pytest 20 passed; a swapped ID is caught. Step 3: 16/16 (15 scenarios + lapjv) |
-| N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R 'tracker_replay\|lapjv'` | step 3 (Mac): 15/15 fixtures with raw IDs equal and max box error 0 px; LAPJV 400/400 vs lap incl. ties; aware checks pass; 6 mutations caught |
-| N2-5 | Native records equal Python's for the shared fixture | `ctest --preset mac-cpu -R native_records` and `.venv/bin/pytest -q tests/test_native_records.py` | step 4 (Mac): 130/130 record lines and 60/60 timing lines byte-identical, 3 bad boxes refused by both, 22/22 trail checkpoints; pytest 4 passed; 5 mutations caught |
+| N2-4 | Native ByteTrack matches the fixtures (agnostic) and aware fixtures pass | `ctest --preset mac-cpu -R 'tracker_replay\|lapjv'` | step 3 (Mac): 15/15 fixtures with raw IDs equal and max box error 0 px; LAPJV 400/400 vs lap incl. ties; aware checks pass; 6 mutations caught. Step 5 (PC, GCC 13): passes, no warnings |
+| N2-5 | Native records equal Python's for the shared fixture | `ctest --preset mac-cpu -R native_records` and `.venv/bin/pytest -q tests/test_native_records.py` | step 4 (Mac): 130/130 record lines and 60/60 timing lines byte-identical, 3 bad boxes refused by both, 22/22 trail checkpoints; pytest 4 passed; 5 mutations caught. Step 5 (PC, GCC 13): passes |
 | N2-6 | Controller publishes only verified runs (fake native, 6 failure cases) | `.venv/bin/pytest -q tests/test_native_controller.py` | step 6 (Mac): 14 passed. Success publishes and opens in `runs` and the UI views; crash, missing records, short records, short video, exit 0 with another run's receipt, exit 0 with status error, refused, self-interrupted and Ctrl-C are never published. 3/3 mutations caught |
 | N2-7 | Native run smoke passes on the PC GPU | `ctest --preset linux-cuda-release -L gpu -R native_run_smoke` | step 5 (PC): passed. 60 frames, 60 records and timing rows; rerun into the same folder refused, unchanged; wrong engine exit 3, no outputs; SIGINT exit 130 after 24 whole frames. Two runs byte-identical (records and video). PC ctest 13/13 |
 | N2-8 | Real replay parity on crosswalk detections: identical associations after renaming | `python tools/tracker_replay/compare.py --dump <crosswalk dets>` on the PC | step 7 (PC): 1356 frames, 392,691 admitted detections, 117,154 track outputs, 3,635 IDs: 0 problems, raw IDs equal (no renaming needed), max box error 0 px. The same file in aware mode gives 1569 problems, so the check discriminates |
 | N2-9 | Published native run passes existing readers | on the PC: `python -m motionman --backend native --source <crosswalk>`, then `analyze` and `evaluate --dataset crosswak-eval@r2` on its run ID | step 8 (PC): `r_20261107T234147Z_84aaf4` SUCCEEDED, 1356 frames; `open_run` ok; `analyze` on 3 saved region sets ok (rs_1a46…: 47 crossings, far-kerb peak 29); `evaluate` person P 0.803 R 0.959 (TP 277, FP 68, FN 12, 46 frames). Copied to the Mac: all artifact hashes match, opens in the UI, H.264 video plays (56.6 s, 1920×1080), Performance tab renders |
 | N2-10 | Interrupted native run is not published; manifest `INTERRUPTED` | SIGINT during a PC run, then `ls data/runs` and read the staging manifest | step 8 (PC): SIGINT to the process group after 15 s: controller exit 130, engine stopped after 275 whole frames, staging manifest `INTERRUPTED`, records = timing rows = video = 275, runs/ unchanged, no engine process left |
 | N2-11 | Report shows backend tensorrt, engine hash, precision fp32, GPU name | `jq .backend data/runs/<id>/report.json` | step 8 (PC): report 1.1, backend tensorrt / fp32 / rtdetr_r18_640, engine sha256:50378763…, ONNX sha256:a14a2c99…, GPU NVIDIA GeForce RTX 3060 Ti, TensorRT 11.2.1.2; environment.gpu the same |
-| N2-12 | Mac `mac-cpu` and PC CTest all pass; no weights, engines or footage in git | `ctest --preset mac-cpu`, `ctest --preset linux-cuda-release`, `git ls-files \| grep -E '\.(pth\|onnx\|engine\|plan\|mp4)$'` | |
+| N2-12 | Mac `mac-cpu` and PC CTest all pass; no weights, engines or footage in git | `ctest --preset mac-cpu`, `ctest --preset linux-cuda-release`, `git ls-files \| grep -E '\.(pth\|onnx\|engine\|plan\|mp4)$'` | step 9: Mac 7/7, PC 13/13 (step 8 build), grep finds nothing (exit 1); `tests/fixtures` 500 KB; the crosswalk replay fixture stays on the PC |
+
+## G2 result and re-estimate
+- G2 met: N2-1..N2-12 all have a command and a result above. ADR-006 Accepted, with the amendments it lists.
+- What exists now: `python -m motionman --backend native` on the PC runs RT-DETR in TensorRT FP32 from C++ with
+  a native ByteTrack whose output equals the Python reference exactly (15 scenarios and the full crosswalk clip),
+  writes records byte-identical in format to Python's, and publishes only after Python verifies everything.
+- Retired risks: tracker parity (exact, not within tolerance), record format drift (shared fixture), native exit
+  status trusted alone (receipt + Python checks), H.264 on the PC (it works).
+- Found in G2:
+  - Ubuntu's OpenCV 4.6 gives no timestamp for the frames its decoder drains at end of file (20 on crosswalk).
+    Counted and marked `UNVERIFIED`, never fatal on its own (ADR-006).
+  - Observed on one crosswalk run (not a benchmark): infer p50 about 20 ms, C++ preprocessing (Pillow-exact
+    resize on the CPU) about 6–9 ms, drawing about 14 ms, 22 fps end to end. The CPU stages are as large as
+    inference, so G4's overlap of CPU and GPU work matters more than batching alone.
+  - Admission above 0.1 (D6) gives busy videos: the tracker keeps low-score tracks and draws them. A render
+    threshold, or a policy change, is the owner's call (gate note).
+  - The UI does not show which backend made a run (gate note; UI changes were out of scope).
+  - The PC app env is Python 3.12 (system venv; no uv on the PC); the Mac and CI use 3.11.
+- Calendar time for G2 was 2026-11-07; focused hours were not timed (no claim).
+- Re-estimate in focused days:
+
+  | Gate | Before (G1) | Now | Why |
+  |---|---|---|---|
+  | G2 | 4–6 | done | |
+  | G3 | 3–5 | 3–5 | Unchanged; the strongly typed FP16 export is still the first unknown |
+  | G4 | 4–7 | 5–8 | CPU preprocessing and drawing are as slow as inference, so they need overlapping too |
+  | G5 | 2–4 | 2–4 | Unchanged; off-network access still open |
+  | G6 | 3–6 | 3–6 | Unchanged; owner labelling time not included |
+
+  The remaining G3–G6 total is 13–23 days, or 16–29 with the 25% contingency. These are estimates, not a
+  deadline.
 
 ## Risks
 - Exact tracker parity can fail on floating-point or assignment ties. Investigate and pin a fixture first, and
@@ -140,3 +171,4 @@ replayed detections.
 - 2026-11-07 step 6: `motionman/native.py` (`run`, `NativeConfig`, `native_runspec`, `backend_block`) and `--backend native` / `--class-policy` in the CLI (native defaults: device cuda, profile `rtdetr_r18_640`; `--telemetry` and `--device cpu` refused). The controller imports, writes the runspec, launches the engine, relays progress, forwards Ctrl-C and waits for the receipt, then checks the receipt (run ID, runspec and source hashes, engine, consistent counts) and validates records, decoded video, timing rows and the source before `pipeline._finish` writes report and manifest and publishes. Refusal maps to CLI exit 2, an engine interrupt to 130. Report 1.1 for native (D3): `detect_track_ms` = preprocess + infer + track per frame (valid while G2 is serial), plus `timing.native_stages`, native scope strings and the GPU from the receipt (no torch import); the UI shows a native run unchanged. Manifest validation adds `native_receipt` and `timings`. Receipt gains `timing.processing_wall_s`. `tests/fake_native.py` covers 10 behaviours. Smoke runspec now built by `native.native_runspec`. Gate 582, PC ctest 13/13.
 - 2026-11-07 step 7: owner's yes. PC app env `~/motion-man/.venv`: system Python 3.12.3 venv + pip (no uv on the PC), torch 2.15.0+cpu and torchvision from the PyTorch CPU index, then `requirements-dev.txt`; ultralytics 8.4.196, lap 0.5.13, numpy 2.4.6, opencv-python 5.0.0; 1.9 GB. `reference.py --check` 16/16 on the PC env. `motionman-native run --dump-detections` (admitted detections, `%.9g` float32-exact), `tools/tracker_replay/compare.py` (dump → reference replay → fixture → `test_tracker_replay <file>`, a new single-file mode). Found: Ubuntu's OpenCV 4.6 reports 0 ms for the 20 frames its decoder drains after the last packet (opencv-python 5.0 does not), so the first full run failed the constant-fps check at frame 1336. Native now counts a trailing run of 0 ms frames as `frames.timestamps_missing` instead of failing; a timestamp after such a frame is still an error; the controller records manifest `validation.timestamps` `UNVERIFIED` when the count is non-zero (fake `drained_tail` test). Full crosswalk run: success, 1356 frames, 20 timestamps missing. Gate 583, PC ctest 13/13.
 - 2026-11-07 step 8: synced the branch and `data/regions`, `data/datasets` to the PC. First end-to-end native run published but its `mp4v` video did not play in the browser (error 4, unsupported source). Probe: Ubuntu's OpenCV 4.6 does write H.264 via libx264 (avc1, H264, X264 all open and write `h264`), so the step 5 assumption was wrong; the controller now writes `avc1` like Python (smoke runspec regenerated). Rerun `r_20261107T234147Z_84aaf4`: SUCCEEDED, 1356 frames, H.264; observed 22.09 fps end to end, detect+track p50 25.6 ms (infer about 20 ms), processing 61.4 s, setup 1.95 s, model load about 1.2 s: one run, an observation, not a benchmark (ADR-002). analyze, evaluate, open_run, Mac UI all read it. SIGINT run unpublished, `INTERRUPTED`. Gate notes: the native run draws many low-score boxes (admission > 0.1 per D6, tracker keeps them), and the UI does not show which backend made a run. Gate 583, PC ctest 13/13.
+- 2026-11-07 step 9: acceptance N2-1..N2-12 complete; ADR-006 Accepted with amendments (drained-tail timestamps, avc1, report 1.1 timing mapping, dump flag); spec C§11 updated; G3–G6 re-estimated (13–23 days); STATE; G2 PR stacked on the G1 PR. G2 gate.

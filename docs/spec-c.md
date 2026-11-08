@@ -127,5 +127,6 @@ switches under occlusion, RT-DETR FP16. Each is published as **met, unmet or inc
 ## C§11 ADRs for this release (NA§4.3)
 Approved by the owner 2026-11-04. Recorded so far: ADR-001 native backend boundary, ADR-002 evidence policy (both Accepted), ADR-003 RT-DETR model contract
 (Accepted at G1), ADR-004 tracker ownership and INV-1 change (Proposed until G4), ADR-005 PC toolkit (Accepted
-at G0). Still to record at their gate: child-run schema compatibility (G2), slot and scheduling
-lifetime (G4), durable remote job protocol (G5).
+at G0), ADR-006 native run contract, report 1.1 and tracker semantics (Accepted at G2; child runs and
+`session.json` are revisited in G4). Still to record at their gate: slot and scheduling lifetime (G4), durable
+remote job protocol (G5).

@@ -6,18 +6,19 @@ Updated: 2026-11-07
 ## Now
 - Releases A and B part 1 (P3, P4) merged (PRs #6–#13). Release C, the native C++/CUDA/TensorRT/RT-DETR engine,
   is in progress (`docs/spec-c.md`, plan `docs/plans/native-g0-g1.md`).
-- **G0 and G1 complete; the owner approved planning G2.** RT-DETRv2-S runs in TensorRT FP32 from C++
+- **G0, G1 and G2 complete; G2 gate reached 2026-11-07, waiting for the owner.** RT-DETRv2-S runs in TensorRT FP32 from C++
   (`motionman-native infer`) with bit-exact preprocessing and parity PASS vs PyTorch (852/852, max |Δscore|
   1.5e-4); mismatched engines refused. NG-1..NG-11 all recorded. ADR-003 Accepted.
-- Re-estimate (plan § G1 result): G2–G6 16–28 focused days, 20–35 with contingency. Raised: G2 (ByteTrack port),
-  G3 (TensorRT 11 is strongly typed, so FP16 likely needs a mixed-precision ONNX export).
-- One PR per gate, stacked; the owner merges in order: #14 spec + plan (`feat/native-plan` → main), #15 G0
-  (`feat/native-g0`), #16 G1 (`feat/native-g1`). Each PR's base is the one before it.
-- **Active plan: `docs/plans/native-g2.md` (Active, steps 1–8 done)** on `feat/native-g2` (off `feat/native-g1`, not pushed).
+- Re-estimate (plan `native-g2.md` § G2 result): G3–G6 13–23 focused days, 16–29 with contingency. G4 raised
+  (CPU preprocessing and drawing are as slow as inference, so they need overlapping).
+- PRs: #14–#16 merged 2026-11-07, but #16 (G1) merged into `feat/native-g0` after #15 had already merged, so
+  **G1 never reached `main`**. Re-landed as its own PR `feat/native-g1` → `main`; the G2 PR also targets `main`
+  (its diff includes G1 until the G1 PR merges). One PR per gate; from now on every gate PR targets `main`.
+- Plan `docs/plans/native-g2.md`: all 9 steps done, N2-1..N2-12 recorded, ADR-006 Accepted with amendments.
+  Branch `feat/native-g2` (off `feat/native-g1`), pushed.
   `motionman-native run` works on the PC GPU (crosswalk 60 frames, deterministic; refusal, no-overwrite, SIGINT).
   `python -m motionman --backend native` publishes on the PC (crosswalk, 1356 frames, H.264; analyze, evaluate
   and the Mac UI read it; Ctrl-C leaves it unpublished). Real replay parity on the full crosswalk clip: exact.
-  ADR-006 Proposed (native run contract, backend metadata, tracker semantics).
 - PC: Windows 11 + WSL2 Ubuntu 24.04, RTX 3060 Ti 8 GB, driver 610.88. Stack per ADR-005 (Accepted): CUDA 13.3.1,
   TensorRT 11.2.1.2, CMake 3.28, OpenCV 4.6; 85 packages held. Details: `docs/environment.md`.
 - Access: `ssh motionman-pc` from the Mac on the home LAN only (key auth, Windows OpenSSH); Linux via
@@ -34,13 +35,12 @@ Updated: 2026-11-07
   (`wsl --shutdown`).
 
 ## Next step (exact)
-1. G2 step 9 [Mac]: write-up (acceptance N2-1..N2-12 incl. N2-12's `git ls-files` check), ADR-006 Accepted or
-   changed (add: drained-tail timestamps, avc1, D3 timing mapping), G3–G6 re-estimate, STATE, push
-   `feat/native-g2` and open the G2 PR stacked on #16. **G2 gate: stop for the owner.** Gate notes to raise:
-   low-score clutter in native video (D6), UI does not show the backend.
+1. **G2 gate: wait for the owner.** They review and merge the G1 re-land PR and the G2 PR (both → `main`) and
+   decide the two gate notes: low-score clutter in native video (admission > 0.1, D6) and the UI not showing
+   the backend. Then, with their go-ahead, plan G3 (FP16; spec C§11 and `docs/spec-c.md`).
 
 ## Blocked / needs owner
-- Merging PRs #14 → #15 → #16.
+- Merging the G1 re-land PR and the G2 PR into `main`.
 - Off-network PC access (Tailscale or not): deferred by the owner, needed by G5.
 - Optional: fix the frame 60 box in `crosswak-eval` and commit `r3`.
 - Side request: portfolio website update; waiting for its folder/repo and what to change.
