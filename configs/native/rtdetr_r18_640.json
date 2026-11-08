@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "profile": "rtdetr_r18_640",
+  "description": "Intended settings for the first native detector (spec C§5, ADR-003). The generated manifest.json next to the cached model records what was actually produced; check_manifest.py compares the two.",
+  "upstream": {
+    "repository": "https://github.com/lyuwenyu/RT-DETR",
+    "commit": "df2a96c8c3a098567a1149bf0248da6efe6d495d",
+    "subdir": "rtdetrv2_pytorch",
+    "config": "configs/rtdetrv2/rtdetrv2_r18vd_120e_coco.yml",
+    "config_overrides": ["PResNet.pretrained=False"],
+    "licence": "Apache-2.0"
+  },
+  "checkpoint": {
+    "name": "RT-DETRv2-S (r18vd, 120e, COCO, 48.1 AP)",
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
+    "sha256": "sha256:2ace52184b620204004509b72752ac7bfe64aadaf7fc1d076b18df8ab5a5c77e",
+    "bytes": 81198974,
+    "state": "ema"
+  },
+  "export": {
+    "exporter": "upstream tools/export_onnx.py logic (deploy model + deploy postprocessor), no simplifier",
+    "opset": 16,
+    "input_size": 640,
+    "inputs": {
+      "images": {"dtype": "float32", "shape": ["N", 3, 640, 640]},
+      "orig_target_sizes": {"dtype": "int64", "shape": ["N", 2], "order": "width,height"}
+    },
+    "outputs": {
+      "labels": {"dtype": "int64", "shape": ["N", 300]},
+      "boxes": {"dtype": "float32", "shape": ["N", 300, 4], "format": "xyxy source pixels"},
+      "scores": {"dtype": "float32", "shape": ["N", 300]}
+    }
+  },
+  "classes": {
+    "vocabulary": "coco80",
+    "label_index": "0..79 in COCO category order (deploy mode skips the 91-id remap)"
+  },
+  "preprocessing": {
+    "revision": "pillow-bilinear-v1",
+    "source": "upstream val_dataloader: torchvision v2 Resize([640, 640]) on a PIL image, then ConvertPILImage(float32, scale)",
+    "decode": "8-bit RGB (Python: PIL convert('RGB'); C++: OpenCV BGR, channels swapped at layout)",
+    "resize": {
+      "size": [640, 640],
+      "keep_aspect": false,
+      "letterbox": false,
+      "algorithm": "Pillow 13 Image.resize BILINEAR: separable antialiased triangle filter (support 1 x scale), 22-bit fixed point, horizontal pass first unless (in_h - out_h) > 0 and (in_h - out_h) > 2 * (in_w - out_w), uint8 rounding after each pass",
+      "cpp": "native/src/preprocess.cpp resize_bilinear_pillow"
+    },
+    "scale": "float32(value) / 255.0f, no mean/std normalisation",
+    "layout": "NCHW, RGB plane order, batch 1",
+    "orig_target_sizes": "source width, height before resize"
+  },
+  "parity": {
+    "frozen": "2026-11-07, before any candidate was evaluated (C§6)",
+    "score_threshold": 0.25,
+    "near_threshold": 0.02,
+    "tiny_area_px": 1024,
+    "preprocess_gates": {
+      "layout_max_error": 1e-6,
+      "resize_mae": 0.00392156862745098,
+      "resize_p99": 0.011764705882352941
+    },
+    "gates": {
+      "fp32": {"min_iou": 0.99, "max_score_error": 0.005, "min_match_rate": 0.99},
+      "mixed": {"min_iou": 0.95, "max_score_error": 0.02, "min_match_rate": 0.99}
+    }
+  },
+  "reference": {
+    "name": "R0",
+    "device": "cuda",
+    "precision": "fp32",
+    "tf32": false
+  },
+  "cache_dir": "~/.cache/motionman/models/rtdetr_r18_640"
+}
