@@ -120,46 +120,17 @@ replayed detections.
 | N2-12 | Mac `mac-cpu` and PC CTest all pass; no weights, engines or footage in git | `ctest --preset mac-cpu`, `ctest --preset linux-cuda-release`, `git ls-files \| grep -E '\.(pth\|onnx\|engine\|plan\|mp4)$'` | step 9: Mac 7/7, PC 13/13 (step 8 build), grep finds nothing (exit 1); `tests/fixtures` 500 KB; the crosswalk replay fixture stays on the PC |
 
 ## G2 result and re-estimate
-- G2 met: N2-1..N2-12 all have a command and a result above. ADR-006 Accepted, with the amendments it lists.
-- What exists now: `python -m motionman --backend native` on the PC runs RT-DETR in TensorRT FP32 from C++ with
-  a native ByteTrack whose output equals the Python reference exactly (15 scenarios and the full crosswalk clip),
-  writes records byte-identical in format to Python's, and publishes only after Python verifies everything.
-- Retired risks: tracker parity (exact, not within tolerance), record format drift (shared fixture), native exit
-  status trusted alone (receipt + Python checks), H.264 on the PC (it works).
-- Found in G2:
-  - Ubuntu's OpenCV 4.6 gives no timestamp for the frames its decoder drains at end of file (20 on crosswalk).
-    Counted and marked `UNVERIFIED`, never fatal on its own (ADR-006).
-  - Observed on one crosswalk run (not a benchmark): infer p50 about 20 ms, C++ preprocessing (Pillow-exact
-    resize on the CPU) about 6–9 ms, drawing about 14 ms, 22 fps end to end. The CPU stages are as large as
-    inference, so G4's overlap of CPU and GPU work matters more than batching alone.
-  - Admission above 0.1 (D6) gives busy videos: the tracker keeps low-score tracks and draws them. A render
-    threshold, or a policy change, is the owner's call (gate note).
-  - The UI does not show which backend made a run (gate note; UI changes were out of scope).
-  - The PC app env is Python 3.12 (system venv; no uv on the PC); the Mac and CI use 3.11.
-- Calendar time for G2 was 2026-11-07; focused hours were not timed (no claim).
-- Re-estimate in focused days:
-
-  | Gate | Before (G1) | Now | Why |
-  |---|---|---|---|
-  | G2 | 4–6 | done | |
-  | G3 | 3–5 | 3–5 | Unchanged; the strongly typed FP16 export is still the first unknown |
-  | G4 | 4–7 | 5–8 | CPU preprocessing and drawing are as slow as inference, so they need overlapping too |
-  | G5 | 2–4 | 2–4 | Unchanged; off-network access still open |
-  | G6 | 3–6 | 3–6 | Unchanged; owner labelling time not included |
-
-  The remaining G3–G6 total is 13–23 days, or 16–29 with the 25% contingency. These are estimates, not a
-  deadline.
-
-## Risks
-- Exact tracker parity can fail on floating-point or assignment ties. Investigate and pin a fixture first, and
-  never loosen the comparison silently. If Ultralytics-specific behaviour (e.g. duplicate removal) differs from
-  MIT ByteTrack, port the behaviour, not the code.
-- OpenCV 4.6 on Ubuntu may lack an H.264 writer: fall back to `mp4v` and record the codec, as Python does. (Step 8:
-  it has one, via libx264; native runs write `avc1`.)
-- Decode on WSL2 from `/mnt/c` is slow, so keep inputs in the Linux filesystem.
-- Low-score admission (D6) changes which tracks appear compared with the legacy backend's conf-filtered input.
-  That is intended and recorded, and is not a regression.
-- Estimate: 4–6 focused days (G1 re-estimate).
+- G2 met: N2-1..N2-12 all recorded above; ADR-006 Accepted with the amendments it lists. `--backend native` runs
+  RT-DETR in TensorRT FP32 from C++ with a ByteTrack equal to the Python reference (15 scenarios, full crosswalk
+  clip) and publishes only what Python verifies. Calendar time 2026-11-07; focused hours not timed (no claim).
+- Planning risks, resolved: tracker parity is exact; H.264 works on the PC (libx264); D6's low-score admission
+  is intended but makes busy videos (gate note); keep inputs off `/mnt/c` (they were).
+- Found: OpenCV 4.6's drained-tail timestamps (ADR-006); the UI does not show the backend (gate note); the PC
+  app env is Python 3.12, the Mac and CI 3.11. One crosswalk run (observation, not a benchmark): infer p50
+  ~20 ms, CPU preprocessing 6–9 ms, drawing ~14 ms, 22 fps, so G4 must overlap CPU stages, not just batch.
+- Re-estimate (focused days, before → now): G3 3–5 → 3–5 (strongly typed FP16 export still the first unknown);
+  G4 4–7 → 5–8 (CPU stages as slow as inference); G5 2–4 → 2–4; G6 3–6 → 3–6 (owner labelling not included).
+  G3–G6 total 13–23, or 16–29 with 25% contingency. Estimates, not a deadline.
 
 ## Log
 <!-- One line per step: date, step, commit, result. No pasted output. -->
