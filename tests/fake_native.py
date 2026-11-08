@@ -68,6 +68,8 @@ def main(argv: list[str]) -> int:
     stop_at = s["input"]["frame_range"][1]
     cap = cv2.VideoCapture(str(source))
     writer = cv2.VideoWriter(str(out / "annotated.mp4"), cv2.VideoWriter_fourcc(*s["rendering"]["codec"]), fps, (w, h))
+    if not writer.isOpened():  # pip OpenCV on Linux has no H.264 encoder; the controller checks decoding, not codec
+        writer = cv2.VideoWriter(str(out / "annotated.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
     tracks = (out / "tracks.jsonl").open("x", encoding="utf-8")
     timings = (out / "timings.jsonl").open("x", encoding="utf-8")
     status(event="started", run_id=run_id, frames_expected=stop_at, gpu="Fake GPU 9000")
